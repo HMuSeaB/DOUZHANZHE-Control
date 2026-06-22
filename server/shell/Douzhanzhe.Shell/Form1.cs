@@ -651,7 +651,7 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             int winId = m.WParam.ToInt32();
             if (_hotkeyIdToAction.TryGetValue(winId, out var action))
             {
-                ShellLog($"快捷键触发: {action}");
+                ShellLog($"[Hotkey] WndProc WM_HOTKEY: winId={winId}, action={action}");
                 if (action == "monitor-off")
                 {
                     try
@@ -783,18 +783,20 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         {
             var id = kvp.Key;
             var (mods, key, enabled) = kvp.Value;
-            if (!enabled) continue;
+            if (!enabled) { ShellLog($"[Hotkey] 跳过 (disabled): {id}"); continue; }
             var combo = $"{mods}+{key}".ToLowerInvariant();
             if (comboSet.ContainsKey(combo))
             {
+                ShellLog($"[Hotkey] 内部冲突: {id} 与 {comboSet[combo]} 都是 {combo}");
                 conflicts.Add(id);
                 conflicts.Add(comboSet[combo]);
-                continue; // 跳过重复的组合键
+                continue;
             }
             comboSet[combo] = id;
 
             int winId = nextWinId++;
             bool ok = TryRegisterHotkey(winId, mods, key);
+            ShellLog($"[Hotkey] RegisterHotKey({id}, {mods}+{key}, winId={winId}) = {ok}");
             if (ok)
             {
                 _hotkeyIdToAction[winId] = id;
@@ -802,9 +804,11 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             }
             else
             {
+                ShellLog($"[Hotkey] 外部冲突: {id} ({mods}+{key}) 已被其他程序占用");
                 conflicts.Add(id); // 外部程序占用
             }
         }
+        ShellLog($"[Hotkey] 注册完成: 成功 {_registeredWinIds.Count} 个, 冲突 {conflicts.Count} 个");
 
         WriteHotkeyStatus(conflicts);
     }
