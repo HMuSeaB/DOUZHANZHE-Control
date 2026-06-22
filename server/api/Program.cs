@@ -902,14 +902,24 @@ app.MapGet("/api/hotkey", () =>
     var result = new Dictionary<string, object>();
     foreach (var (id, val) in hotkeys)
     {
-        var dict = val is Dictionary<string, object> d ? d : new Dictionary<string, object>();
-        result[id] = new
+        // 默认值是匿名类型，用户配置是 Dictionary<string, object>，需要统一处理
+        string mods = "ctrl,shift";
+        string k = "Q";
+        bool en = true;
+        if (val is Dictionary<string, object> d)
         {
-            modifiers = dict.TryGetValue("modifiers", out var mv) ? mv.ToString() : "ctrl,shift",
-            key = dict.TryGetValue("key", out var kv) ? kv.ToString() : "Q",
-            enabled = dict.TryGetValue("enabled", out var ev) && ev is bool b ? b : true,
-            conflict = conflicts.Contains(id)
-        };
+            if (d.TryGetValue("modifiers", out var mv)) mods = mv.ToString() ?? mods;
+            if (d.TryGetValue("key", out var kv)) k = kv.ToString() ?? k;
+            if (d.TryGetValue("enabled", out var ev) && ev is bool bv) en = bv;
+        }
+        else if (val != null) // 匿名类型，通过反射读取属性
+        {
+            var t = val.GetType();
+            if (t.GetProperty("modifiers")?.GetValue(val) is string ms) mods = ms;
+            if (t.GetProperty("key")?.GetValue(val) is string ks) k = ks;
+            if (t.GetProperty("enabled")?.GetValue(val) is bool eb) en = eb;
+        }
+        result[id] = new { modifiers = mods, key = k, enabled = en, conflict = conflicts.Contains(id) };
     }
     return Results.Json(result);
 });
