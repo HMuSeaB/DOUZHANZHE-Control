@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [1.6.11] — 2026-06-22
+
+快捷键系统数据驱动重构 + 模式切换快捷键自定义
+
+### 重构
+
+- **快捷键架构数据驱动化**: 从硬编码单体组件重构为通用 `HotkeyRow` + 动态渲染架构。后端 `GET/POST /api/hotkey` 统一管理所有快捷键配置，Shell 动态注册/注销热键，前端从 API 动态渲染。新增功能只需在 `DefaultHotkeys` 数组加一行
+- **全局冲突检测**: Shell `RegisterHotkeysFromConfig` 实现内部互斥（自己的快捷键不重复）+ 外部冲突（`RegisterHotKey` 失败即标记），所有快捷键统一检测，冲突状态写入 `hotkey-status.json`
+- **前端 HotkeyCard 重写**: 提取通用 `HotkeyRow` 组件（含录制、保存、冲突提示逻辑），循环渲染所有快捷键行，关屏行保留“执行”按钮和 3 秒倒计时
+
+### 新增
+
+- **模式切换快捷键**: Ctrl+Shift+1~4 对应均衡/野兽/安静/斗战四种性能模式，支持自定义键位，受全局开关控制
+- **快捷键自定义**: 所有快捷键（包括模式切换）均支持录制自定义组合键
+
 ## [1.6.10] — 2026-06-22
 
 EAC 反作弊兼容优化 + 诊断日志增强

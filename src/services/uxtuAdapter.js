@@ -638,18 +638,18 @@ export async function monitorOff() {
   return res.json();
 }
 
-// ── 快捷键配置 ──
+// ── 快捷键配置（数据驱动） ──
 export async function fetchHotkeyConfig() {
-  const res = await fetch("/api/hotkey/monitor-off");
+  const res = await fetch("/api/hotkey");
   if (!res.ok) throw new Error("hotkey config returned " + res.status);
   return res.json();
 }
 
-export async function setHotkeyConfig(config) {
-  const res = await fetch("/api/hotkey/monitor-off", {
+export async function setHotkeyConfig(id, config) {
+  const res = await fetch("/api/hotkey", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(config),
+    body: JSON.stringify({ id, ...config }),
   });
   if (!res.ok) throw new Error("hotkey config returned " + res.status);
   return res.json();

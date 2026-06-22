@@ -827,61 +827,129 @@ app.MapPost("/api/monitor/off", () =>
     return Results.Ok(new { ok = true });
 });
 
-// ---- 快捷键配置 ----
-app.MapGet("/api/hotkey/monitor-off", () =>
-{
-    var cfgPath = Path.Combine(configDir, "hotkey-config.json");
-    if (!File.Exists(cfgPath))
-        return Results.Json(new { enabled = true, modifiers = "ctrl,shift", key = "Q", conflict = false });
-    try
-    {
-        var json = File.ReadAllText(cfgPath);
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        var mo = root.TryGetProperty("monitorOff", out var moVal) ? moVal : root;
-        bool conflict = false;
-        var statusPath = Path.Combine(configDir, "hotkey-status.json");
-        if (File.Exists(statusPath))
-        {
-            try
-            {
-                var sJson = File.ReadAllText(statusPath);
-                using var sDoc = JsonDocument.Parse(sJson);
-                conflict = sDoc.RootElement.TryGetProperty("monitorOffConflict", out var cv) && cv.GetBoolean();
-            }
-            catch { }
-        }
-        return Results.Json(new
-        {
-            enabled = mo.TryGetProperty("enabled", out var ev) ? ev.GetBoolean() : true,
-            modifiers = mo.TryGetProperty("modifiers", out var mv) ? mv.GetString() : "ctrl,shift",
-            key = mo.TryGetProperty("key", out var kv) ? kv.GetString() : "Q",
-            conflict
-        });
-    }
-    catch
-    {
-        return Results.Json(new { enabled = true, modifiers = "ctrl,shift", key = "Q", conflict = false });
-    }
-});
+// ---- 快捷键配置（数据驱动，全局冲突检测） ----
 
-app.MapPost("/api/hotkey/monitor-off", (HotkeyConfigRequest req) =>
+// 默认快捷键定义
+var defaultHotkeys = new Dictionary<string, object>
 {
+    ["monitor-off"] = new { modifiers = "ctrl,shift", key = "Q", enabled = true },
+    ["mode-office"] = new { modifiers = "ctrl,shift", key = "1", enabled = true },
+    ["mode-beast"]  = new { modifiers = "ctrl,shift", key = "2", enabled = true },
+    ["mode-silent"] = new { modifiers = "ctrl,shift", key = "3", enabled = true },
+    ["mode-gaming"] = new { modifiers = "ctrl,shift", key = "4", enabled = true },
+};
+
+// GET /api/hotkey — 返回所有快捷键配置 + 冲突状态
+app.MapGet("/api/hotkey", () =>
+{
+    var hotkeys = new Dictionary<string, object>();
+    // 从默认值开始
+    foreach (var (id, def) in defaultHotkeys)
+        hotkeys[id] = def;
+    // 覆盖用户配置
     var cfgPath = Path.Combine(configDir, "hotkey-config.json");
-    // 读取现有配置并合并
-    var existing = new Dictionary<string, object>();
     if (File.Exists(cfgPath))
     {
-        try { existing = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(cfgPath)) ?? new(); } catch { }
+        try
+        {
+            var json = File.ReadAllText(cfgPath);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("hotkeys", out var hkObj))
+            {
+                foreach (var prop in hkObj.EnumerateObject())
+                {
+                    var entry = new Dictionary<string, object>();
+                    entry["modifiers"] = prop.Value.TryGetProperty("modifiers", out var m) ? m.GetString() ?? "ctrl,shift" : "ctrl,shift";
+                    entry["key"] = prop.Value.TryGetProperty("key", out var k) ? k.GetString() ?? "Q" : "Q";
+                    entry["enabled"] = prop.Value.TryGetProperty("enabled", out var e) ? e.GetBoolean() : true;
+                    hotkeys[prop.Name] = entry;
+                }
+            }
+            else
+            {
+                // 兼容旧格式: { "monitorOff": { "modifiers": ..., "key": ..., "enabled": ... } }
+                if (doc.RootElement.TryGetProperty("monitorOff", out var mo))
+                {
+                    var entry = new Dictionary<string, object>();
+                    entry["modifiers"] = mo.TryGetProperty("modifiers", out var m) ? m.GetString() ?? "ctrl,shift" : "ctrl,shift";
+                    entry["key"] = mo.TryGetProperty("key", out var k) ? k.GetString() ?? "Q" : "Q";
+                    entry["enabled"] = mo.TryGetProperty("enabled", out var e) ? e.GetBoolean() : true;
+                    hotkeys["monitor-off"] = entry;
+                }
+            }
+        }
+        catch { }
     }
-    var monitorOff = new Dictionary<string, object>
+    // 读取冲突状态（Shell 写入）
+    var conflicts = new HashSet<string>();
+    var statusPath = Path.Combine(configDir, "hotkey-status.json");
+    if (File.Exists(statusPath))
     {
-        ["enabled"] = req.Enabled,
-        ["modifiers"] = req.Modifiers ?? "ctrl,shift",
-        ["key"] = req.Key ?? "Q"
-    };
-    existing["monitorOff"] = monitorOff;
-    JsonWrite("hotkey-config.json", existing);
+        try
+        {
+            var sJson = File.ReadAllText(statusPath);
+            using var sDoc = JsonDocument.Parse(sJson);
+            if (sDoc.RootElement.TryGetProperty("conflicts", out var cArr))
+                foreach (var c in cArr.EnumerateArray())
+                    if (c.GetString() is string s) conflicts.Add(s);
+            // 兼容旧格式
+            if (sDoc.RootElement.TryGetProperty("monitorOffConflict", out var cv) && cv.GetBoolean())
+                conflicts.Add("monitor-off");
+        }
+        catch { }
+    }
+    // 组装结果
+    var result = new Dictionary<string, object>();
+    foreach (var (id, val) in hotkeys)
+    {
+        var dict = val is Dictionary<string, object> d ? d : new Dictionary<string, object>();
+        result[id] = new
+        {
+            modifiers = dict.TryGetValue("modifiers", out var mv) ? mv.ToString() : "ctrl,shift",
+            key = dict.TryGetValue("key", out var kv) ? kv.ToString() : "Q",
+            enabled = dict.TryGetValue("enabled", out var ev) && ev is bool b ? b : true,
+            conflict = conflicts.Contains(id)
+        };
+    }
+    return Results.Json(result);
+});
+
+// POST /api/hotkey — 更新指定快捷键
+app.MapPost("/api/hotkey", (JsonElement body) =>
+{
+    if (!body.TryGetProperty("id", out var idEl)) return Results.BadRequest(new { error = "missing id" });
+    var id = idEl.GetString() ?? "";
+    var cfgPath = Path.Combine(configDir, "hotkey-config.json");
+    // 读取现有 hotkeys 配置
+    var hotkeys = new Dictionary<string, JsonElement>();
+    if (File.Exists(cfgPath))
+    {
+        try
+        {
+            var json = File.ReadAllText(cfgPath);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("hotkeys", out var hk))
+                foreach (var p in hk.EnumerateObject())
+                    hotkeys[p.Name] = p.Value.Clone();
+        }
+        catch { }
+    }
+    // 合并新值
+    var entry = new Dictionary<string, object>();
+    entry["modifiers"] = body.TryGetProperty("modifiers", out var m) ? m.GetString() ?? "ctrl,shift" : "ctrl,shift";
+    entry["key"] = body.TryGetProperty("key", out var k) ? k.GetString() ?? "Q" : "Q";
+    entry["enabled"] = body.TryGetProperty("enabled", out var e) ? e.GetBoolean() : true;
+    var merged = new Dictionary<string, object>();
+    foreach (var (hkId, hkVal) in hotkeys)
+    {
+        var d = new Dictionary<string, object>();
+        if (hkVal.TryGetProperty("modifiers", out var mm)) d["modifiers"] = mm.GetString() ?? "ctrl,shift";
+        if (hkVal.TryGetProperty("key", out var kk)) d["key"] = kk.GetString() ?? "Q";
+        if (hkVal.TryGetProperty("enabled", out var ee)) d["enabled"] = ee.GetBoolean();
+        merged[hkId] = d;
+    }
+    merged[id] = entry;
+    JsonWrite("hotkey-config.json", new { hotkeys = merged });
     return Results.Ok(new { ok = true });
 });
 

@@ -14,27 +14,36 @@ public partial class Form1 : Form
     private bool _closeToTray = true;
     private bool _isStartupMinimized = false;
 
-    // ---- 全局热键 ----
+    // ---- 全局热键（数据驱动架构） ----
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-    private const int HOTKEY_ID_MONITOR_OFF = 1;
     private const uint WM_HOTKEY = 0x0312;
     private const uint MOD_ALT = 0x0001;
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
     private const uint MOD_NOREPEAT = 0x4000;
-    // SC_MONITORPOWER: wParam=2 = turn off
     private const uint WM_SYSCOMMAND = 0x0112;
-    private static readonly IntPtr HWND_BROADCAST = new IntPtr(0xFFFF);
+
+    // 默认快捷键定义（数据驱动，新增功能只需加一行）
+    private static readonly (string id, string label, string modifiers, string key, string action)[] DefaultHotkeys =
+    [
+        ("monitor-off", "关闭屏幕", "ctrl,shift", "Q",   "monitor-off"),
+        ("mode-office", "均衡模式", "ctrl,shift", "1",   "mode:office"),
+        ("mode-beast",  "野兽模式", "ctrl,shift", "2",   "mode:beast"),
+        ("mode-silent", "安静模式", "ctrl,shift", "3",   "mode:silent"),
+        ("mode-gaming", "斗战模式", "ctrl,shift", "4",   "mode:gaming"),
+    ];
+
+    // 运行时热键映射: winHotkeyId → configId
+    private readonly Dictionary<int, string> _hotkeyIdToAction = new();
+    private readonly HashSet<int> _registeredWinIds = new();
 
     private FileSystemWatcher? _hotkeyWatcher;
     private System.Windows.Forms.Timer? _hotkeyPollTimer;
-    private string? _currentHotkeyModifiers;
-    private string? _currentHotkeyKey;
     private DateTime _lastHotkeyConfigWrite = DateTime.MinValue;
 
     // ---- 后端进程守护 ----
@@ -639,23 +648,40 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         if (m.Msg == WM_HOTKEY)
         {
-            int hotkeyId = m.WParam.ToInt32();
-            if (hotkeyId == HOTKEY_ID_MONITOR_OFF)
+            int winId = m.WParam.ToInt32();
+            if (_hotkeyIdToAction.TryGetValue(winId, out var action))
             {
-                // 启动自身子进程带 --monitor-off 参数：
-                // 子进程无 UI、无 WebView2、无线程泵，SendMessage 行为与后端 API 完全一致。
-                // 不在 Shell UI 线程直接调 SendMessage，因为 WebView2 窗口会导致卡死+锁屏。
-                try
+                ShellLog($"快捷键触发: {action}");
+                if (action == "monitor-off")
                 {
-                    Process.Start(new ProcessStartInfo
+                    try
                     {
-                        FileName = Application.ExecutablePath,
-                        Arguments = "--monitor-off",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = Application.ExecutablePath,
+                            Arguments = "--monitor-off",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        });
+                    }
+                    catch { }
+                }
+                else if (action.StartsWith("mode:"))
+                {
+                    var mode = action[5..];
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                            var content = new StringContent(
+                                $"{{\"mode\":\"{mode}\"}}",
+                                System.Text.Encoding.UTF8, "application/json");
+                            await http.PostAsync("http://127.0.0.1:3100/api/overrides/switch", content);
+                        }
+                        catch (Exception ex) { ShellLog($"模式切换失败: {ex.Message}"); }
                     });
                 }
-                catch { }
             }
         }
         base.WndProc(ref m);
@@ -665,8 +691,11 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         if (disposing)
         {
-            // 清理热键
-            UnregisterHotKey(Handle, HOTKEY_ID_MONITOR_OFF);
+            // 清理所有已注册热键
+            foreach (var winId in _registeredWinIds)
+                UnregisterHotKey(Handle, winId);
+            _registeredWinIds.Clear();
+            _hotkeyIdToAction.Clear();
             _healthTimer?.Stop();
             _healthTimer?.Dispose();
             _hotkeyPollTimer?.Dispose();
@@ -702,13 +731,16 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
 
     private void RegisterHotkeysFromConfig()
     {
-        // 先注销旧注册
-        UnregisterHotKey(Handle, HOTKEY_ID_MONITOR_OFF);
+        // 注销所有已注册热键
+        foreach (var winId in _registeredWinIds)
+            UnregisterHotKey(Handle, winId);
+        _registeredWinIds.Clear();
+        _hotkeyIdToAction.Clear();
 
-        // 默认值
-        bool enabled = true;
-        string modifiers = "ctrl,shift";
-        string key = "Q";
+        // 读取配置（合并默认值 + 用户自定义）
+        var hotkeys = new Dictionary<string, (string modifiers, string key, bool enabled)>();
+        foreach (var def in DefaultHotkeys)
+            hotkeys[def.id] = (def.modifiers, def.key, true);
 
         try
         {
@@ -717,27 +749,64 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                 _lastHotkeyConfigWrite = File.GetLastWriteTime(HotkeyConfigPath);
                 var json = File.ReadAllText(HotkeyConfigPath);
                 using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("monitorOff", out var mo))
+                if (doc.RootElement.TryGetProperty("hotkeys", out var hkObj))
                 {
-                    if (mo.TryGetProperty("enabled", out var ev)) enabled = ev.GetBoolean();
-                    if (mo.TryGetProperty("modifiers", out var mv)) modifiers = mv.GetString() ?? "ctrl,shift";
-                    if (mo.TryGetProperty("key", out var kv)) key = kv.GetString() ?? "Q";
+                    foreach (var prop in hkObj.EnumerateObject())
+                    {
+                        var mods = prop.Value.TryGetProperty("modifiers", out var m) ? m.GetString() ?? "ctrl,shift" : "ctrl,shift";
+                        var k = prop.Value.TryGetProperty("key", out var kv) ? kv.GetString() ?? "Q" : "Q";
+                        var en = prop.Value.TryGetProperty("enabled", out var ev) ? ev.GetBoolean() : true;
+                        hotkeys[prop.Name] = (mods, k, en);
+                    }
+                }
+                else
+                {
+                    // 兼容旧格式
+                    if (doc.RootElement.TryGetProperty("monitorOff", out var mo))
+                    {
+                        var mods = mo.TryGetProperty("modifiers", out var m) ? m.GetString() ?? "ctrl,shift" : "ctrl,shift";
+                        var k = mo.TryGetProperty("key", out var kv) ? kv.GetString() ?? "Q" : "Q";
+                        var en = mo.TryGetProperty("enabled", out var ev) ? ev.GetBoolean() : true;
+                        hotkeys["monitor-off"] = (mods, k, en);
+                    }
                 }
             }
         }
         catch { }
 
-        _currentHotkeyModifiers = modifiers;
-        _currentHotkeyKey = key;
+        // 全局互斥检测：检查内部重复
+        var comboSet = new Dictionary<string, string>(); // "mods+key" → configId
+        var conflicts = new List<string>();
 
-        if (!enabled)
+        int nextWinId = 1;
+        foreach (var kvp in hotkeys)
         {
-            WriteHotkeyStatus(false);
-            return;
+            var id = kvp.Key;
+            var (mods, key, enabled) = kvp.Value;
+            if (!enabled) continue;
+            var combo = $"{mods}+{key}".ToLowerInvariant();
+            if (comboSet.ContainsKey(combo))
+            {
+                conflicts.Add(id);
+                conflicts.Add(comboSet[combo]);
+                continue; // 跳过重复的组合键
+            }
+            comboSet[combo] = id;
+
+            int winId = nextWinId++;
+            bool ok = TryRegisterHotkey(winId, mods, key);
+            if (ok)
+            {
+                _hotkeyIdToAction[winId] = id;
+                _registeredWinIds.Add(winId);
+            }
+            else
+            {
+                conflicts.Add(id); // 外部程序占用
+            }
         }
 
-        bool ok = TryRegisterHotkey(HOTKEY_ID_MONITOR_OFF, modifiers, key);
-        WriteHotkeyStatus(!ok); // conflict = 注册失败
+        WriteHotkeyStatus(conflicts);
     }
 
     private bool TryRegisterHotkey(int id, string modifiersStr, string keyStr)
@@ -768,14 +837,14 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         return RegisterHotKey(Handle, id, fsModifiers, vk);
     }
 
-    private void WriteHotkeyStatus(bool conflict)
+    private void WriteHotkeyStatus(List<string> conflicts)
     {
         try
         {
             var dir = Path.GetDirectoryName(HotkeyStatusPath)!;
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             File.WriteAllText(HotkeyStatusPath,
-                JsonSerializer.Serialize(new { monitorOffConflict = conflict }));
+                JsonSerializer.Serialize(new { conflicts }));
         }
         catch { }
     }

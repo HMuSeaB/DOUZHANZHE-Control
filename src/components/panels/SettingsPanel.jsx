@@ -321,98 +321,136 @@ export default function SettingsPanel({ settings, setSettings, showSwitches = tr
   );
 }
 
-// ---- 快捷键卡片组件 ----
-function HotkeyCard({ toast }) {
-  const [enabled, setEnabled] = useState(true);
-  const [modifiers, setModifiers] = useState("ctrl,shift");
-  const [key, setKey] = useState("Q");
-  const [conflict, setConflict] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [countdown, setCountdown] = useState(null);
+// ---- 快捷键卡片组件（数据驱动架构） ----
+const HOTKEY_LABELS = {
+  "monitor-off": "关闭屏幕",
+  "mode-office": "均衡模式",
+  "mode-beast": "野兽模式",
+  "mode-silent": "安静模式",
+  "mode-gaming": "斗战模式",
+};
+
+function formatHotkey(mods, k) {
+  const names = { ctrl: "Ctrl", control: "Ctrl", alt: "Alt", shift: "Shift", win: "Win" };
+  const parts = (mods || "").split(",").map(m => names[m.trim().toLowerCase()] || m.trim()).filter(Boolean);
+  parts.push((k || "").toUpperCase());
+  return parts.join(" + ");
+}
+
+function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecordingId, onToggle, onExecute, executeCountdown }) {
+  const [modifiers, setModifiers] = useState(config.modifiers);
+  const [key, setKey] = useState(config.key);
   const inputRef = useRef(null);
+  const isRecording = recordingId === id;
 
+  // 同步后端配置（如冲突恢复后重新加载）
   useEffect(() => {
-    fetchHotkeyConfig()
-      .then(cfg => {
-        setEnabled(cfg.enabled !== false);
-        setModifiers(cfg.modifiers || "ctrl,shift");
-        setKey(cfg.key || "Q");
-        setConflict(!!cfg.conflict);
-      })
-      .catch(() => {});
-  }, []);
-
-  const formatHotkey = useCallback((mods, k) => {
-    const names = {
-      ctrl: "Ctrl", control: "Ctrl",
-      alt: "Alt", shift: "Shift", win: "Win"
-    };
-    const parts = (mods || "").split(",").map(m => names[m.trim().toLowerCase()] || m.trim()).filter(Boolean);
-    parts.push((k || "").toUpperCase());
-    return parts.join(" + ");
-  }, []);
+    setModifiers(config.modifiers);
+    setKey(config.key);
+  }, [config.modifiers, config.key]);
 
   const handleRecord = () => {
-    setRecording(true);
+    setRecordingId(id);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const handleKeyDown = async (e) => {
-    if (!recording) return;
+    if (!isRecording) return;
     e.preventDefault();
     e.stopPropagation();
-
     const mods = [];
     if (e.ctrlKey) mods.push("ctrl");
     if (e.altKey) mods.push("alt");
     if (e.shiftKey) mods.push("shift");
     if (e.metaKey) mods.push("win");
-
-    // 忽略单独的修饰键
     const k = e.key;
     if (["Control", "Alt", "Shift", "Meta"].includes(k)) return;
-
-    // 转换特殊键名
     let keyName = k;
     if (k.length === 1) keyName = k.toUpperCase();
     else if (k === " ") keyName = "Space";
     else if (k.startsWith("F") && /^F\d+$/.test(k)) keyName = k;
-    else if (k === "Escape") { setRecording(false); return; }
-    else return; // 不支持的键
-
-    if (mods.length === 0) {
-      toast?.("请至少按下一个修饰键 (Ctrl/Alt/Shift)", "error");
-      return;
-    }
-
+    else if (k === "Escape") { setRecordingId(null); return; }
+    else return;
+    if (mods.length === 0) { toast?.("请至少按下一个修饰键 (Ctrl/Alt/Shift)", "error"); return; }
     const newMods = mods.join(",");
     setModifiers(newMods);
     setKey(keyName);
-    setRecording(false);
-
+    setRecordingId(null);
     try {
-      await setHotkeyConfig({ enabled, modifiers: newMods, key: keyName });
-      // 延迟读取冲突状态（Shell 需要时间重新注册）
-      setTimeout(() => {
-        fetchHotkeyConfig()
-          .then(cfg => setConflict(!!cfg.conflict))
-          .catch(() => {});
-      }, 500);
+      await setHotkeyConfig(id, { enabled: globalEnabled, modifiers: newMods, key: keyName });
+      if (onToggle) onToggle(globalEnabled); // 通知父组件此快捷键已更新
       toast?.(`快捷键已更新为 ${formatHotkey(newMods, keyName)}`, "success");
-    } catch {
-      toast?.("保存失败", "error");
-    }
+    } catch { toast?.("保存失败", "error"); }
   };
 
-  const handleToggle = async (v) => {
-    setEnabled(v);
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <span className="text-sm">{HOTKEY_LABELS[id] || id}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs px-2 py-0.5 rounded" style={{
+            background: "var(--card-2)", border: "1px solid var(--border)",
+            fontFamily: "monospace", color: config.conflict ? "var(--danger)" : "var(--text)"
+          }}>
+            {formatHotkey(modifiers, key)}
+          </span>
+          <button onClick={handleRecord}
+            className="text-xs px-2 py-1 rounded-lg transition-colors"
+            style={{ background: isRecording ? "var(--primary-2)" : "var(--card-2)", border: "1px solid var(--border)", color: isRecording ? "#fff" : "var(--text)" }}>
+            {isRecording ? "录制中..." : "录制"}
+          </button>
+          {id === "monitor-off" && (
+            <button onClick={onExecute}
+              className="text-xs px-2 py-1 rounded-lg transition-colors"
+              style={{ background: "var(--card-2)", border: "1px solid var(--border)", color: executeCountdown != null ? "var(--primary)" : "var(--text)" }}
+              disabled={executeCountdown != null}>
+              {executeCountdown != null ? `${executeCountdown}s` : "执行"}
+            </button>
+          )}
+        </div>
+      </div>
+      {isRecording && (
+        <input ref={inputRef} onKeyDown={handleKeyDown} onBlur={() => setRecordingId(null)}
+          className="w-full text-xs text-center py-1 rounded"
+          style={{ background: "var(--card-2)", border: "1px solid var(--primary)", color: "var(--text)", outline: "none" }}
+          placeholder="请按下组合键... (Esc 取消)" readOnly autoFocus />
+      )}
+      {config.conflict && (
+        <p className="text-xs" style={{ color: "var(--danger)" }}>该快捷键已被占用，请更换组合键</p>
+      )}
+    </>
+  );
+}
+
+function HotkeyCard({ toast }) {
+  const [hotkeys, setHotkeys] = useState(null);
+  const [globalEnabled, setGlobalEnabled] = useState(true);
+  const [recordingId, setRecordingId] = useState(null);
+  const [countdown, setCountdown] = useState(null);
+
+  const loadConfig = useCallback(async () => {
     try {
-      await setHotkeyConfig({ enabled: v, modifiers, key });
-      toast?.(v ? "快捷键已开启" : "快捷键已关闭", "success");
-    } catch {
-      setEnabled(!v);
-      toast?.("设置失败", "error");
+      const cfg = await fetchHotkeyConfig();
+      setHotkeys(cfg);
+      const first = Object.values(cfg)[0];
+      if (first) setGlobalEnabled(first.enabled !== false);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
+
+  const handleGlobalToggle = async (v) => {
+    setGlobalEnabled(v);
+    if (!hotkeys) return;
+    // 批量更新所有快捷键的 enabled 状态
+    const entries = Object.entries(hotkeys);
+    const updated = {};
+    for (const [id, cfg] of entries) {
+      updated[id] = { ...cfg, enabled: v };
+      try { await setHotkeyConfig(id, { enabled: v, modifiers: cfg.modifiers, key: cfg.key }); } catch { /* ignore */ }
     }
+    setHotkeys(updated);
+    toast?.(v ? "快捷键已开启" : "快捷键已关闭", "success");
   };
 
   const handleExecute = async () => {
@@ -424,63 +462,28 @@ function HotkeyCard({ toast }) {
     }
     await new Promise(r => setTimeout(r, 200));
     setCountdown(null);
-    try {
-      await monitorOff();
-    } catch {
-      toast?.("关屏失败", "error");
-    }
+    try { await monitorOff(); } catch { toast?.("关屏失败", "error"); }
   };
+
+  // 单个快捷键更新后刷新冲突状态
+  const handleRowUpdate = useCallback(() => {
+    setTimeout(() => loadConfig(), 500);
+  }, [loadConfig]);
+
+  if (!hotkeys) return null;
 
   return (
     <Card title="快捷键" className="!p-3">
       <div className="space-y-2">
-        {/* 关闭屏幕 */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm">关闭屏幕</span>
-          <div className="flex items-center gap-2">
-            {/* 快捷键显示 */}
-            <span className="text-xs px-2 py-0.5 rounded" style={{
-              background: "var(--card-2)", border: "1px solid var(--border)",
-              fontFamily: "monospace", color: conflict ? "var(--danger)" : "var(--text)"
-            }}>
-              {formatHotkey(modifiers, key)}
-            </span>
-            {/* 录制按钮 */}
-            <button onClick={handleRecord}
-              className="text-xs px-2 py-1 rounded-lg transition-colors"
-              style={{ background: recording ? "var(--primary-2)" : "var(--card-2)", border: "1px solid var(--border)", color: recording ? "#fff" : "var(--text)" }}>
-              {recording ? "录制中..." : "录制"}
-            </button>
-            {/* 执行按钮 */}
-            <button onClick={handleExecute}
-              className="text-xs px-2 py-1 rounded-lg transition-colors"
-              style={{ background: "var(--card-2)", border: "1px solid var(--border)", color: countdown !== null ? "var(--primary)" : "var(--text)" }}
-              disabled={countdown !== null}>
-              {countdown !== null ? `${countdown}s` : "执行"}
-            </button>
-          </div>
-        </div>
-        {/* 录制时的隐藏输入框 */}
-        {recording && (
-          <input
-            ref={inputRef}
-            onKeyDown={handleKeyDown}
-            onBlur={() => setRecording(false)}
-            className="w-full text-xs text-center py-1 rounded"
-            style={{ background: "var(--card-2)", border: "1px solid var(--primary)", color: "var(--text)", outline: "none" }}
-            placeholder="请按下组合键... (Esc 取消)"
-            readOnly
-            autoFocus
-          />
-        )}
-        {/* 冲突提示 */}
-        {conflict && (
-          <p className="text-xs" style={{ color: "var(--danger)" }}>
-            该快捷键已被其他程序占用，请更换组合键
-          </p>
-        )}
-        {/* 功能开关 */}
-        <SwitchRow label="启用全局快捷键" checked={enabled} onChange={handleToggle} />
+        {Object.entries(hotkeys).map(([id, cfg]) => (
+          <HotkeyRow key={id} id={id} config={cfg}
+            globalEnabled={globalEnabled} toast={toast}
+            recordingId={recordingId} setRecordingId={setRecordingId}
+            onToggle={handleRowUpdate}
+            onExecute={id === "monitor-off" ? handleExecute : undefined}
+            executeCountdown={id === "monitor-off" ? countdown : undefined} />
+        ))}
+        <SwitchRow label="启用全局快捷键" checked={globalEnabled} onChange={handleGlobalToggle} />
       </div>
     </Card>
   );
