@@ -1521,10 +1521,11 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     }
 
     // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
+    // 注意: 不做 SetFreqLimitAsync(0)。某些 AMD 笔记本更新芯片组驱动后，
+    // 清空频率上限会让 CPPC 自由调度到极低频率（0.5 GHz）。保留前模式的限制更安全。
     if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
     {
         var cpu = app.Services.GetRequiredService<CpuPowerController>();
-        try { await cpu.SetFreqLimitAsync(0); } catch { }
         try { await cpu.SetTurboAsync(true); } catch { }
         try { await cpu.SetCoreLimitAsync(100); } catch { }
         // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
