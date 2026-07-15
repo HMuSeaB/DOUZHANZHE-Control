@@ -74,7 +74,8 @@ public sealed class CpuPowerController : IDisposable
     /// 禁用(锁频): min=max=100% + boost=2，CPU 钉死在当前频率上限
     ///   - 不修改 freq_limit，由用户通过频率限制滑块控制上限
     ///   - 若未设频率限制，则 CPU 跑在全核最大睿频
-    /// 启用(正常): min=0% + max=100% + boost=2，恢复正常按需调频
+    /// 启用(正常): min=5% + max=100% + boost=2，恢复正常按需调频
+    ///   - 5% 为 Windows 平衡电源计划出厂默认最小值，避免低负载过度降频 (0.5 GHz)
     /// </summary>
     public async Task SetTurboAsync(bool enabled)
     {
@@ -83,7 +84,7 @@ public sealed class CpuPowerController : IDisposable
         if (enabled)
         {
             // 恢复正常: 允许频率根据负载动态调节
-            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MIN_STATE, "0");
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MIN_STATE, "5");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PERF_BOOST, "2");
         }
