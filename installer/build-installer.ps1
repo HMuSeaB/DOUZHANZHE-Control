@@ -44,14 +44,14 @@ if ($Version) {
     # CHANGELOG.md — 仅替换第一个版本标题（最新条目），不动历史版本
     $Changelog = Join-Path $AbsRoot "CHANGELOG.md"
     $ClText = [System.IO.File]::ReadAllText($Changelog, $utf8NoBom)
-    $ClRegex = [regex]::new('(## \[)\d+\.\d+\.\d+(\] — \d{4}-\d{2}-\d{2})')
-    $ClText = $ClRegex.Replace($ClText, "`${1}$Version`${2}", 1)
+    $ClRegex = [regex]::new('(## \[)\d+\.\d+(\.\d+)?(\] — \d{4}-\d{2}-\d{2})')
+    $ClText = $ClRegex.Replace($ClText, "`${1}$Version`${3}", 1)
     [System.IO.File]::WriteAllText($Changelog, $ClText, $utf8NoBom)
 
     # package.json
     $PkgJson = Join-Path $AbsRoot "package.json"
     $PkgText = [System.IO.File]::ReadAllText($PkgJson, $utf8NoBom)
-    $PkgText = [regex]::Replace($PkgText, '("version":\s*")\d+\.\d+\.\d+(")', "`${1}$Version`${2}")
+    $PkgText = [regex]::Replace($PkgText, '("version":\s*")\d+\.\d+(\.\d+)?(")', "`${1}$Version`${3}")
     [System.IO.File]::WriteAllText($PkgJson, $PkgText, $utf8NoBom)
 
     Write-Host "  版本号已同步至 $Version (SettingsPanel 由 vite define 读取, iss 由 ISCC /d 参数覆盖)" -ForegroundColor Green
@@ -111,8 +111,17 @@ $ToolsDir = Join-Path $Root "server\tools"
 # 复制 Shell 到 API 目录
 Copy-Item -Path (Join-Path $ShellDir "*") -Destination $ApiDir -Recurse -Force
 
+# 复制 PawnIO .bin 模块文件
+$AssetsDir = Join-Path $Root "server\assets\PawnIO"
+if (Test-Path $AssetsDir) {
+    $DestAssets = Join-Path $ApiDir "assets\PawnIO"
+    New-Item -ItemType Directory -Force -Path $DestAssets | Out-Null
+    Copy-Item -Path (Join-Path $AssetsDir "*") -Destination $DestAssets -Force
+    Write-Host "  已复制 assets/PawnIO/*" -ForegroundColor Green
+}
+
 # 复制运行时工具
-$ToolFiles = @("ryzenadj.exe", "WinRing0x64.dll", "WinRing0x64.sys", "inpoutx64.dll")
+$ToolFiles = @("PawnIO_setup.exe")
 foreach ($f in $ToolFiles) {
     $src = Join-Path $ToolsDir $f
     if (Test-Path $src) {
@@ -136,6 +145,13 @@ if (Test-Path $SysInfoPs1) {
     if (Test-Path $d) { Remove-Item -Recurse -Force $d }
 }
 
+# 删除已迁移的旧驱动（PawnIO 已替代）
+$OldDrivers = @("inpoutx64.dll", "WinRing0x64.dll", "WinRing0x64.sys", "WinRing0x64.cat", "ryzenadj.exe")
+foreach ($f in $OldDrivers) {
+    $fp = Join-Path $ApiDir $f
+    if (Test-Path $fp) { Remove-Item $fp -Force; Write-Host "  已清理旧驱动: $f" -ForegroundColor Gray }
+}
+
 # 清理开发环境残留配置（dev 值不应打包进安装器）
 # 这些文件虽然 .gitignore 排除了，但物理存在于项目目录，dotnet publish 会复制它们。
 # 用户的配置文件由 API 在运行时按需创建（带安全默认值），不需要安装器预设。
@@ -157,7 +173,7 @@ $WwwRoot = Join-Path $ApiDir "wwwroot"
 $JsFile = Get-ChildItem (Join-Path $WwwRoot "assets") -Filter "index-*.js" | Select-Object -First 1
 if ($JsFile) {
     $JsContent = Get-Content $JsFile.FullName -Raw -Encoding UTF8
-    if ($JsContent -match 'Douzhanzhe Console v(\d+\.\d+\.\d+)') {
+    if ($JsContent -match 'Douzhanzhe Console v(\d+\.\d+(?:\.\d+)?)') {
         $DetectedVersion = $matches[1]
         if ($Version -and $DetectedVersion -ne $Version) {
             Write-Host "  错误：前端版本号 $DetectedVersion 与预期 $Version 不一致！" -ForegroundColor Red

@@ -146,54 +146,30 @@ public sealed class HardwareAbstractionLayer : IDisposable
     // CPU 温度诊断：首次失败时打印各路径返回值
     private static int _cpuTempDiagCount;
 
-    /// <summary>CPU 温度 (摄氏度) — LHM SMN 优先，EC IO 0x1C 兜底 (v1.4.8 验证路径)</summary>
+    /// <summary>CPU 温度 (摄氏度) — EC IO 0x1C 优先，物理内存回退</summary>
     public byte CpuTemperature
     {
         get
         {
-            // 1) LHM SMN 总线直读（精度更高，直接读 CPU die temperature）
-            var lhm = LhmSensor.GetCpuTemperature();
-            if (lhm > 0) return lhm;
-
-            // 2) EC IO 端口读 0x1C（v1.4.8 验证的有效寄存器）
+            // 1) EC IO 端口读 0x1C（v2.0 走 PawnIO LpcACPIEC.bin）
             byte ecIo = 0;
             try { ecIo = _io.ReadEc(0x1C); }
             catch { /* ignore */ }
             if (ecIo > 0 && ecIo < 128) return ecIo;
 
-            // 3) EC 物理内存映射读 0x1C
-            byte ecPhys = 0;
-            try { ecPhys = _io.ReadPhys(DriverBridge.EC_BASE + 0x1C); }
-            catch { /* ignore */ }
-            if (ecPhys > 0 && ecPhys < 128) return ecPhys;
-
             // 首次或每 100 次失败打印诊断
             if (++_cpuTempDiagCount == 1 || _cpuTempDiagCount % 100 == 0)
-                AppLog.Write("CpuTemp", $"三路均为0: LHM={lhm}, EC_IO(0x1C)=0x{ecIo:X2}, EC_Phys(0x1C)=0x{ecPhys:X2} (第{_cpuTempDiagCount}次)");
+                AppLog.Write("CpuTemp", $"EC_IO(0x1C)=0x{ecIo:X2} (第{_cpuTempDiagCount}次)");
 
             return 0;
         }
     }
 
-    /// <summary>GPU 温度 (摄氏度) — 优先物理内存，回退 nvidia-smi</summary>
+    /// <summary>GPU 温度 (摄氏度) — nvidia-smi</summary>
     public byte GpuTemperature
     {
         get
         {
-            // 尝试从物理内存读取 GPUT @ 0xFE8004E0
-            try
-            {
-                var val = _io.ReadPhys(DriverBridge.EC_BASE + OFF_GPUT);
-                if (val > 0)
-                {
-                    _lastGpuTemp = val;
-                    _lastGpuTempTime = DateTime.UtcNow;
-                    return val;
-                }
-            }
-            catch { /* fallback */ }
-
-            // 物理内存返回 0，回退 nvidia-smi（限频 2s）
             if ((DateTime.UtcNow - _lastGpuTempTime).TotalSeconds < 2 && _lastGpuTemp > 0)
                 return _lastGpuTemp;
 
@@ -222,24 +198,11 @@ public sealed class HardwareAbstractionLayer : IDisposable
         }
     }
 
-    /// <summary>CPU 风扇转速 (RPM) — 主路径: 物理内存 0x9B/0x9C, 回退: EC IO 0x9D/0x9E</summary>
+    /// <summary>CPU 风扇转速 (RPM) — EC IO 协议 (PawnIO LpcACPIEC.bin)</summary>
     public ushort CpuFanRpm
     {
         get
         {
-            // 主路径：物理内存映射读取（微秒级，不受 EC IO 协议影响）
-            // ⚠️ 字节序: 与 IO 路径一致 (hi@低地址, lo@高地址 = big-endian)
-            // ReadWord 是 little-endian，所以手动拼接
-            try
-            {
-                var hi = _io.ReadPhys(DriverBridge.EC_BASE + OFF_F1HI);
-                var lo = _io.ReadPhys(DriverBridge.EC_BASE + OFF_F1LO);
-                var val = (ushort)((hi << 8) | lo);
-                if (val != 0) return val;
-            }
-            catch { /* 物理内存读取失败，回退 IO 端口 */ }
-
-            // 回退路径：EC IO 端口（原有逻辑）
             for (int i = 0; i < 3; i++)
             {
                 var hi = _io.ReadEc(0x9D);
@@ -251,22 +214,11 @@ public sealed class HardwareAbstractionLayer : IDisposable
         }
     }
 
-    /// <summary>GPU 风扇转速 (RPM) — 主路径: 物理内存 0x96/0x97, 回退: EC IO</summary>
+    /// <summary>GPU 风扇转速 (RPM) — EC IO 协议 (PawnIO LpcACPIEC.bin)</summary>
     public ushort GpuFanRpm
     {
         get
         {
-            // 主路径：物理内存映射读取
-            try
-            {
-                var hi = _io.ReadPhys(DriverBridge.EC_BASE + OFF_F3HI);
-                var lo = _io.ReadPhys(DriverBridge.EC_BASE + OFF_F3LO);
-                var val = (ushort)((hi << 8) | lo);
-                if (val != 0) return val;
-            }
-            catch { /* 物理内存读取失败，回退 IO 端口 */ }
-
-            // 回退路径：EC IO 端口（原有逻辑）
             for (int i = 0; i < 3; i++)
             {
                 var hi = _io.ReadEc(0x96);
@@ -291,16 +243,17 @@ public sealed class HardwareAbstractionLayer : IDisposable
     // 系统开关 — 读写控制 (通过 EC IO 端口)
     // ================================================================
 
-    /// <summary>Fn 锁状态</summary>
+    /// <summary>Fn 锁状态 — 写入通过 WMI Method 11（HAL setter 仅作接口占位）</summary>
     public bool FnLock
     {
         get => (_io.ReadEc((byte)OFF_FNHK) & (1 << BIT_FNHK)) != 0;
-                set
+        set
         {
             byte val = _io.ReadEc((byte)OFF_FNHK);
             if (value) val |= (byte)(1 << BIT_FNHK);
             else val &= unchecked((byte)~(1 << BIT_FNHK));
-            _io.WritePhys(DriverBridge.EC_BASE + OFF_FNHK, val);
+            // 实际写入走 WMI SetFnLock，这里保留 EC 路径作为回退
+            _io.WriteEc((byte)OFF_FNHK, val);
         }
     }
 
@@ -343,8 +296,9 @@ public sealed class HardwareAbstractionLayer : IDisposable
         set
         {
             var v = Math.Min((byte)3, value);
-            // KBNL 写入不走缓存映射，走独立 SetPhysLong（预映射区域写入无效）
-            _io.WritePhys(DriverBridge.EC_BASE + OFF_KBNL, v);
+            // KBNL 写入: 走 EC IO 协议 (PawnIO LpcACPIEC.bin)
+            // 不再依赖 inpoutx64 SetPhysLong（v2.0 已移除）
+            _io.WriteEc((byte)OFF_KBNL, v);
         }
     }
 
@@ -352,11 +306,11 @@ public sealed class HardwareAbstractionLayer : IDisposable
     // 性能模式 / 散热模式
     // ================================================================
 
-    /// <summary>散热模式寄存器 (ITSM) — 写入走 WritePhys (SetPhysLong)</summary>
+    /// <summary>散热模式 — 读取通过 EC IO，写入通过 WMI Method 8</summary>
     public byte ThermalMode
     {
         get => _io.ReadEc((byte)OFF_ITSM);
-        set => _io.WritePhys(DriverBridge.EC_BASE + OFF_ITSM, value);
+        set { /* 写入走 WMI SetThermalMode，HAL setter 仅为接口占位 */ }
     }
 
     private const string TP_INSTANCE = "ACPI\\BLTP7853\\1";
@@ -406,29 +360,13 @@ public sealed class HardwareAbstractionLayer : IDisposable
 
     private const ulong DSAD_BASE = 0xFED81E40;
 
+
     /// <summary>集显模式 (IgpuOnly) — DSAD 0x0B ADPD(bit3) @ 0xFED81E56
     /// ADPD=1 断电(集显), ADPD=0 通电(混合/独显)</summary>
     public bool IgpuOnly
     {
-        get
-        {
-            try
-            {
-                ulong addr = DSAD_BASE + (0x0BUL << 1);
-                var raw = _io.ReadPhys(addr);
-                return (raw & 0x08) != 0;
-            }
-            catch { return false; }
-        }
-        set
-        {
-            try
-            {
-                ulong addr = DSAD_BASE + (0x0BUL << 1);
-                _io.WriteBit(addr, 3, value);
-            }
-            catch { }
-        }
+        get => false;
+        set { /* DSAD 直写物理内存已被硬件保护拦截，详见 docs/PAWNIO-MIGRATION-PLAN.md §7 #9 */ }
     }
 
     // ================================================================

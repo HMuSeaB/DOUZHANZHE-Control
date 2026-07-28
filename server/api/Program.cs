@@ -10,6 +10,20 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Microsoft.Win32.TaskScheduler;
 
+// ---- SMU 控制器 ----
+// AMD: AmdSmuController (PawnIO RyzenSMU.bin)
+// Intel: IntelPowerController (PawnIO IntelMSR.bin)
+Lazy<AmdSmuController?> _newSmu = new(() =>
+{
+    try { return new AmdSmuController(); }
+    catch (Exception ex) { Log($"AmdSmuController 初始化失败: {ex.Message}"); return null; }
+}, LazyThreadSafetyMode.ExecutionAndPublication);
+Lazy<IntelPowerController?> _intelSmu = new(() =>
+{
+    try { return new IntelPowerController(); }
+    catch (Exception ex) { Log($"IntelPowerController 初始化失败: {ex.Message}"); return null; }
+}, LazyThreadSafetyMode.ExecutionAndPublication);
+
 // ---- AppLog 统一日志初始化（所有服务注册之前）----
 var _logDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -23,7 +37,7 @@ Thread.CurrentThread.Priority = ThreadPriority.Highest;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<HardwareAbstractionLayer>();
-builder.Services.AddSingleton<SmuController>();
+builder.Services.AddSingleton<HardwareDetector>();
 builder.Services.AddSingleton<GpuController>();
 builder.Services.AddSingleton<NvapiGpuController>();
 builder.Services.AddSingleton<CpuPowerController>();
@@ -76,6 +90,18 @@ void Log(string msg)
     AppLog.Write("API", msg);
 }
 Log($"API starting, BaseDir={AppContext.BaseDirectory}, ConfigDir={configDir}");
+
+// ---- PawnIO 驱动检测 + EC 初始化 ----
+PawnIoDetection.LogStatus();
+try
+{
+    var pawnIoOk = DriverBridge.Instance.InitPawnIO();
+    Log($"PawnIO InitPawnIO: {(pawnIoOk ? "OK" : "失败")}");
+}
+catch (Exception ex)
+{
+    Log($"PawnIO InitPawnIO 异常: {ex.Message}");
+}
 
 // ---- 性能设置持久化 (按模式存储) ----
 var _perfLock = new object();
@@ -161,12 +187,8 @@ SystemEvents.PowerModeChanged += (sender, e) =>
         {
             try
             {
-                // inpoutx64 内核驱动在 S3/S4 后可能失效，必须重置映射并重新初始化
-                DriverBridge.Instance.RecoverAfterSleep();
-
-                // LHM 需要重新初始化（SMN 总线可能在睡眠后失效）
-                LhmSensor.Close();
-                LhmSensor.Open();
+                // DriverBridge 睡眠恢复（v2.0 PawnIO 驱动持久，无需重连）
+                AppLog.Write("DriverBridge", "睡眠恢复: PawnIO 驱动持久，无需重连");
 
                 // NVAPI 也需要重新初始化（GPU 驱动可能在睡眠后重新加载）
                 var nv = app.Services.GetRequiredService<NvapiGpuController>();
@@ -265,8 +287,17 @@ async System.Threading.Tasks.Task RestoreComputeSettings(string tag)
             catch (Exception ex) { Log($"[{tag}] CPU core limit failed: {ex.Message}"); }
         }
 
-        // --- SMU (ryzenadj) — 合并为单次 BatchApply 调用，避免 4 次串行进程启动 ---
-        var smu = app.Services.GetRequiredService<SmuController>();
+        // --- SMU (AmdSmuController) ---
+        Action<uint?, uint?, uint?, uint?, int?> applySmu = (stapmMw, fastMw, slowMw, tempC, coAll) =>
+        {
+            var ctrl = _newSmu.Value;
+            if (ctrl == null) return;
+            if (stapmMw.HasValue) ctrl.SetPowerLimit(stapmMw.Value);
+            if (fastMw.HasValue) ctrl.SetShortPowerLimit(fastMw.Value, slowMw ?? fastMw.Value);
+            if (tempC.HasValue) ctrl.SetTempLimit(tempC.Value);
+            if (coAll.HasValue) ctrl.SetCurveOptimizer(coAll.Value);
+        };
+
         {
             var stapmMw = o.Smu.StapmLimitW.HasValue ? (uint?)(o.Smu.StapmLimitW.Value * 1000) : null;
             var fastMw = o.Smu.ShortPowerLimitW.HasValue ? (uint?)(o.Smu.ShortPowerLimitW.Value * 1000) : null;
@@ -278,9 +309,10 @@ async System.Threading.Tasks.Task RestoreComputeSettings(string tag)
             {
                 try
                 {
-                    smu.BatchApply(stapmMw, fastMw, slowMw, tempC, coAll, null);
+                    applySmu(stapmMw, fastMw, slowMw, tempC, coAll);
                     int smuCount = 0;
                     if (stapmMw.HasValue) { smuCount++; Log($"[{tag}] SMU stapm → {o.Smu.StapmLimitW!.Value}W"); }
+                    if (fastMw.HasValue) { smuCount++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
                     if (fastMw.HasValue) { smuCount++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
                     if (tempC.HasValue) { smuCount++; Log($"[{tag}] SMU temp → {o.Smu.TempLimitC!.Value}°C"); }
                     if (coAll.HasValue) { smuCount++; Log($"[{tag}] SMU CO → {o.Smu.CoAll!.Value}"); }
@@ -641,7 +673,6 @@ app.MapGet("/api/telemetry", (HardwareAbstractionLayer hal, WmiInterface wmi) =>
         thermalMode = wmi.Available ? wmi.GetThermalMode() : hal.ThermalMode,
         powerPlan = hal.PowerPlan,
         touchpadLock = wmi.Available ? wmi.GetTouchpadLock() == 1 : hal.TouchpadLocked,
-        igpuOnly = hal.IgpuOnly,
         gpuMode = wmi.Available ? wmi.GetGpuMode().ToString() : null,
     });
 });
@@ -714,6 +745,20 @@ app.MapGet("/api/health", (HardwareAbstractionLayer hal) =>
     });
 });
 
+// ---- 硬件探测: 平台信息 + 能力集 ----
+app.MapGet("/api/platform/info", (HardwareDetector detector) =>
+{
+    var info = detector.Detect();
+    return Results.Json(new
+    {
+        vendor = info.Vendor,
+        model = info.Model,
+        oem = info.Oem.ToString(),
+        oemBoard = info.OemBoard,
+        capabilities = info.Capabilities,
+    });
+});
+
 // ---- 优雅关闭: 停止内核驱动 + 触发应用退出 ----
 app.MapPost("/api/shutdown", (IHostApplicationLifetime lifetime) =>
 {
@@ -732,7 +777,7 @@ app.Lifetime.ApplicationStopping.Register(() =>
 
 void StopKernelDrivers()
 {
-    string[] services = ["inpoutx64", "WinRing0_1_2_0"];
+    string[] services = []; // v2.0 已由 PawnIO 替代
     foreach (var svc in services)
     {
         try
@@ -786,9 +831,6 @@ app.MapPost("/api/control", (ControlRequest req, HardwareAbstractionLayer hal, W
                         ApplyThermalMode(modeNames[clampedMode]);
                     }
                 }
-                break;
-            case "igpu_only":
-                hal.IgpuOnly = req.Value != 0;
                 break;
             case "gpu_mode":
                 {
@@ -998,38 +1040,40 @@ app.MapGet("/api/ec-scan", (HttpContext ctx, HardwareAbstractionLayer hal) =>
         return Results.Problem(ex.Message, statusCode: 400);
     }
 });
-app.MapPost("/api/smu/set", (SmuController smu, SmuSetRequest req, string? mode = null) =>
+app.MapPost("/api/smu/set", (SmuSetRequest req, HardwareDetector detector, string? mode = null) =>
 {
     try
     {
-        Log($"[smu/set] ← {req.Parameter}={req.ValueM}");
-        int rc;
+        var platform = detector.Detect();
+        Log($"[smu/set] ← {req.Parameter}={req.ValueM} (vendor={platform.Vendor})");
+
+        var ctrl = platform.IsIntel ? (ISmuControl?)_intelSmu.Value : (ISmuControl?)_newSmu.Value;
+        if (ctrl == null)
+            return Results.Json(new { ok = false, error = "SMU 控制器未初始化" });
+
+        int rc = req.Parameter switch
+        {
+            "stapm_limit" or "power_limit" => ctrl.SetPowerLimit((uint)(req.ValueM * 1000)),
+            "short_power_limit" => ctrl.SetShortPowerLimit((uint)(req.ValueM * 1000), (uint)(req.ValueM * 1000)),
+            "tctl_temp" or "temp_limit" => ctrl.SetTempLimit((uint)req.ValueM),
+            "co_all" => ctrl.SetCurveOptimizer(req.ValueM),
+            "turbo_disable" => ctrl.SetTurboDisabled(req.ValueM != 0),
+            _ => -2,
+        };
+
+        if (rc == -2)
+            return Results.Json(new { ok = false, error = "unknown parameter: " + req.Parameter });
+
+        // 持久化
+        var modeVal = req.ValueM;
         switch (req.Parameter)
         {
-            case "stapm_limit":
-            case "power_limit":
-                rc = smu.SetPowerLimit((uint)(req.ValueM * 1000));
-                SavePerfOverrides(o => o.Smu.StapmLimitW = req.ValueM, mode);
-                break;
-            case "short_power_limit":
-                rc = smu.SetShortPowerLimit((uint)(req.ValueM * 1000), (uint)(req.ValueM * 1000));
-                SavePerfOverrides(o => o.Smu.ShortPowerLimitW = req.ValueM, mode);
-                break;
-            case "tctl_temp":
-            case "temp_limit":
-                rc = smu.SetTempLimit((uint)req.ValueM);
-                SavePerfOverrides(o => o.Smu.TempLimitC = req.ValueM, mode);
-                break;
-            case "co_all":
-                rc = smu.SetCurveOptimizer(req.ValueM);
-                SavePerfOverrides(o => o.Smu.CoAll = req.ValueM, mode);
-                break;
-            case "turbo_disable":
-                rc = smu.SetTurboDisabled(req.ValueM != 0);
-                break;
-            default:
-                return Results.Json(new { ok = false, error = "unknown parameter: " + req.Parameter });
+            case "power_limit": SavePerfOverrides(o => o.Smu.StapmLimitW = modeVal, mode); break;
+            case "short_power_limit": SavePerfOverrides(o => o.Smu.ShortPowerLimitW = modeVal, mode); break;
+            case "temp_limit": SavePerfOverrides(o => o.Smu.TempLimitC = modeVal, mode); break;
+            case "co_all": SavePerfOverrides(o => o.Smu.CoAll = modeVal, mode); break;
         }
+
         return Results.Json(new { ok = rc == 0, rc });
     }
     catch (Exception ex)
@@ -1037,19 +1081,41 @@ app.MapPost("/api/smu/set", (SmuController smu, SmuSetRequest req, string? mode 
         return Results.Json(new { ok = false, error = ex.Message });
     }
 });
-app.MapGet("/api/smu/status", (SmuController smu) =>
+app.MapGet("/api/smu/status", (HardwareDetector detector) =>
 {
     try
     {
-        var probe = smu.Probe();
-        var caps = smu.GetCapabilities();
-        return Results.Json(new { ok = true, probe, source = "ryzenadj", capabilities = caps });
+        var platform = detector.Detect();
+
+        if (platform.IsIntel)
+        {
+            var intelCtrl = _intelSmu.Value;
+            var intelProbe = intelCtrl?.Probe() ?? false;
+            return Results.Json(new
+            {
+                ok = true,
+                source = "intel-msr",
+                probe = intelProbe,
+                capabilities = intelCtrl?.GetCapabilities(),
+            });
+        }
+
+        var ctrl = _newSmu.Value;
+        var probe = ctrl?.Probe() ?? false;
+        return Results.Json(new
+        {
+            ok = true,
+            source = "pawnio-amd",
+            probe,
+            capabilities = ctrl?.GetCapabilities(),
+        });
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message, source = "ryzenadj" });
+        return Results.Json(new { ok = false, error = ex.Message });
     }
 });
+
 app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi, HardwareAbstractionLayer hal, string? mode = null) =>
 {
     try
@@ -1521,11 +1587,10 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     }
 
     // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
-    // 注意: 不做 SetFreqLimitAsync(0)。某些 AMD 笔记本更新芯片组驱动后，
-    // 清空频率上限会让 CPPC 自由调度到极低频率（0.5 GHz）。保留前模式的限制更安全。
     if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
     {
         var cpu = app.Services.GetRequiredService<CpuPowerController>();
+        try { await cpu.SetFreqLimitAsync(0); } catch { }
         try { await cpu.SetTurboAsync(true); } catch { }
         try { await cpu.SetCoreLimitAsync(100); } catch { }
         // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
@@ -1998,91 +2063,7 @@ app.MapGet("/api/update/check", async () =>
     }
 });
 
-// ---- 预启动 inpoutx64 内核驱动 ----
-// 必须在任何 inpoutx64.dll 的 DllImport 调用之前执行！
-// 原因：inpoutx64.dll 的 DllMain 在首次加载时会尝试打开 \\.\InpOut64 设备，
-//       如果此时服务未运行，内部变量 bInpOutDriverOpened 会被永久设为 false，
-//       即使之后启动了服务，IsInpOutDriverOpen() 也永远返回 false。
-try
-{
-    var inpCheck = Process.Start(new ProcessStartInfo("sc.exe", "query inpoutx64") { UseShellExecute = false, CreateNoWindow = true });
-    inpCheck?.WaitForExit(2000);
-    if (inpCheck?.ExitCode != 0)
-    {
-        Log("[inpoutx64] 驱动未运行，尝试启动...");
-        // 确保启动类型为 AUTO_START（下次开机自动加载）
-        var cfgSvc = Process.Start(new ProcessStartInfo("sc.exe", "config inpoutx64 start=auto") { UseShellExecute = false, CreateNoWindow = true });
-        cfgSvc?.WaitForExit(2000);
-        // 立即启动驱动服务
-        var startSvc = Process.Start(new ProcessStartInfo("sc.exe", "start inpoutx64") { UseShellExecute = false, CreateNoWindow = true });
-        startSvc?.WaitForExit(3000);
-        // 验证
-        var verify = Process.Start(new ProcessStartInfo("sc.exe", "query inpoutx64") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true });
-        if (verify != null)
-        {
-            var outText = verify.StandardOutput.ReadToEnd();
-            verify.WaitForExit(1000);
-            if (outText.Contains("RUNNING"))
-                Log("[inpoutx64] 驱动启动成功");
-            else
-                Log("[inpoutx64] 驱动启动可能失败: " + outText.Trim());
-        }
-    }
-    else Log("[inpoutx64] 驱动已在运行");
-}
-catch (Exception ex) { Log("[inpoutx64] 预启动异常: " + ex.Message); }
-
-// ---- Auto-load WinRing0 kernel driver for SMU ----
-try
-{
-    var svcName = "WinRing0_1_2_0";
-    var sysPath = Path.Combine(AppContext.BaseDirectory, "WinRing0x64.sys");
-    if (File.Exists(sysPath))
-    {
-        var check = Process.Start(new ProcessStartInfo("sc.exe", "query " + svcName) { UseShellExecute = false, CreateNoWindow = true });
-        check?.WaitForExit(2000);
-        if (check?.ExitCode != 0)
-        {
-            Log("[WinRing0] Driver not loaded, attempting to install...");
-            var create = Process.Start(new ProcessStartInfo("sc.exe", $"create {svcName} type=kernel start=demand binPath=\"{sysPath}\"") { UseShellExecute = false, CreateNoWindow = true });
-            create?.WaitForExit(2000);
-            var start = Process.Start(new ProcessStartInfo("sc.exe", "start " + svcName) { UseShellExecute = false, CreateNoWindow = true });
-            start?.WaitForExit(2000);
-            var verify = Process.Start(new ProcessStartInfo("sc.exe", "query " + svcName) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true });
-            if (verify != null)
-            {
-                var outText = verify.StandardOutput.ReadToEnd();
-                verify.WaitForExit(1000);
-                if (outText.Contains("RUNNING"))
-                    Log("[WinRing0] Driver loaded OK");
-                else
-                    Log("[WinRing0] Driver load FAILED - SMU control unavailable");
-            }
-        }
-        else Log("[WinRing0] Driver already loaded");
-    }
-    else Log("[WinRing0] WinRing0x64.sys not found at " + sysPath);
-}
-catch (Exception ex) { Log("[WinRing0] Error: " + ex.Message); }
-
-// ---- LHM 初始化（WinRing0 加载之后）----
-LhmSensor.Open();
-
-// ---- DriverBridge 冷启动重试（安全网） ----
-// 正常情况下 inpoutx64 已在预启动阶段启动，这里只是兜底
-if (!DriverBridge.Instance.Ready)
-{
-    Log("[DriverBridge] inpoutx64 首次初始化未成功，尝试最后补救...");
-    try
-    {
-        var startSvc = Process.Start(new ProcessStartInfo("sc.exe", "start inpoutx64") { UseShellExecute = false, CreateNoWindow = true });
-        startSvc?.WaitForExit(3000);
-    }
-    catch (Exception ex) { Log($"[DriverBridge] inpoutx64 补救异常: {ex.Message}"); }
-    Log("[DriverBridge] 重试初始化，等待最多 5 秒...");
-    DriverBridge.Instance.RetryInit(5000);
-    Log($"[DriverBridge] 重试结果: Ready={DriverBridge.Instance.Ready}");
-}
+// ---- 旧版驱动已由 PawnIO 替代，不再预启动 ----
 
 // ---- OSD API ----
 app.MapPost("/api/osd/show", (OsdShowRequest req, OsdService osd) =>

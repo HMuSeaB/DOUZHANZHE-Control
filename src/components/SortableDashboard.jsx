@@ -17,6 +17,8 @@ import SliderRow from "./ui/SliderRow";
 import Sparkline from "./ui/Sparkline";
 import SortableCard from "./ui/SortableCard";
 import PerformancePanel from "./panels/PerformancePanel";
+import IntelCpuPanel from "./panels/IntelCpuPanel";
+import IntelPowerPanel from "./panels/IntelPowerPanel";
 import SettingsPanel from "./panels/SettingsPanel";
 import { getFanRange, applyHardwareControl, startFanCurve, stopFanCurve, reapplyOverrides } from "../services/uxtuAdapter";
 import { useCardOrder } from "./../hooks/useCardOrder";
@@ -43,6 +45,7 @@ export default function SortableDashboard({
   fanCurveActive, onFanCurveStop,
   overrides, saveOverride,
   switching,
+  platformInfo, // { vendor: "AMD"|"Intel", ... } from /api/platform/info
 }) {
   const toast = useToast();
 
@@ -264,9 +267,13 @@ export default function SortableDashboard({
           </Card>
         );
       case "cpu-adjust":
-        return <PerformancePanel showCpu={true} showGpu={false} showPower={false} switching={switching} settings={settings} setSettings={setSettings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(cpuFreqKeys)}/>;
+        return platformInfo?.vendor === "Intel"
+          ? <IntelCpuPanel switching={switching} settings={settings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(cpuFreqKeys)}/>
+          : <PerformancePanel showCpu={true} showGpu={false} showPower={false} switching={switching} settings={settings} setSettings={setSettings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(cpuFreqKeys)}/>;
       case "cpu-power":
-        return <PerformancePanel showCpu={false} showGpu={false} showPower={true} switching={switching} settings={settings} setSettings={setSettings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(cpuPowerKeys)}/>;
+        return platformInfo?.vendor === "Intel"
+          ? <IntelPowerPanel switching={switching} settings={settings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(cpuPowerKeys)}/>
+          : <PerformancePanel showCpu={false} showGpu={false} showPower={true} switching={switching} settings={settings} setSettings={setSettings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(cpuPowerKeys)}/>;
       case "gpu-adjust":
         return <PerformancePanel showCpu={false} showPower={false} gpuMode={telemetry?.savedGpuMode ?? parseInt(telemetry?.gpuMode ?? "1")} switching={switching} settings={settings} setSettings={setSettings} uxtuParams={uxtuParams} setUxtuParams={setUxtuParams} overrides={overrides} saveOverride={saveOverride} editMode={editMode} customLabel={customLabel(gpuKeys)}/>;
       case "keyboard-light":

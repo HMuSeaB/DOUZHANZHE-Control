@@ -48,6 +48,16 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("douzhanzhe_active_tab", activeTab); } catch {}
   }, [activeTab]);
+
+  // ── 平台信息 ──
+  const [platformInfo, setPlatformInfo] = useState(null);
+  useEffect(() => {
+    fetch("/api/platform/info")
+      .then(r => r.json())
+      .then(setPlatformInfo)
+      .catch(() => {});
+  }, []);
+
   // 同步主题类到 body，使 body { background: var(--bg) } 等 CSS 变量生效
   useEffect(() => { document.body.className = theme; }, [theme]);
 
@@ -178,7 +188,8 @@ export default function App() {
             editMode={editMode}
             fanCurveActive={fanCurveActive}
             onFanCurveStop={() => setFanCurveActive(false)}
-            switching={switching} />
+            switching={switching}
+            platformInfo={platformInfo} />
           )}
           {activeTab === "system" && <SystemInfoPanel />}
           {activeTab === "settings" && (

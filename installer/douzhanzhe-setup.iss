@@ -403,7 +403,10 @@ Name: "autostart"; Description: "开机自动启动（后台运行）(&A)"; Grou
 [Files]
 ; API + Shell + 前端 (已合并到同一目录)
 Source: "..\dist\publish\api\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; \
-  Excludes: "*.pdb,_bak\*,bin_temp\*,config\*"
+  Excludes: "*.pdb,_bak\*,bin_temp\*,config\*,inpoutx64.dll"
+; PawnIO 驱动安装包
+Source: "..\dist\publish\api\PawnIO_setup.exe"; DestDir: "{app}"; Flags: ignoreversion; \
+  Check: IsAdminLoggedOn
 ; 配置文件不再预装 — API 在首次启动时按需创建（带安全默认值）
 
 [Icons]
@@ -412,6 +415,17 @@ Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; 安装 PawnIO 内核驱动（静默，不重启）
+Filename: "{app}\PawnIO_setup.exe"; Parameters: "-install -silent"; \
+  StatusMsg: "正在安装 PawnIO 内核驱动..."; Flags: runascurrentuser; Check: IsAdminLoggedOn
+; 清理旧版驱动（已由 PawnIO 替代）
+Filename: "{sys}\sc.exe"; Parameters: "stop inpoutx64"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
+Filename: "{sys}\sc.exe"; Parameters: "delete inpoutx64"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
+Filename: "{sys}\sc.exe"; Parameters: "stop WinRing0_1_2_0"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
+Filename: "{sys}\sc.exe"; Parameters: "delete WinRing0_1_2_0"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
+Filename: "{sys}\cmd.exe"; Parameters: "/c del /q ""{app}\inpoutx64.dll"" 2>nul"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
+Filename: "{sys}\cmd.exe"; Parameters: "/c del /q ""{app}\WinRing0x64.*"" 2>nul"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
+Filename: "{sys}\cmd.exe"; Parameters: "/c del /q ""{app}\ryzenadj.exe"" 2>nul"; Flags: runascurrentuser skipifsilent; Check: IsAdminLoggedOn
 ; 安装完成后启动程序（继承安装程序的管理员权限，避免双重 UAC 弹窗）
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 {#MyAppName}"; \
   Flags: nowait postinstall skipifsilent runascurrentuser

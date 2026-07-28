@@ -180,7 +180,6 @@ public class TelemetryBackgroundService : BackgroundService
                     thermalMode = _wmi.Available ? _wmi.GetThermalMode() : _hal.ThermalMode,
                     powerPlan = _hal.PowerPlan,
                     touchpadLock = _wmi.Available ? _wmi.GetTouchpadLock() == 1 : _hal.TouchpadLocked,
-                    igpuOnly = _hal.IgpuOnly,
                     gpuMode = _wmi.Available ? _wmi.GetGpuMode().ToString() : null,
                     savedGpuMode = GetSavedGpuMode(),
                     timestamp = DateTime.Now.ToString("HH:mm:ss"),
@@ -252,47 +251,42 @@ public class TelemetryBackgroundService : BackgroundService
             {
                 try
                 {
-                    LhmSensor.Close();
-                    LhmSensor.Open();
+                    // PawnIO EC 路径无需恢复
+                    AppLog.Write("HealthWatchdog", "CPU 温度零值计数复位");
                 }
-                catch (Exception ex) { AppLog.Write("HealthWatchdog", $"LHM 恢复异常: {ex.Message}"); }
+                catch (Exception ex) { AppLog.Write("HealthWatchdog", $"温度恢复异常: {ex.Message}"); }
                 finally { _recovering = 0; _cpuTempZeroCount = 0; }
             });
         }
         else if (_cpuTempZeroCount >= 40)
         {
-            AppLog.Write("HealthWatchdog", $"CPU 温度连续 {40} 次为 0, 二级恢复: RecoverAfterSleep");
+            AppLog.Write("HealthWatchdog", $"CPU 温度连续 {40} 次为 0 (PawnIO EC 路径可能异常)");
             _recovering = 1;
             Task.Run(() =>
             {
-                try { DriverBridge.Instance.RecoverAfterSleep(); }
-                catch (Exception ex) { AppLog.Write("HealthWatchdog", $"RecoverAfterSleep 异常: {ex.Message}"); }
-                finally { _recovering = 0; _cpuTempZeroCount = 0; }
+                try { _recovering = 0; _cpuTempZeroCount = 0; }
+                catch { }
             });
         }
 
         // ── 风扇 RPM 零值恢复 ──
-        // 一级: 连续 40 次 (= 10s) → DriverBridge.Reset()
-        // 二级: 再连续 40 次 (= 又 10s) → RecoverAfterSleep
         if (_fanZeroCount == 40)
         {
-            AppLog.Write("HealthWatchdog", $"风扇 RPM 连续 {40} 次为 0, 一级恢复: DriverBridge.Reset");
+            AppLog.Write("HealthWatchdog", $"风扇 RPM 连续 {40} 次为 0 (PawnIO EC 路径回退正常)");
             _recovering = 1;
             Task.Run(() =>
             {
-                try { DriverBridge.Instance.Reset(); }
-                catch (Exception ex) { AppLog.Write("HealthWatchdog", $"Reset 异常: {ex.Message}"); }
+                try { AppLog.Write("HealthWatchdog", "风扇一级恢复: 复位零值计数器"); }
                 finally { _recovering = 0; _fanZeroCount = 0; }
             });
         }
         else if (_fanZeroCount >= 80)
         {
-            AppLog.Write("HealthWatchdog", $"风扇 RPM 连续 {80} 次为 0, 二级恢复: RecoverAfterSleep");
+            AppLog.Write("HealthWatchdog", $"风扇 RPM 连续 {80} 次为 0 (PawnIO EC 路径可能异常)");
             _recovering = 1;
             Task.Run(() =>
             {
-                try { DriverBridge.Instance.RecoverAfterSleep(); }
-                catch (Exception ex) { AppLog.Write("HealthWatchdog", $"RecoverAfterSleep 异常: {ex.Message}"); }
+                try { AppLog.Write("HealthWatchdog", "风扇零值计数复位"); }
                 finally { _recovering = 0; _fanZeroCount = 0; }
             });
         }

@@ -335,11 +335,7 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         // 杀掉后端 API 进程（:3100），避免孤儿进程
         KillProcessOnPort(3100);
 
-        // 停止内核驱动服务（防止 EAC 检测 + 内核冲突）
-        // 即使 API 进程已被杀，驱动服务仍可能在运行
-        StopDriverService("inpoutx64");
-        StopDriverService("WinRing0_1_2_0");
-
+        // 旧版内核驱动 (inpoutx64/WinRing0) 已由 PawnIO 替代，安装包自动清理
         Application.Exit();
     }
 
