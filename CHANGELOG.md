@@ -40,18 +40,6 @@ PawnIO 内核驱动迁移 + Intel 平台支持 + 架构重构
 - **旧端点**: /api/uxtu/apply, /api/smu/probe, /api/smu/api-type, /api/ryzenadj/info, /api/custom-params 全部移除
 - **旧文档**: 16 个过时/归档文件移入 docs/archive/
 
-### 移除
-
-- **inpoutx64 驱动**: EC IO、物理内存读写、IO 端口访问全部移除
-- **WinRing0 驱动**: SMU 物理地址直写不再需要
-- **ryzenadj.exe**: 子进程管理 + BatchApply + 崩溃抑制全部移除
-- **SmuController.cs**: 旧 ryzenadj 封装体
-- **LhmSensor.cs**: LibreHardwareMonitor 封装
-- **KaronOC.dll**: 已在 2.0 pre-release 中移除，NVAPI P/Invoke 直调完成
-- **AppBridge**: igpu_only 控制通道移除
-- **旧端点**: /api/uxtu/apply, /api/smu/probe, /api/smu/api-type, /api/ryzenadj/info, /api/custom-params 全部移除
-- **旧文档**: 16 个过时/归档文件移入 docs/archive/
-
 # Changelog
 
 该项目所有重要变更均会记录在此文件中。
