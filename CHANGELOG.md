@@ -5,7 +5,56 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
-## [2.0.0] — 2026-06-22
+## [2.0.0] — 2026-07-28
+
+PawnIO 内核驱动迁移 + Intel 平台支持 + 架构重构
+
+### 重大变更
+
+- **PawnIO 替代 inpoutx64 + WinRing0**: 单一内核驱动替代此前三个独立驱动。EC IO 通过 LpcACPIEC.bin、AMD SMU 通过 RyzenSMU.bin、Intel MSR 通过 IntelMSR.bin。移除 ReadPhys/WritePhys/WriteBit 等所有物理内存直写操作
+- **RyzenAdj 移除**: SMU 控制从 ryzenadj.exe 子进程 + WinRing0 改为 PawnIO RyzenSMU.bin 原生 mailbox 协议，使用 AmdSmuController 替代旧 SmuController。移除 ~300 行子进程管理代码
+- **LibreHardwareMonitor 移除**: CPU 温度不再依赖 LHM SMN 总线，统一走 EC IO 0x1C。移除 LhmSensor 封装。移除所有传感器热插拔逻辑
+- **驱动初始化简化**: DriverBridge 从 ~400 行精简为 ~140 行（仅保留 EcRead/EcWrite/InitPawnIO 三个方法）。移除 RecoverAfterSleep/Reset/RetryInit/WaitEcReady 等容错重试
+- **Intel 平台支持**: 新增 IntelPowerController（IntelMSR.bin PL1/PL2 控制）、IntelCpuPanel/IntelPowerPanel 前端组件。/api/platform/info 自动检测 vendor 分发 UI
+
+### 新增
+
+- **性能参数持久化 + 模式切换服务端原子化**: 新增 /api/overrides 系列端点替代旧 localStorage 按模式存 key。启动时从服务端加载，模式切换由后端单端点完成（thermal_mode + GPU/NVAPI/CPU 重置 + RestoreAllPerfSettings），前端 SwitchingOverlay 遮罩 5 秒超时解锁
+- **Custom Fan Curve**: 独立标签页，SVG 12 点拖拽编辑，后端 FanCurveService 定时写入。仪表盘风扇卡片显示启停状态和闪烁运行指示
+- **Game Profile Auto-Switch**: 游戏进程自动切换性能模式，Steam/Epic 扫描，CRUD 管理
+- **Custom Background**: 本地图片上传作为界面背景，透明度/遮罩色调节
+- **Hotkey Customization**: 快捷键数据驱动架构，支持录制自定义组合键
+- **OSD Notifications**: 模式切换时屏幕居中显示模式主题色提示
+- **Update Check**: 自动检查 GitHub Release 更新
+- **Platform Detection**: /api/platform/info 端点返回 AMD/Intel 供应商信息
+
+### 重构
+
+- **前端状态管理**: 从 localStorage 按模式 key 改为服务端 overrides 驱动；lattenBackendOverrides() 后端嵌套格式 ↔ 前端扁平格式转换；migrateLocalStorageOverrides() 一键迁移旧数据
+- **前端架构**: TelemetryPanel 合并入 SortableDashboard 内联渲染；5 标签页导航（主页/散热曲线/游戏/系统/设置）；移除每模式独立 localStorage 记忆
+- **构建脚本**: installer/build-installer.ps1 只打包 PawnIO_setup.exe 和 dotnet publish 输出；Inno Setup 自动安装 PawnIO 驱动 + 清理旧驱动服务残留
+- **文档全面更新**: dev-backend/architecture/frontend/api 全部按现状重写
+
+### 移除
+
+- **inpoutx64 驱动**: EC IO、物理内存读写、IO 端口访问全部移除
+- **WinRing0 驱动**: SMU 物理地址直写不再需要
+- **ryzenadj.exe**: 子进程管理 + BatchApply + 崩溃抑制全部移除
+- **SmuController.cs**: 旧 ryzenadj 封装体
+- **LhmSensor.cs**: LibreHardwareMonitor 封装
+- **KaronOC.dll**: 已在 2.0 pre-release 中移除，NVAPI P/Invoke 直调完成
+- **AppBridge**: igpu_only 控制通道移除
+- **旧端点**: /api/uxtu/apply, /api/smu/probe, /api/smu/api-type, /api/ryzenadj/info, /api/custom-params 全部移除
+- **旧文档**: 16 个过时/归档文件移入 docs/archive/
+
+# Changelog
+
+该项目所有重要变更均会记录在此文件中。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
+
+## [1.6.11] — 2026-06-22
 
 快捷键系统数据驱动重构 + 模式切换快捷键自定义
 
@@ -20,7 +69,7 @@
 - **模式切换快捷键**: Ctrl+Shift+1~4 对应均衡/野兽/安静/斗战四种性能模式，支持自定义键位，受全局开关控制
 - **快捷键自定义**: 所有快捷键（包括模式切换）均支持录制自定义组合键
 
-## [2.0] — 2026-06-22
+## [1.6.10] — 2026-06-22
 
 EAC 反作弊兼容优化 + 诊断日志增强
 
@@ -39,7 +88,7 @@ EAC 反作弊兼容优化 + 诊断日志增强
 - 新增 `ProcessMonitorService.ActiveGameCount` / `AntiCheatActive` 静态属性
 - 反作弊进程检测独立于游戏规则，始终监控
 
-## [2.0] — 2026-06-22
+## [1.6.9] — 2026-06-22
 
 GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 
@@ -57,7 +106,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 
 - **KaronOC.dll 依赖**: GPU 超频功能不再依赖第三方 KaronOC.dll，改为直接调用 `nvapi64.dll` 原生接口。减少外部依赖、提高兼容性
 
-## [2.0] — 2026-06-21
+## [1.6.7] — 2026-06-21
 
 各模式独立配置持久化 + 配置稳定性修复 + 混合模式外接显示器修复 + 风扇守护 + Shell 崩溃自动恢复
 
@@ -83,7 +132,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 - **GPU 面板智能禁用**: 混合模式下自动禁用核心频率/显存频率调节（这些在混合模式下无效），集显模式下禁用所有 GPU 控件
 - **风扇曲线停止后自动恢复参数**: 关闭自定义风扇曲线后，之前被曲线覆盖的功耗、频率等参数会自动恢复
 
-## [2.0] — 2026-06-18
+## [1.6.0] — 2026-06-18
 
 修复部分用户 CPU 温度始终为 0 的问题（回退寄存器修正）
 
@@ -91,7 +140,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 
 - **CPU 温度 EC 回退寄存器修正**: 1.6.1 引入的 EC 回退使用了错误的寄存器地址 `0xE1`，在部分机器上仍然读不到温度。修正为 v1.4.8 验证过的 `0x1C`（IO 端口协议），并增加 `<128` 上界校验防止读到异常数据
 
-## [2.0] — 2026-06-18
+## [1.6.0] — 2026-06-18
 
 增强 CPU 温度读取诊断 + 三路回退
 
@@ -100,7 +149,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 - **CPU 温度三路回退**: LHM SMN → EC IO 端口协议 (0x62/0x66) → EC 物理内存映射，增加 EC IO 端口读路径
 - **三路诊断日志**: 当三路均返回 0 时，打印每路的具体返回值，便于精确定位哪个环节失效
 
-## [2.0] — 2026-06-18
+## [1.6.0] — 2026-06-18
 
 修复部分用户 CPU 温度始终显示为 0 的问题
 
@@ -114,7 +163,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 - `CpuTemperature` 属性改为 LHM 优先、EC 兜底的双路径架构，与 `GpuTemperature` 的回退策略保持一致
 - EC 回退值增加 `<128` 上界校验，防止读到异常数据
 
-## [2.0] — 2026-06-18
+## [1.6.0] — 2026-06-18
 
 游戏进程自动切换性能模式 + OSD 切换提示
 
@@ -142,7 +191,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 - 新增 `/api/osd/show` API 端点，支持自定义 OSD 消息
 - 游戏扫描通过 Steam `libraryfolders.vdf` + `appmanifest_*.acf` 和 Epic `Manifests/*.item` 自动发现已安装游戏，智能定位主 exe
 
-## [2.0] — 2026-06-18
+## [1.6.4] — 2026-06-18
 
 修复开机自启风扇转速归零 + 待机自动关机
 
@@ -156,7 +205,7 @@ GPU 超频修复 (移除 KaronOC.dll 依赖) + 运行状态遥测日志
 - **驱动初始化诊断**: Init() 增加详细日志（DLL 路径、设备打开状态、耗时），方便排查底层驱动加载问题
 - **遥测冷启动预热**: 后台遥测服务启动后等待 2 秒再开始采集，避免驱动尚未就绪时触发 HealthWatchdog 误判
 
-## [2.0.0] — 2026-06-17
+## [1.5.0] — 2026-06-17
 
 遥测稳定性优化 + 模式切换参数同步修复
 
