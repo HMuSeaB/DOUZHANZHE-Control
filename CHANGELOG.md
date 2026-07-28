@@ -19,21 +19,26 @@ PawnIO 内核驱动迁移 + Intel 平台支持 + 架构重构
 
 ### 新增
 
-- **性能参数持久化 + 模式切换服务端原子化**: 新增 /api/overrides 系列端点替代旧 localStorage 按模式存 key。启动时从服务端加载，模式切换由后端单端点完成（thermal_mode + GPU/NVAPI/CPU 重置 + RestoreAllPerfSettings），前端 SwitchingOverlay 遮罩 5 秒超时解锁
-- **Custom Fan Curve**: 独立标签页，SVG 12 点拖拽编辑，后端 FanCurveService 定时写入。仪表盘风扇卡片显示启停状态和闪烁运行指示
-- **Game Profile Auto-Switch**: 游戏进程自动切换性能模式，Steam/Epic 扫描，CRUD 管理
-- **Custom Background**: 本地图片上传作为界面背景，透明度/遮罩色调节
-- **Hotkey Customization**: 快捷键数据驱动架构，支持录制自定义组合键
-- **OSD Notifications**: 模式切换时屏幕居中显示模式主题色提示
-- **Update Check**: 自动检查 GitHub Release 更新
-- **Platform Detection**: /api/platform/info 端点返回 AMD/Intel 供应商信息
+- **Intel 平台支持**: 新增 IntelPowerController（IntelMSR.bin PL1/PL2 控制）、IntelCpuPanel/IntelPowerPanel 前端组件。`/api/platform/info` 自动检测 vendor 分发 UI
+- **小风扇 RPM 寄存器回退扫描**: GpuFanRpm 自动尝试 `0x96/0x9B/0x93/0x98` 四组 EC 寄存器对，兼容 Intel/AMD 不同 EC 布局（修复 Intel 平台小风扇读数始终为 0）
 
 ### 重构
 
-- **前端状态管理**: 从 localStorage 按模式 key 改为服务端 overrides 驱动；lattenBackendOverrides() 后端嵌套格式 ↔ 前端扁平格式转换；migrateLocalStorageOverrides() 一键迁移旧数据
-- **前端架构**: TelemetryPanel 合并入 SortableDashboard 内联渲染；5 标签页导航（主页/散热曲线/游戏/系统/设置）；移除每模式独立 localStorage 记忆
 - **构建脚本**: installer/build-installer.ps1 只打包 PawnIO_setup.exe 和 dotnet publish 输出；Inno Setup 自动安装 PawnIO 驱动 + 清理旧驱动服务残留
-- **文档全面更新**: dev-backend/architecture/frontend/api 全部按现状重写
+- **文档全面更新**: dev-architecture/backend/frontend/api/index/ec-map 全部按现状重写
+- **前端核心数基数**: 全局硬编码 16→按平台分流（AMD 默认 16，Intel 251HX 传 18）
+
+### 移除
+
+- **inpoutx64 驱动**: EC IO、物理内存读写、IO 端口访问全部移除
+- **WinRing0 驱动**: SMU 物理地址直写不再需要
+- **ryzenadj.exe**: 子进程管理 + BatchApply + 崩溃抑制全部移除
+- **SmuController.cs**: 旧 ryzenadj 封装体
+- **LhmSensor.cs**: LibreHardwareMonitor 封装
+- **KaronOC.dll**: 已在 2.0 pre-release 中移除，NVAPI P/Invoke 直调完成
+- **AppBridge**: igpu_only 控制通道移除
+- **旧端点**: /api/uxtu/apply, /api/smu/probe, /api/smu/api-type, /api/ryzenadj/info, /api/custom-params 全部移除
+- **旧文档**: 16 个过时/归档文件移入 docs/archive/
 
 ### 移除
 
