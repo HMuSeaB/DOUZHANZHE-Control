@@ -7,6 +7,7 @@ import {
 } from "../services/uxtuAdapter";
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
+const LS_THEME = "douzhanzhe_theme";
 const LS_SETTINGS = "douzhanzhe_settings";
 
 function loadFromLS(key, defaultValue) {
