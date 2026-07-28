@@ -68,7 +68,7 @@ export default function IntelCpuPanel({
           disabled={paramsLocked} />
         {uxtuParams.cpuFreqLimitEnabled && (
           <SliderRow label="最大频率" value={uxtuParams.cpuFreqLimitMhz}
-            min={2000} max={5100} step={100} unit="MHz"
+            min={2000} max={5500} step={100} unit="MHz"
             isCustom={isC("cpuFreqLimitMhz")}
             onChange={(v) => { update("cpuFreqLimitMhz")(v); queueCpuFreq(v); }} />
         )}
