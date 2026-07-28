@@ -153,7 +153,7 @@ const PARAM_RANGES = {
   cpuShortPptW: { min: 15, max: 140 },
   cpuVoltageOffset: { min: -30, max: 0 },
   cpuFreqLimitMhz: { min: 2000, max: 5500 },
-  cpuCoreLimit: { min: 0, max: 14 },
+  cpuCoreLimit: { min: 0, max: 16 },
   gpuTempLimitC: { min: 60, max: 100 },
   gpuPptLimitW: { min: 30, max: 150 },
   gpuCoreFreqMhz: { min: 1000, max: 3100 },

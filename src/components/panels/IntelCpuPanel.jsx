@@ -78,7 +78,7 @@ export default function IntelCpuPanel({
           disabled={paramsLocked} />
         {uxtuParams.cpuCoreLimit > 0 && (
           <SliderRow label="核心数" value={uxtuParams.cpuCoreLimit}
-            min={2} max={14} step={2} unit="核"
+            min={2} max={16} step={2} unit="核"
             isCustom={isC("cpuCoreLimit")}
             onChange={(v) => { update("cpuCoreLimit")(v); queueCoreLimit(v); }} disabled={paramsLocked} />
         )}
