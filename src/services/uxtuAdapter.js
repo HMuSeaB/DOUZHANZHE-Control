@@ -153,7 +153,7 @@ const PARAM_RANGES = {
   cpuShortPptW: { min: 15, max: 140 },
   cpuVoltageOffset: { min: -30, max: 0 },
   cpuFreqLimitMhz: { min: 2000, max: 5500 },
-  cpuCoreLimit: { min: 0, max: 16 },
+  cpuCoreLimit: { min: 0, max: 18 },
   gpuTempLimitC: { min: 60, max: 100 },
   gpuPptLimitW: { min: 30, max: 150 },
   gpuCoreFreqMhz: { min: 1000, max: 3100 },
@@ -318,7 +318,7 @@ export function flattenBackendOverrides(nested) {
     }
     if (nested.cpu.coreLimitPercent != null && nested.cpu.coreLimitPercent > 0) {
       // 百分比 → 核心数 (假设 16 核)
-      flat.cpuCoreLimit = Math.round(nested.cpu.coreLimitPercent * 16 / 100);
+      flat.cpuCoreLimit = Math.round(nested.cpu.coreLimitPercent * 18 / 100);
     } else {
       flat.cpuCoreLimit = 0;
     }
@@ -418,7 +418,7 @@ export async function migrateLocalStorageOverrides() {
         cpu: {
           freqLimitMhz: data.cpuFreqLimitEnabled ? (data.cpuFreqLimitMhz ?? null) : null,
           turboEnabled: data.cpuTurboDisabled != null ? !data.cpuTurboDisabled : null,
-          coreLimitPercent: data.cpuCoreLimit > 0 ? Math.round(data.cpuCoreLimit / 16 * 100) : null,
+          coreLimitPercent: data.cpuCoreLimit > 0 ? Math.round(data.cpuCoreLimit / 18 * 100) : null,
         },
         gpu,
         nvapi: {
@@ -580,7 +580,7 @@ export async function reapplyOverrides(mode, overrides) {
     );
   }
   if ("cpuCoreLimit" in overrides) {
-    const pct = overrides.cpuCoreLimit > 0 ? Math.round(overrides.cpuCoreLimit / 16 * 100) : 100;
+    const pct = overrides.cpuCoreLimit > 0 ? Math.round(overrides.cpuCoreLimit / 18 * 100) : 100;
     setCpuCoreLimitPercent(pct, mode).catch(
       e => console.warn("[CPU] core-limit:", e)
     );
