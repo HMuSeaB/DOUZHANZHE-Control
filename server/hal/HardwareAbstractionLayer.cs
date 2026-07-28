@@ -214,20 +214,42 @@ public sealed class HardwareAbstractionLayer : IDisposable
         }
     }
 
+    private static byte _gpuFanRegBase; // 0=未探测
+
     /// <summary>GPU 风扇转速 (RPM) — EC IO 协议 (PawnIO LpcACPIEC.bin)</summary>
     public ushort GpuFanRpm
     {
         get
         {
-            for (int i = 0; i < 3; i++)
+            // 优先走已缓存的寄存器地址
+            if (_gpuFanRegBase != 0)
+                return ReadFanPair(_gpuFanRegBase);
+
+            // 首次: 尝试已知可能的寄存器对，取第一个非零值
+            byte[] candidates = [0x96, 0x9B, 0x93, 0x98];
+            foreach (var baseAddr in candidates)
             {
-                var hi = _io.ReadEc(0x96);
-                var lo = _io.ReadEc(0x97);
-                var val = (ushort)((hi << 8) | lo);
-                if (val != 0) return val;
+                var val = ReadFanPair(baseAddr);
+                if (val != 0)
+                {
+                    _gpuFanRegBase = baseAddr;
+                    return val;
+                }
             }
             return 0;
         }
+    }
+
+    private ushort ReadFanPair(byte baseAddr)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            var hi = _io.ReadEc(baseAddr);
+            var lo = _io.ReadEc((byte)(baseAddr + 1));
+            var val = (ushort)((hi << 8) | lo);
+            if (val != 0) return val;
+        }
+        return 0;
     }
 
     // ================================================================
