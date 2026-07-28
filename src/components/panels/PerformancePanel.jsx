@@ -141,7 +141,7 @@ export default function PerformancePanel({
     clearTimeout(coreTimer.current);
     coreTimer.current = setTimeout(async () => {
       try {
-        const percent = coreCount > 0 ? Math.round(coreCount / 18 * 100) : 100;
+        const percent = coreCount > 0 ? Math.round(coreCount / 16 * 100) : 100;
         await setCpuCoreLimitPercent(percent, latestModeRef.current);
       } catch (err) { console.error("Core limit failed:", err); }
     }, 600);

@@ -303,7 +303,7 @@ export async function syncOverrides(mode, overrides) {
 // ── 后端嵌套格式 → 前端扁平格式 ──
 // 后端 PerformanceOverrides 类使用嵌套结构 (cpu.freqLimitMhz)，
 // 但前端 reapplyOverrides 和 UI 使用扁平格式 (cpuFreqLimitMhz)。
-export function flattenBackendOverrides(nested) {
+export function flattenBackendOverrides(nested, maxCores = 16) {
   if (!nested) return {};
   const flat = {};
 
@@ -317,8 +317,8 @@ export function flattenBackendOverrides(nested) {
       flat.cpuTurboDisabled = !nested.cpu.turboEnabled;
     }
     if (nested.cpu.coreLimitPercent != null && nested.cpu.coreLimitPercent > 0) {
-      // 百分比 → 核心数 (假设 16 核)
-      flat.cpuCoreLimit = Math.round(nested.cpu.coreLimitPercent * 18 / 100);
+      // 百分比 → 核心数（maxCores 默认 16，Intel 251HX 传 18）
+      flat.cpuCoreLimit = Math.round(nested.cpu.coreLimitPercent * maxCores / 100);
     } else {
       flat.cpuCoreLimit = 0;
     }

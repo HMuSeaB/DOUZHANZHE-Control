@@ -6,7 +6,7 @@ import {
   migrateLocalStorageOverrides, flattenBackendOverrides,
 } from "../services/uxtuAdapter";
 
-const LS_THEME = "douzhanzhe_theme";
+let _maxCores = 16; // 模块级缓存，供模式切换使用
 const LS_SETTINGS = "douzhanzhe_settings";
 
 function loadFromLS(key, defaultValue) {
@@ -75,9 +75,16 @@ export function useControlState() {
       } catch (e) {
         log("Startup", `localStorage migration error: ${e.message}`);
       }
+      // 平台检测：确定核心数转换基数
+      let maxCores = 16;
+      try {
+        const plat = await (await fetch("/api/platform/info")).json();
+        if (plat?.vendor === "Intel") maxCores = 18;
+      } catch { /* 后端不可用时默认 16 */ }
+      _maxCores = maxCores;
       try {
         const { mode, overrides: rawOv } = await fetchOverrides();
-        const ov = flattenBackendOverrides(rawOv);
+        const ov = flattenBackendOverrides(rawOv, maxCores);
         setSettings(prev => {
           prevModeRef.current = mode; // 同步 prevModeRef，防止触发 switchMode
           return { ...prev, mode };
@@ -133,7 +140,7 @@ export function useControlState() {
     // thermal_mode + last-mode.json + GPU/NVAPI/CPU 重置 + RestoreAllPerfSettings
     switchMode(currentMode).then(({ overrides: rawOv }) => {
       if (gen !== switchGenRef.current) return; // 丢弃过期响应
-      const ov = flattenBackendOverrides(rawOv);
+      const ov = flattenBackendOverrides(rawOv, _maxCores);
       const fanDefaults = MODE_FAN_DEFAULTS[currentMode] || {};
       setUxtuParams({ ...FULL_PARAMS, ...fanDefaults, ...ov });
       setOverrides(ov);
