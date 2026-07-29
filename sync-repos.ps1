@@ -27,7 +27,7 @@ Push-Location $root
 $hasChanges = git status --porcelain | Select-Object -First 1
 if ($hasChanges) {
     git add -A
-    git commit -m "auto: 编译成功 $timestamp" --allow-empty
+    $files = git diff --cached --name-only | Select-Object -First 10; $filesStr = if ($files) { " (" + ($files -join ", ") + ")" } else { "" }; git commit -m "auto: 编译成功 $timestamp$filesStr"
     Write-Log "主仓库已提交"
 }
 Pop-Location
@@ -39,7 +39,7 @@ if (Test-Path "$docsDir\.git") {
     $hasChanges = git status --porcelain | Select-Object -First 1
     if ($hasChanges) {
         git add -A
-        git commit -m "sync: $timestamp"
+        $files = git diff --cached --name-only | Select-Object -First 10; $filesStr = if ($files) { " (" + ($files -join ", ") + ")" } else { "" }; git commit -m "sync: $timestamp$filesStr"
         git push origin docs 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Log "docs → 私有仓库 (docs 分支)"
@@ -60,7 +60,7 @@ if (Test-Path "$canvasDir\.git") {
     $hasChanges = git status --porcelain | Select-Object -First 1
     if ($hasChanges) {
         git add -A
-        git commit -m "sync: $timestamp"
+        $files = git diff --cached --name-only | Select-Object -First 10; $filesStr = if ($files) { " (" + ($files -join ", ") + ")" } else { "" }; git commit -m "sync: $timestamp$filesStr"
         git push origin canvas 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Log "canvas-workspace → 私有仓库 (canvas 分支)"
@@ -77,3 +77,5 @@ if (Test-Path "$canvasDir\.git") {
 if ($hasError -and -not $Quiet) {
     Write-Host "[sync] 部分推送失败，检查网络或认证" -Foreground Red
 }
+
+
