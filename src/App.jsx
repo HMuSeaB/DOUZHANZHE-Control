@@ -13,7 +13,7 @@ const PAGES = [
 ];
 
 export default function App() {
-  const { theme, backendOnline } = useControlState();
+  const { theme, setTheme, backendOnline } = useControlState();
 
   const [activePage, setActivePage] = useState(() => {
     try { return localStorage.getItem("dz_page") || "dashboard"; } catch { return "dashboard"; }

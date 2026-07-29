@@ -28,7 +28,7 @@ function saveToLS(key, value) {
 export function useControlState() {
 
   // ── Theme ──
-  const [theme, setTheme] = useState(() => loadFromLS(LS_THEME, "dark"));
+  const [theme, setTheme] = useState(() => { var t = loadFromLS(LS_THEME, "dark"); return t === "dark" || t === "light" ? t : "dark"; });
 
   // ── Telemetry + History ──
   const [telemetry, setTelemetry] = useState(mockTelemetry);

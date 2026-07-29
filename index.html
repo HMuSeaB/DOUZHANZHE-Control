@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
     <title>douzhanzhe-console</title>
   </head>
   <body>
-    <script>try{document.body.className=JSON.parse(localStorage.getItem('douzhanzhe_theme'))||'theme-mech-violet'}catch{}</script>
+    <script>try{var t=localStorage.getItem('douzhanzhe_theme');t=t?JSON.parse(t):'dark';document.documentElement.dataset.theme=t==='dark'||t==='light'?t:'dark'}catch{document.documentElement.dataset.theme='dark'}</script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
