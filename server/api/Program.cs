@@ -2278,11 +2278,10 @@ public record CpuTurboRequest(
 public record CpuCoreLimitRequest(
     [property: JsonPropertyName("percent")] int Percent  // 0-100
 );
-public record UiState(string[]? CardOrder, string[]? HiddenCards)
+public record UiState(string? Theme)
 {
-    public UiState() : this(null, null) { }
-    public string[] CardOrder { get; init; } = CardOrder ?? Array.Empty<string>();
-    public string[] HiddenCards { get; init; } = HiddenCards ?? Array.Empty<string>();
+    public UiState() : this((string?)null) { }
+    public string Theme { get; init; } = Theme ?? "dark";
 }
 public record DefaultConfig(string[]? Order, string[]? Hidden)
 {
