@@ -22,6 +22,8 @@ function Write-Warn($msg) {
     if (-not $Quiet) { Write-Host "[sync] $msg" -Foreground Yellow }
 }
 
+Write-Log "检查变更..."
+
 # ── 1. 主仓库 ──
 Push-Location $root
 $hasChanges = git status --porcelain | Select-Object -First 1
@@ -74,8 +76,9 @@ if (Test-Path "$canvasDir\.git") {
     Write-Warn "canvas-workspace/ 未初始化 git，跳过"
 }
 
-if ($hasError -and -not $Quiet) {
+if (-not $hasChanges -and -not $hasError) { Write-Log "全部仓库已同步，无变更" }`r`nif ($hasError -and -not $Quiet) {
     Write-Host "[sync] 部分推送失败，检查网络或认证" -Foreground Red
 }
+
 
 
