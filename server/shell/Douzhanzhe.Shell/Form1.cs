@@ -53,6 +53,7 @@ public partial class Form1 : Form
     private FileSystemWatcher? _hotkeyWatcher;
     private System.Windows.Forms.Timer? _hotkeyPollTimer;
     private DateTime _lastHotkeyConfigWrite = DateTime.MinValue;
+    private FileSystemWatcher? _configWatcher;
 
     // ---- 后端进程守护 ----
     private System.Windows.Forms.Timer? _healthTimer;
@@ -71,6 +72,7 @@ public partial class Form1 : Form
     {
         base.OnHandleCreated(e);
         ApplyDwmAttributes();
+        StartConfigWatcher();
     }
 
     public Form1()
@@ -730,6 +732,25 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     /// 解析 config 目录，与 API 端 Program.cs 使用相同逻辑：
     /// 优先 BaseDirectory/config/，若不存在则回退到项目根目录/config/
     /// </summary>
+    private void StartConfigWatcher()
+    {
+        try
+        {
+            var cfgDir = ResolveConfigDir();
+            _configWatcher = new FileSystemWatcher(cfgDir, "ui-state.json")
+            {
+                EnableRaisingEvents = true,
+                NotifyFilter = NotifyFilters.LastWrite
+            };
+            _configWatcher.Changed += (s, e) =>
+            {
+                try { _configWatcher.EnableRaisingEvents = false; BeginInvoke(ApplyDwmAttributes); } 
+                finally { _configWatcher.EnableRaisingEvents = true; }
+            };
+        }
+        catch { }
+    }
+
     private string ResolveConfigDir()
     {
         var configDir = Path.Combine(AppContext.BaseDirectory, "config");
