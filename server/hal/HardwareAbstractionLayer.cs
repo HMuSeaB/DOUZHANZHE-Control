@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 //
 // HardwareAbstractionLayer (HAL) — 硬件映射与控制层
 // ===================================================
@@ -713,9 +713,65 @@ public sealed class HardwareAbstractionLayer : IDisposable
         if ((DateTime.UtcNow - _sgDiskTime).TotalSeconds < 5) return;
         try
         {
-            var drives = DriveInfo.GetDrives().Where(d => d.IsReady && d.DriveType == DriveType.Fixed);
             long total = 0, used = 0;
-            foreach (var d in drives) { total += d.TotalSize; used += d.TotalSize - d.AvailableFreeSpace; }
+
+            // Step 1: Use Get-Disk to enumerate local disk numbers, exclude iSCSI (BusType=9)
+            var localDiskNums = new System.Collections.Generic.HashSet<int>();
+            using (var p = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo("powershell",
+                    "-NoProfile -Command \"Get-Disk | Where-Object BusType -Ne 9 | Select-Object -ExpandProperty Number\"")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            })
+            {
+                p.Start();
+                if (!p.WaitForExit(5000)) { p.Kill(); return; }
+                var reader = p.StandardOutput.ReadToEnd();
+                foreach (var line in reader.Split(new[] { '\r', '\n' }, System.StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (int.TryParse(line.Trim(), out var num))
+                        localDiskNums.Add(num);
+                }
+            }
+            if (localDiskNums.Count == 0) return;
+
+            // Step 2: Query Win32_LogicalDisk for local fixed drives (DriveType=3)
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT * FROM Win32_LogicalDisk WHERE DriveType=3");
+            foreach (var disk in searcher.Get().Cast<System.Management.ManagementObject>())
+            {
+                var deviceId = disk["DeviceID"]?.ToString();
+                if (string.IsNullOrEmpty(deviceId)) continue;
+
+                // Step 3: Navigate LogicalDisk → Partition → DiskDrive, check disk Index
+                var assocQuery = $"ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{deviceId}'}} " +
+                                 "WHERE AssocClass=Win32_LogicalDiskToPartition";
+                using var assocSearcher = new System.Management.ManagementObjectSearcher(assocQuery);
+                bool onLocalDisk = false;
+                foreach (var part in assocSearcher.Get().Cast<System.Management.ManagementObject>())
+                {
+                    var partPath = part["__PATH"]?.ToString();
+                    if (string.IsNullOrEmpty(partPath)) continue;
+                    var ddQuery = $"ASSOCIATORS OF {{{partPath}}} WHERE AssocClass=Win32_DiskDriveToDiskPartition";
+                    using var ddSearcher = new System.Management.ManagementObjectSearcher(ddQuery);
+                    foreach (var dd in ddSearcher.Get().Cast<System.Management.ManagementObject>())
+                    {
+                        var idx = dd["Index"]?.ToString();
+                        if (idx != null && int.TryParse(idx, out var diskNum) && localDiskNums.Contains(diskNum))
+                            onLocalDisk = true;
+                    }
+                }
+                if (!onLocalDisk) continue;
+
+                long size = Convert.ToInt64(disk["Size"]);
+                long free = Convert.ToInt64(disk["FreeSpace"]);
+                total += size;
+                used += size - free;
+            }
             if (total > 0)
             {
                 _sgDiskTotal = (int)Math.Round(total / (1024.0 * 1024 * 1024));
