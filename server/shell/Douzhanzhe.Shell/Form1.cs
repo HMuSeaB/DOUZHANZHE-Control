@@ -914,7 +914,14 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         try
         {
-            int darkMode = IsWindowsDarkMode() ? 1 : 0;
+            var theme = ReadThemeFromConfig();
+            bool isDark = theme switch
+            {
+                "dark" => true,
+                "light" => false,
+                _ => IsWindowsDarkMode()
+            };
+            int darkMode = isDark ? 1 : 0;
             DwmSetWindowAttribute(this.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
             int cornerPref = DWM_WINDOW_CORNER_ROUND;
             DwmSetWindowAttribute(this.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPref, sizeof(int));
@@ -922,6 +929,28 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             DwmSetWindowAttribute(this.Handle, DWMWA_MICA_TABBED, ref mica, sizeof(int));
         }
         catch { }
+    }
+
+    private string? ReadThemeFromConfig()
+    {
+        try
+        {
+            var cfgDir = ResolveConfigDir();
+            string[] paths = new[] {
+                Path.Combine(cfgDir, "ui-state.json"),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "ui-state.json")),
+            };
+            foreach (var path in paths)
+            {
+                if (!File.Exists(path)) continue;
+                var json = File.ReadAllText(path);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("theme", out var theme))
+                    return theme.GetString();
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static bool IsWindowsDarkMode()
