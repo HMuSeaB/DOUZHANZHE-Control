@@ -736,18 +736,22 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         try
         {
-            var sharedDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "server", "config"));
+            var sharedDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "server", "config"));
             if (!Directory.Exists(sharedDir)) Directory.CreateDirectory(sharedDir);
             _configWatcher = new FileSystemWatcher(sharedDir, "ui-state.json")
             {
                 EnableRaisingEvents = true,
-                NotifyFilter = NotifyFilters.LastWrite
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
             };
-            _configWatcher.Changed += (s, e) =>
+            void OnConfigChanged()
             {
-                try { _configWatcher.EnableRaisingEvents = false; BeginInvoke(ApplyDwmAttributes); } 
+                ShellLog("[DWM] Config file changed, calling ApplyDwmAttributes");
+                try { _configWatcher.EnableRaisingEvents = false; BeginInvoke(ApplyDwmAttributes); }
                 finally { _configWatcher.EnableRaisingEvents = true; }
-            };
+            }
+            _configWatcher.Changed += (s, e) => OnConfigChanged();
+            _configWatcher.Created += (s, e) => OnConfigChanged();
+            _configWatcher.Renamed += (s, e) => OnConfigChanged();
         }
         catch { }
     }
@@ -942,7 +946,7 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         try
         {
-            var theme = ReadThemeFromConfig();
+            var theme = ReadThemeFromConfig(); ShellLog($"[DWM] ApplyDwmAttributes called, theme='{theme}'");
             bool isDark = theme switch
             {
                 "dark" => true,
@@ -966,18 +970,28 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             var cfgDir = ResolveConfigDir();
             string[] paths = new[] {
                 Path.Combine(cfgDir, "ui-state.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "server", "config", "ui-state.json")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "server", "config", "ui-state.json")),
             };
             foreach (var path in paths)
             {
-                if (!File.Exists(path)) continue;
+                ShellLog($"[DWM] ReadThemeFromConfig: checking path={path}");
+                if (!File.Exists(path)) { ShellLog($"[DWM] ReadThemeFromConfig: path NOT FOUND"); continue; }
                 var json = File.ReadAllText(path);
+                ShellLog($"[DWM] ReadThemeFromConfig: file content='{json}'");
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("theme", out var theme))
-                    return theme.GetString();
+                {
+                    var val = theme.GetString();
+                    ShellLog($"[DWM] ReadThemeFromConfig: found theme='{val}'");
+                    return val;
+                }
+                else
+                {
+                    ShellLog($"[DWM] ReadThemeFromConfig: file has no 'theme' property");
+                }
             }
         }
-        catch { }
+        catch (Exception ex) { ShellLog($"[DWM] ReadThemeFromConfig: EXCEPTION {ex.GetType().Name}: {ex.Message}"); }
         return null;
     }
 
