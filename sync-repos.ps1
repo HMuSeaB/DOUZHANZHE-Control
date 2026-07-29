@@ -75,8 +75,8 @@ if (Test-Path "$canvasDir\.git") {
 } else {
     Write-Warn "canvas-workspace/ 未初始化 git，跳过"
 }
-
-if (-not $hasChanges -and -not $hasError) { Write-Log "全部仓库已同步，无变更" }`r`nif ($hasError -and -not $Quiet) {
+if (-not $hasChanges -and -not $hasError) { Write-Log "全部仓库已同步，无变更" }
+if ($hasError -and -not $Quiet) {
     Write-Host "[sync] 部分推送失败，检查网络或认证" -Foreground Red
 }
 
