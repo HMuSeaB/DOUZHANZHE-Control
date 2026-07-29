@@ -151,3 +151,6 @@ server/package-lock.json
 # Duplicate PostCSS config (vite.config.js 已内联 PostCSS 插件配置)
 postcss.config.cjs
 postcss.config.js
+
+# Design prototypes (private repo)
+canvas-workspace/
