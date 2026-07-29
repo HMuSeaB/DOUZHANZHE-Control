@@ -720,7 +720,7 @@ public sealed class HardwareAbstractionLayer : IDisposable
             using (var p = new System.Diagnostics.Process
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo("powershell",
-                    "-NoProfile -Command \"Get-Disk | Where-Object BusType -Ne 9 | Select-Object -ExpandProperty Number\"")
+                    "-NoProfile -Command \"Get-Disk | Where-Object BusType -ne 'iSCSI' | Select-Object -ExpandProperty Number\"")
                 {
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
