@@ -200,3 +200,105 @@ body{
 .theme-toggle .sun{display:none}
 html[data-theme="light"] .theme-toggle .sun{display:block}
 html[data-theme="light"] .theme-toggle .moon{display:none}
+
+/* ============================================================
+   Dashboard — 仪表盘
+   ============================================================ */
+.page.active{display:block;animation:pageIn .32s var(--ease)}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.head-tools{display:flex;gap:8px}
+
+.reveal::after{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
+  transition:opacity var(--dur) var(--ease);
+  background:radial-gradient(220px circle at var(--mx,50%) var(--my,50%),
+      color-mix(in srgb, var(--fg) 9%, transparent), transparent 60%);
+}
+.reveal:hover::after{opacity:1}
+
+.enter{opacity:0;transform:translateY(14px);animation:cardIn .5s var(--ease) forwards}
+@keyframes cardIn{to{opacity:1;transform:none}}
+
+/* 配置切换 Dock */
+.dock{
+  display:flex;align-items:center;gap:14px;
+  padding:14px 18px;margin-bottom:22px;
+}
+.dock .label{font-size:13px;color:var(--fg-2);display:flex;align-items:center;gap:8px;white-space:nowrap}
+.dock .label svg{width:17px;height:17px;color:var(--primary)}
+.dock .modes{display:flex;gap:8px;flex:1}
+.mode-btn{
+  flex:1;border:1px solid var(--stroke);cursor:pointer;
+  background:color-mix(in srgb,var(--surface-2) 70%,transparent);
+  color:var(--fg-2);border-radius:var(--radius-sm);
+  padding:11px 14px;display:flex;align-items:center;gap:10px;
+  transition:all var(--dur) var(--ease);position:relative;overflow:hidden;
+}
+.mode-btn .ico{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:var(--stroke);color:var(--fg-2);transition:all var(--dur) var(--ease)}
+.mode-btn .ico svg{width:17px;height:17px}
+.mode-btn .txt{text-align:left}
+.mode-btn .txt b{display:block;font-size:14px;font-weight:600;color:var(--fg)}
+.mode-btn .txt small{font-size:10.5px;color:var(--fg-3)}
+.mode-btn:hover{border-color:var(--stroke-strong);transform:translateY(-1px)}
+.mode-btn.active{
+  border-color:color-mix(in srgb,var(--primary) 60%,transparent);
+  background:color-mix(in srgb,var(--primary) 14%,var(--surface));
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 40%,transparent),
+             0 6px 18px color-mix(in srgb,var(--primary) 22%,transparent);
+}
+.mode-btn.active .ico{background:var(--primary);color:var(--primary-fg);box-shadow:0 0 14px color-mix(in srgb,var(--primary) 60%,transparent)}
+.mode-btn.active .txt small{color:var(--fg-2)}
+
+/* 传感器网格 */
+.grid{display:grid;gap:var(--sp)}
+.grid.sensors{grid-template-columns:repeat(3,1fr);margin-bottom:16px}
+
+.sensor{padding:18px}
+.sensor .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.sensor .top .name{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px}
+.sensor .top .name .chip{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--primary) 16%,transparent);color:var(--primary)}
+.sensor .top .name .chip svg{width:17px;height:17px}
+.sensor .top .live{font-size:10px;color:var(--ok);display:flex;align-items:center;gap:5px}
+.sensor .top .live .d{width:6px;height:6px;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.ring-wrap{display:flex;align-items:center;gap:16px}
+.ring{width:78px;height:78px;flex-shrink:0;position:relative}
+.ring svg{transform:rotate(-90deg)}
+.ring .val{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;
+  white-space:nowrap;line-height:1;letter-spacing:-.2px}
+.ring .val small{font-size:12px;color:var(--fg-3);font-weight:500;margin-left:1px}
+.sensor .meta{flex:1}
+
+.metric-row{display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;
+  padding-top:12px;border-top:1px solid var(--stroke)}
+.metric-row .k{font-size:12px;color:var(--fg-3)}
+.metric-row .v{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* 温度色彩 */
+.t-ok{color:var(--ok)} .t-warn{color:var(--warn)} .t-danger{color:var(--danger)}
+
+/* 风扇卡片 */
+.fan-card{padding:20px}
+.fan-card .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.fan-card .head .t{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px}
+.fan-card .head .t .chip{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.fan-card .head .t .chip svg{width:17px;height:17px}
+.fan-row{display:grid;grid-template-columns:96px 1fr 130px;align-items:center;gap:16px;padding:11px 0}
+.fan-row + .fan-row{border-top:1px solid var(--stroke)}
+.fan-row .fname{font-size:13px;color:var(--fg-2);display:flex;align-items:center;gap:8px}
+.fan-row .fname svg{width:18px;height:18px;color:var(--fg-3);animation:spin 2.4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.bar{height:8px;border-radius:6px;background:var(--stroke);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:6px;
+  background:linear-gradient(90deg,var(--primary),var(--accent));
+  transition:width .5s var(--ease)}
+.fan-row .rpm{text-align:right;font-variant-numeric:tabular-nums}
+.fan-row .rpm b{font-size:15px}
+.fan-row .rpm small{display:block;font-size:11px;color:var(--fg-3)}
+.fan-foot{display:flex;justify-content:flex-end;margin-top:16px}
