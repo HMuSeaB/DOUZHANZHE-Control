@@ -645,10 +645,13 @@ export async function fetchUiState() {
   return res.json();
 }
 export async function saveUiState(state) {
+  var existing;
+  try { existing = await fetchUiState(); } catch { existing = {}; }
+  var merged = { ...existing, ...state };
   const res = await fetch("/api/ui-state", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state),
+    body: JSON.stringify(merged),
   });
   if (!res.ok) throw new Error("ui-state returned " + res.status);
   return res.json();
