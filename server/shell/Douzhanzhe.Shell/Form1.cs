@@ -736,8 +736,9 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         try
         {
-            var cfgDir = ResolveConfigDir();
-            _configWatcher = new FileSystemWatcher(cfgDir, "ui-state.json")
+            var sharedDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "server", "config"));
+            if (!Directory.Exists(sharedDir)) Directory.CreateDirectory(sharedDir);
+            _configWatcher = new FileSystemWatcher(sharedDir, "ui-state.json")
             {
                 EnableRaisingEvents = true,
                 NotifyFilter = NotifyFilters.LastWrite
@@ -750,7 +751,6 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         }
         catch { }
     }
-
     private string ResolveConfigDir()
     {
         var configDir = Path.Combine(AppContext.BaseDirectory, "config");
@@ -966,7 +966,7 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             var cfgDir = ResolveConfigDir();
             string[] paths = new[] {
                 Path.Combine(cfgDir, "ui-state.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "config", "ui-state.json")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "server", "config", "ui-state.json")),
             };
             foreach (var path in paths)
             {
