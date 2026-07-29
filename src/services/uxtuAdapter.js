@@ -1,4 +1,4 @@
-const BACKEND = "";
+﻿const BACKEND = "";
 
 // 统一日志: 同时写入后端 AppLog (tag=UI) 和浏览器 console
 export function log(tag, msg) {
@@ -635,6 +635,22 @@ export async function reapplyOverrides(mode, overrides) {
 export async function monitorOff() {
   const res = await fetch("/api/monitor/off", { method: "POST" });
   if (!res.ok) throw new Error("monitor off returned " + res.status);
+  return res.json();
+}
+
+// ── UI State (后端持久化) ──
+export async function fetchUiState() {
+  const res = await fetch("/api/ui-state");
+  if (!res.ok) throw new Error("ui-state returned " + res.status);
+  return res.json();
+}
+export async function saveUiState(state) {
+  const res = await fetch("/api/ui-state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(state),
+  });
+  if (!res.ok) throw new Error("ui-state returned " + res.status);
   return res.json();
 }
 

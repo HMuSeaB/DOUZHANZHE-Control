@@ -4,10 +4,11 @@ import {
   createTelemetrySocket, FULL_PARAMS, MODE_FAN_DEFAULTS,
   fetchOverrides, switchMode, syncOverrides, log,
   migrateLocalStorageOverrides, flattenBackendOverrides,
+  fetchUiState, saveUiState,
 } from "../services/uxtuAdapter";
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
-const LS_THEME = "douzhanzhe_theme";
+
 const LS_SETTINGS = "douzhanzhe_settings";
 
 function loadFromLS(key, defaultValue) {
@@ -28,7 +29,7 @@ function saveToLS(key, value) {
 export function useControlState() {
 
   // ── Theme ──
-  const [theme, setTheme] = useState(() => { var t = loadFromLS(LS_THEME, "dark"); return t === "dark" || t === "light" ? t : "dark"; });
+  const [theme, setTheme] = useState("dark");
 
   // ── Telemetry + History ──
   const [telemetry, setTelemetry] = useState(mockTelemetry);
@@ -109,10 +110,13 @@ export function useControlState() {
     setUxtuParams({ ...FULL_PARAMS, ...fanDefaults });
   }, []);
 
-  // 持久化 theme + settings
-  useEffect(() => { saveToLS(LS_THEME, theme); }, [theme]);
-  useEffect(() => { saveToLS(LS_SETTINGS, settings); }, [settings]);
+  // 从后端加载 UI 状态
+  useEffect(() => { (async () => { try { var st = await fetchUiState(); if (st.theme) setTheme(st.theme); } catch {} })(); }, []);
 
+  // 持久化 settings
+  useEffect(() => { saveToLS(LS_SETTINGS, settings); }, [settings]);
+  // theme 同步到后端
+  useEffect(() => { (async () => { try { await saveUiState({ theme }); } catch {} })(); }, [theme]);
   // ── 模式切换: 立即发送后端请求，切换期间禁用 UI 防止竞争写入 ──
   const prevModeRef = useRef(settings.mode);
   const switchGenRef = useRef(0);
