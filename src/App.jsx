@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useControlState } from "./hooks/useControlState";
 import Dashboard from "./pages/Dashboard";
 
@@ -13,7 +13,7 @@ const PAGES = [
 ];
 
 export default function App() {
-  const { theme } = useControlState();
+  const { theme, backendOnline } = useControlState();
 
   const [activePage, setActivePage] = useState(() => {
     try { return localStorage.getItem("dz_page") || "dashboard"; } catch { return "dashboard"; }
@@ -32,7 +32,7 @@ export default function App() {
     <div className="app">
       {/* 全局工具栏 */}
       <header className="toolbar">
-        <span className="env-pill"><span className="dot"></span>后端已连接</span>
+        <span className="env-pill"><span className="dot" data-online={backendOnline}></span>{backendOnline ? "后端已连接" : "后端离线"}</span>
         <div className="spacer"></div>
         <button className="theme-toggle" onClick={() =>
           document.documentElement.setAttribute('data-theme',

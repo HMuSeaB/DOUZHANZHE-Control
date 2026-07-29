@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { mockTelemetry } from "../data/mockTelemetry";
 import {
   createTelemetrySocket, FULL_PARAMS, MODE_FAN_DEFAULTS,
@@ -256,5 +256,6 @@ export function useControlState() {
     saveOverride: saveOverrideFn,
     resetParams,
     switching,
+    backendOnline,
   };
 }

@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    Fluent Design Token System
    ============================================================ */
 :root{
@@ -112,13 +112,13 @@ body{
   border:1px solid var(--stroke);border-radius:999px;
   padding:3px 10px;display:flex;align-items:center;gap:6px;
 }
-.env-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.env-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}.env-pill .dot[data-online=false]{background:var(--fg-3);box-shadow:none}
 .env-pill{
   font-size:11px;color:var(--fg-2);
   border:1px solid var(--stroke);border-radius:999px;
   padding:3px 10px;display:flex;align-items:center;gap:6px;
 }
-.env-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.env-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}.env-pill .dot[data-online=false]{background:var(--fg-3);box-shadow:none}
 .win-btns{display:flex;-webkit-app-region:no-drag}
 .win-btns button{
   width:40px;height:36px;border:0;background:transparent;color:var(--fg-2);
