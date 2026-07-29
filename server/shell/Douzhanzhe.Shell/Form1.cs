@@ -694,6 +694,13 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                 }
             }
         }
+        const int WM_SETTINGCHANGE = 0x001A;
+        if (m.Msg == WM_SETTINGCHANGE && m.LParam != IntPtr.Zero)
+        {
+            string area = Marshal.PtrToStringAuto(m.LParam);
+            if (area == "ImmersiveColorSet")
+                BeginInvoke(ApplyDwmAttributes);
+        }
         base.WndProc(ref m);
     }
 
