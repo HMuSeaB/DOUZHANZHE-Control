@@ -76,15 +76,15 @@ app.UseStaticFiles(new StaticFileOptions
 app.MapFallbackToFile("index.html");
 // ---- Config directory (shared with Node.js) ----
 // 安装环境: AppContext.BaseDirectory\config\
-// 开发环境: BaseDirectory\bin\build\ → 需要回退到项目根目录\config\
+// 开发环境: 统一使用 shared config (server/config/)
+// 安装环境: AppContext.BaseDirectory\config\
+// 开发环境: 统一使用 shared config (server/config/)
 var configDir = Path.Combine(AppContext.BaseDirectory, "config");
-if (!Directory.Exists(configDir))
-{
-    var devConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "config"));
-    if (Directory.Exists(devConfig))
-        configDir = devConfig;
-}
-Directory.CreateDirectory(configDir);
+var sharedConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "config"));
+if (Directory.Exists(sharedConfig))
+    configDir = sharedConfig;
+else if (!Directory.Exists(configDir))
+    Directory.CreateDirectory(configDir);
 
 // ---- File logger (统一走 AppLog) ----
 void Log(string msg)

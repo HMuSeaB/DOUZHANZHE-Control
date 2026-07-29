@@ -19,7 +19,7 @@ export default defineConfig({
       "/api/ryzenadj": { target: "http://localhost:3099", changeOrigin: true },
       "/api/fan": { target: "http://localhost:3099", changeOrigin: true },
       "/api/custom-params": { target: "http://localhost:3099", changeOrigin: true },
-      "/api/ui-state": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/ui-state": { target: "http://localhost:3100", changeOrigin: true },
       "/api/default-config": { target: "http://localhost:3099", changeOrigin: true },
     },
     watch: {
