@@ -1,27 +1,29 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from 'tailwindcss'
-import autoprefixer from 'autoprefixer'
-import { readFileSync } from 'fs'
-
-const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 // https://vite.dev/config/
 export default defineConfig({
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react()],
-  css: {
-    postcss: {
-      plugins: [
-        tailwindcss,
-        autoprefixer,
-      ],
-    },
-  },
   server: {
+    port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:3100',
-      '/ws': { target: 'ws://127.0.0.1:3100', ws: true },
+      // C# HAL 后端 — 遥测 + 硬件控制
+      "/api/telemetry": { target: "http://localhost:3100", changeOrigin: true },
+      "/api/control": { target: "http://localhost:3100", changeOrigin: true },
+      "/api/health": { target: "http://localhost:3100", changeOrigin: true },
+      "/api/discover": { target: "http://localhost:3100", changeOrigin: true },
+      "/ws": { target: "ws://localhost:3100", ws: true },
+      // Node.js 后端 — UI 持久化 + SMU + 遗留端点
+      "/api/uxtu": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/system": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/ryzenadj": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/fan": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/custom-params": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/ui-state": { target: "http://localhost:3099", changeOrigin: true },
+      "/api/default-config": { target: "http://localhost:3099", changeOrigin: true },
+    },
+    watch: {
+      ignored: ["**/server/**", "**/uxtu-reference/**"],
     },
   },
 })

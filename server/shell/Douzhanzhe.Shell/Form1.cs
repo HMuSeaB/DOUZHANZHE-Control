@@ -19,6 +19,8 @@ public partial class Form1 : Form
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     private const uint WM_HOTKEY = 0x0312;
     private const uint MOD_ALT = 0x0001;
@@ -27,6 +29,12 @@ public partial class Form1 : Form
     private const uint MOD_WIN = 0x0008;
     private const uint MOD_NOREPEAT = 0x4000;
     private const uint WM_SYSCOMMAND = 0x0112;
+
+    // ---- DWMWA 标题栏样式 ----
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWA_MICA_TABBED = 39;
+    private const int DWM_WINDOW_CORNER_ROUND = 2; // DWMWCP_ROUND
 
     // 默认快捷键定义（数据驱动，新增功能只需加一行）
     private static readonly (string id, string label, string modifiers, string key, string action)[] DefaultHotkeys =
@@ -57,6 +65,12 @@ public partial class Form1 : Form
     {
         try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; }
         catch { return SystemIcons.Application; }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyDwmAttributes();
     }
 
     public Form1()
@@ -894,5 +908,35 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             catch { }
         };
         _hotkeyPollTimer.Start();
+    }
+    // ---- DWMWA 标题栏样式 ----
+    private void ApplyDwmAttributes()
+    {
+        try
+        {
+            int darkMode = 1;
+            DwmSetWindowAttribute(this.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+            int cornerPref = DWM_WINDOW_CORNER_ROUND;
+            DwmSetWindowAttribute(this.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPref, sizeof(int));
+            int mica = 1;
+            DwmSetWindowAttribute(this.Handle, DWMWA_MICA_TABBED, ref mica, sizeof(int));
+        }
+        catch { }
+    }
+
+    private static bool IsWindowsDarkMode()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key != null)
+            {
+                var v = key.GetValue("AppsUseLightTheme");
+                return v is int i && i == 0;
+            }
+        }
+        catch { }
+        return true;
     }
 }
