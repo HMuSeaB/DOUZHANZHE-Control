@@ -1,4 +1,4 @@
-﻿const BACKEND = "";
+const BACKEND = "";
 
 // 统一日志: 同时写入后端 AppLog (tag=UI) 和浏览器 console
 export function log(tag, msg) {
@@ -48,6 +48,13 @@ export async function applyHardwareControl(target, value, mode) {
   return res.json();
 }
 
+
+// HTTP 获取初始遥测数据（用于方案 C：先 HTTP 后 WebSocket）
+export async function fetchTelemetry() {
+  const res = await fetch(`/api/telemetry`);
+  if (!res.ok) throw new Error(`telemetry returned ${res.status}`);
+  return res.json();
+}
 export function createTelemetrySocket(onData, onError) {
   // 绕过 Vite 代理直连 C# HAL WebSocket
   const ws = new WebSocket(`ws://127.0.0.1:3100/ws`);

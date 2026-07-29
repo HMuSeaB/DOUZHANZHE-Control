@@ -1,10 +1,9 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
-import { mockTelemetry } from "../data/mockTelemetry";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createTelemetrySocket, FULL_PARAMS, MODE_FAN_DEFAULTS,
   fetchOverrides, switchMode, syncOverrides, log,
   migrateLocalStorageOverrides, flattenBackendOverrides,
-  fetchUiState, saveUiState,
+  fetchTelemetry, fetchUiState, saveUiState,
 } from "../services/uxtuAdapter";
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
@@ -32,7 +31,7 @@ export function useControlState() {
   const [theme, setTheme] = useState("dark");
 
   // ── Telemetry + History ──
-  const [telemetry, setTelemetry] = useState(mockTelemetry);
+  const [telemetry, setTelemetry] = useState({});
   const lastTickRef = useRef(null);
   const MAX_HISTORY = 60;
   const [history, setHistory] = useState({ cpu: [], gpu: [], fan: [], cpuTemp: [], gpuTemp: [] });
@@ -84,6 +83,11 @@ export function useControlState() {
         if (plat?.vendor === "Intel") maxCores = 18;
       } catch { /* 后端不可用时默认 16 */ }
       _maxCores = maxCores;
+      // 先 HTTP 拿初始遥测数据，避免 mock 闪烁
+      try {
+        const initialTel = await fetchTelemetry();
+        if (initialTel) { setTelemetry(initialTel); setBackendOnline(true); }
+      } catch { /* 后端离线时保持 null，等 WebSocket 或 mock 托底 */ }
       try {
         const { mode, overrides: rawOv } = await fetchOverrides();
         const ov = flattenBackendOverrides(rawOv, maxCores);
