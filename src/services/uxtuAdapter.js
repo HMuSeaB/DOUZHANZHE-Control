@@ -680,3 +680,87 @@ export async function setHotkeyConfig(id, config) {
   if (!res.ok) throw new Error("hotkey config returned " + res.status);
   return res.json();
 }
+
+// ---- Profile CRUD API ----
+
+export async function fetchProfiles() {
+  const res = await fetch("/api/profiles");
+  if (!res.ok) throw new Error("profiles fetch failed");
+  return res.json();
+}
+
+export async function fetchProfile(id) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id));
+  if (!res.ok) throw new Error("profile fetch failed");
+  return res.json();
+}
+
+export async function saveProfile(id, overrides) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(overrides),
+  });
+  if (!res.ok) throw new Error("profile save failed");
+  return res.json();
+}
+
+export async function createProfile(name, thermalMode) {
+  const res = await fetch("/api/profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, thermalMode }),
+  });
+  if (!res.ok) throw new Error("profile create failed");
+  return res.json();
+}
+
+export async function deleteProfile(id) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id), {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("profile delete failed");
+  return res.json();
+}
+
+export async function renameProfile(id, name) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id) + "/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("profile rename failed");
+  return res.json();
+}
+
+export async function copyProfile(id) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id) + "/copy", {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("profile copy failed");
+  return res.json();
+}
+
+export async function resetProfile(id) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id) + "/reset", {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("profile reset failed");
+  return res.json();
+}
+
+export async function setProfileThermalMode(id, thermalMode) {
+  const res = await fetch("/api/profiles/" + encodeURIComponent(id) + "/thermal-mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ thermalMode }),
+  });
+  if (!res.ok) throw new Error("profile thermal-mode failed");
+  return res.json();
+}
+
+export async function fetchPlatformInfo() {
+  const res = await fetch("/api/platform/info");
+  if (!res.ok) throw new Error("platform info fetch failed");
+  return res.json();
+}

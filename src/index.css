@@ -636,5 +636,147 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
   border-radius:var(--radius-sm);border:1px solid var(--primary);background:var(--surface-2);color:var(--fg);
   font-size:12px;text-align:center;z-index:10;box-shadow:0 8px 24px rgba(0,0,0,.3)}
 
+/* ============================================================
+   Config Bar (Profile management top bar)
+   ============================================================ */
+.config-bar{padding:18px 20px;display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.config-bar .cur{display:flex;align-items:center;gap:12px}
+.config-bar .cur .badge{
+  width:42px;height:42px;border-radius:10px;display:grid;place-items:center;
+  background:conic-gradient(from 200deg,var(--primary),var(--accent),var(--primary));
+  color:var(--primary-fg);font-weight:700;font-size:16px;flex-shrink:0;
+}
+.config-bar .cur .info b{font-size:16px;display:block}
+.config-bar .cur .info small{display:block;color:var(--fg-3);font-size:11.5px;margin-top:2px}
+.config-bar .sel{
+  display:flex;align-items:center;gap:8px;
+  border:1px solid var(--stroke);border-radius:var(--radius-sm);
+  padding:8px 12px;background:var(--surface-2);font-size:13px;color:var(--fg);
+  cursor:pointer;transition:all var(--dur) var(--ease);white-space:nowrap;
+}
+.config-bar .sel:hover{border-color:var(--stroke-strong)}
+.config-bar .sel:disabled{opacity:.5;cursor:not-allowed}
+.config-bar .actions{display:flex;gap:8px;margin-left:auto}
+.config-dropdown{
+  position:absolute;top:100%;right:0;margin-top:6px;min-width:220px;
+  background:var(--surface);border:1px solid var(--stroke-strong);
+  border-radius:var(--radius);box-shadow:var(--card-shadow);
+  z-index:50;overflow:hidden;
+}
+.config-dd-item{
+  width:100%;border:0;background:transparent;cursor:pointer;
+  padding:10px 16px;display:flex;align-items:center;justify-content:space-between;
+  font-family:inherit;font-size:13px;color:var(--fg);text-align:left;
+  transition:background var(--dur) var(--ease);
+}
+.config-dd-item:hover{background:var(--stroke)}
+.config-dd-item.active{background:color-mix(in srgb,var(--primary) 14%,var(--surface))}
+.config-dd-item.active .dd-name{color:var(--primary);font-weight:600}
+.dd-tag{
+  font-size:10px;padding:2px 8px;border-radius:999px;
+  background:var(--stroke);color:var(--fg-3);
+}
+.dd-tag.user{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.config-dd-sep{height:1px;background:var(--stroke);margin:4px 0}
+.create-inline{display:flex;gap:8px;align-items:center}
+.config-name-input{
+  border:1px solid var(--stroke);border-radius:var(--radius-sm);
+  padding:7px 12px;font-size:13px;font-family:inherit;
+  background:var(--surface-2);color:var(--fg);width:160px;outline:none;
+}
+.config-name-input:focus{border-color:var(--primary)}
 
+/* ============================================================
+   Section Title (separator between sections)
+   ============================================================ */
+.section-title{
+  display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;
+  color:var(--fg-2);text-transform:uppercase;letter-spacing:1px;
+  margin:22px 2px 12px;
+}
+.section-title .line{flex:1;height:1px;background:var(--stroke)}
+.section-title .tag{
+  font-size:10px;color:var(--primary);
+  border:1px solid color-mix(in srgb,var(--primary) 40%,transparent);
+  padding:2px 8px;border-radius:999px;letter-spacing:0;text-transform:none;
+}
+
+/* ============================================================
+   Accordion (collapsible panels)
+   ============================================================ */
+.accordion{border-radius:var(--radius);overflow:hidden}
+.acc-item{border-bottom:1px solid var(--stroke)}
+.acc-item:last-child{border-bottom:0}
+.acc-head{
+  width:100%;border:0;cursor:pointer;font-family:inherit;
+  background:transparent;color:var(--fg);
+  padding:16px 20px;display:flex;align-items:center;gap:12px;text-align:left;
+  transition:background var(--dur) var(--ease);
+}
+.acc-head:hover{background:var(--stroke)}
+.acc-head .ic{
+  width:32px;height:32px;border-radius:8px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary);
+  flex-shrink:0;
+}
+.acc-head .ic svg{width:17px;height:17px}
+.acc-head .ht{flex:1}
+.acc-head .ht b{font-size:14.5px;font-weight:600;display:block}
+.acc-head .ht small{font-size:11.5px;color:var(--fg-3)}
+.acc-head .chev{margin-left:auto;color:var(--fg-3);transition:transform var(--dur) var(--ease)}
+.acc-head .chev svg{width:18px;height:18px}
+.acc-item.open .acc-head .chev{transform:rotate(180deg)}
+.acc-body{max-height:0;overflow:hidden;transition:max-height .34s var(--ease)}
+.acc-item.open .acc-body{max-height:800px}
+.acc-inner{padding:6px 20px 20px}
+
+/* ============================================================
+   Mode Line (thermal mode segmented buttons row)
+   ============================================================ */
+.mode-line{display:flex;align-items:center;gap:18px;padding:14px 0 4px}
+.mode-line .lab{flex:1}
+.mode-line .lab b{font-size:13.5px;display:block}
+.mode-line .lab small{font-size:11px;color:var(--fg-3)}
+
+/* ============================================================
+   Segmented (thermal mode picker)
+   ============================================================ */
+.segmented{display:inline-flex;border:1px solid var(--stroke);border-radius:var(--radius-sm);overflow:hidden}
+.segmented button{
+  border:0;background:transparent;color:var(--fg-2);cursor:pointer;
+  font-family:inherit;padding:8px 18px;font-size:13px;
+  transition:all var(--dur) var(--ease);
+}
+.segmented button+button{border-left:1px solid var(--stroke)}
+.segmented button.active{background:var(--primary);color:var(--primary-fg);font-weight:600}
+.segmented button.active:hover{background:var(--primary-strong)}
+
+/* ============================================================
+   Profile Manage Modal
+   ============================================================ */
+.profile-manage-modal{
+  max-width:560px;width:90%;max-height:80vh;overflow-y:auto;
+  background:var(--surface);border:1px solid var(--stroke-strong);
+  border-radius:var(--radius);box-shadow:var(--card-shadow);
+  padding:24px;
+}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.modal-head h2{font-size:18px;font-weight:600}
+.profile-list{display:flex;flex-direction:column;gap:8px}
+.profile-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border:1px solid var(--stroke);border-radius:var(--radius-sm);
+  transition:all var(--dur) var(--ease);
+}
+.profile-row.current{border-color:color-mix(in srgb,var(--primary) 50%,transparent);background:color-mix(in srgb,var(--primary) 8%,transparent)}
+.profile-info{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.profile-badge{
+  width:36px;height:36px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;
+  background:color-mix(in srgb,var(--primary) 16%,transparent);color:var(--primary);
+  font-weight:700;font-size:14px;
+}
+.profile-info b{font-size:14px;display:block}
+.profile-info small{font-size:11px;color:var(--fg-3)}
+.profile-actions{display:flex;gap:6px;flex-shrink:0;margin-left:12px}
+.rename-inline{display:flex;gap:6px;align-items:center}
 

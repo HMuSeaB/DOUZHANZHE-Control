@@ -4,6 +4,7 @@ import {
   fetchOverrides, switchMode, syncOverrides, log,
   migrateLocalStorageOverrides, flattenBackendOverrides,
   fetchTelemetry, fetchUiState, saveUiState,
+  fetchProfiles, fetchProfile, fetchPlatformInfo,
 } from "../services/uxtuAdapter";
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
@@ -83,6 +84,18 @@ export function useControlState() {
         if (plat?.vendor === "Intel") maxCores = 18;
       } catch { /* 后端不可用时默认 16 */ }
       _maxCores = maxCores;
+      // 加载机型信息
+      try {
+        const pi = await fetchPlatformInfo();
+        setPlatformInfo({ oem: pi.oem || 'Unknown', vendor: pi.vendor || '', model: pi.model || '' });
+      } catch { /* ignore */ }
+      // 加载配置列表
+      let profileList = [];
+      try {
+        const { profiles: list } = await fetchProfiles();
+        profileList = list || [];
+        setProfiles(profileList);
+      } catch { /* ignore */ }
       // 先 HTTP 拿初始遥测数据，避免 mock 闪烁
       try {
         const initialTel = await fetchTelemetry();
@@ -98,6 +111,9 @@ export function useControlState() {
         const fanDefaults = MODE_FAN_DEFAULTS[mode] || {};
         setUxtuParams({ ...FULL_PARAMS, ...fanDefaults, ...ov });
         setOverrides(ov);
+        // Sync currentProfile from profiles list
+        const curProf = profileList.find(p => p.id === mode) || null;
+        setCurrentProfile(curProf);
         initialLoadRef.current = false;
       } catch {
         // 后端不可用时回退到 FULL_PARAMS 默认
@@ -168,6 +184,9 @@ export function useControlState() {
 
   // ── WebSocket 遥测 + 自动切换 ──
   const [backendOnline, setBackendOnline] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [platformInfo, setPlatformInfo] = useState({ oem: 'Unknown', vendor: '', model: '' });
   useEffect(() => {
     let disposed = false;
     let ws;
@@ -254,6 +273,24 @@ export function useControlState() {
     setOverrides(prev => ({ ...prev, [key]: value }));
   }, []);
 
+  // Switch profile (Dashboard Dock / ConfigBar calls this)
+  const switchProfile = useCallback((profileId) => {
+    setSettings(prev => prev.mode === profileId ? prev : { ...prev, mode: profileId });
+  }, []);
+
+  // After profile deleted
+  const afterProfileDeleted = useCallback((deletedId) => {
+    setProfiles(prev => prev.filter(p => p.id !== deletedId));
+    setCurrentProfile(prev => (prev && prev.id === deletedId) ? null : prev);
+  }, []);
+
+  // After profile created
+  const afterProfileCreated = useCallback((entry) => {
+    setProfiles(prev => [...prev, entry]);
+    setCurrentProfile(entry);
+    setSettings(prev => ({ ...prev, mode: entry.id }));
+  }, []);
+
   return {
     theme, setTheme,
     telemetry, setTelemetry,
@@ -265,5 +302,11 @@ export function useControlState() {
     resetParams,
     switching,
     backendOnline,
+    profiles, setProfiles,
+    currentProfile, setCurrentProfile,
+    platformInfo,
+    switchProfile,
+    afterProfileDeleted,
+    afterProfileCreated,
   };
 }
