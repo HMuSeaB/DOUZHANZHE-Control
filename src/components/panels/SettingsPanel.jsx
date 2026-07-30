@@ -1,77 +1,169 @@
-﻿import { applyHardwareControl, monitorOff, fetchHotkeyConfig, setHotkeyConfig } from "../../services/uxtuAdapter";
-import Card from "../ui/Card";
-import SliderRow from "../ui/SliderRow";
-import SwitchRow from "../ui/SwitchRow";
-import { useToast } from "../ui/Toast";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { fetchHotkeyConfig, setHotkeyConfig, monitorOff } from "../../services/uxtuAdapter";
+import { useToast } from "../ui/Toast";
 
-export default function SettingsPanel({ settings, setSettings, showSwitches = true, showKeyboard = true, showAbout = true, showAutoStart = false, showBackground = false, showHotkey = false, bg, updateBg }) {
+const MODES = [
+  { id: "silent", label: "安静" },
+  { id: "office", label: "均衡" },
+  { id: "beast", label: "野兽" },
+  { id: "gaming", label: "斗战" },
+];
+
+const THEMES = [
+  { id: "light", label: "浅色" },
+  { id: "dark", label: "深色" },
+  { id: "auto", label: "跟随系统" },
+];
+
+const COLORS = [
+  { id: "#4cc2ff", label: "天蓝" },
+  { id: "#7c5cff", label: "紫罗兰" },
+  { id: "#5dd68a", label: "翠绿" },
+  { id: "#ffb454", label: "琥珀" },
+  { id: "#ff6b6b", label: "珊瑚红" },
+  { id: "#ff8ac2", label: "粉" },
+  { id: "#4dd0e1", label: "青" },
+];
+
+const BG_INTERVALS = [
+  { id: "30m", label: "每 30 分钟" },
+  { id: "1h", label: "每 1 小时" },
+  { id: "3h", label: "每 3 小时" },
+  { id: "1d", label: "每天" },
+];
+
+const ICONS = {
+  appearance: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>,
+  palette: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 1 0 0 20 2.5 2.5 0 0 0 2.5-2.5c0-.6-.2-1.1-.6-1.5-.4-.4-.6-.9-.6-1.5A2.5 2.5 0 0 1 15.8 14H18a4 4 0 0 0 4-4c0-4.4-4.5-8-10-8Z"/></svg>,
+  autostart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 3v9"/><path d="M5.6 6.6a8 8 0 1 0 12.8 0"/><path d="M12 12l4-2"/></svg>,
+  background: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>,
+  hotkey: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>,
+  backup: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>,
+  about: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>,
+  upload: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>,
+  delete: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>,
+  export: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 4v12M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>,
+  import: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20V8M6 14l6-6 6 6"/><path d="M4 4h16"/></svg>,
+  update: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>,
+  log: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 11h2"/></svg>,
+  close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>,
+};
+
+export default function SettingsPanel({ settings, setSettings }) {
   const toast = useToast();
-  const [autoStart, setAutoStart] = useState(() => localStorage.getItem("dz_autostart") === "1");
-  const [autoStartMinimized, setAutoStartMinimized] = useState(() => localStorage.getItem("dz_autostart_min") === "1");
+
+  const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
+
+  const [theme, setTheme] = useState("dark");
+  const [accent, setAccent] = useState("#4cc2ff");
+
+  const [autoStart, setAutoStart] = useState(false);
+  const [autoStartMin, setAutoStartMin] = useState(false);
+
+  const [bgSource, setBgSource] = useState("local");
+  const [bgInterval, setBgInterval] = useState("1h");
+
+  const fileInputRef = useRef(null);
+
+  const bgEnabled = bg.enabled;
+  const bgOpacity = bg.opacity;
+  const bgBlur = bg.blur;
+  const bgMask = bg.maskColor;
+  const bgHasImage = bg.hasImage;
+  const bgPreview = bg.url;
+
   useEffect(() => {
-    if (!showAutoStart) return;
+    fetch("/api/ui-state")
+      .then(r => r.json())
+      .then(d => {
+        if (d.theme) setTheme(d.theme);
+      })
+      .catch(() => {});
+    const savedAccent = localStorage.getItem("dz_accent_color");
+    if (savedAccent) setAccent(savedAccent);
+    fetch("/api/background")
+      .then(r => r.json())
+      .then(d => { if (d) setBg(prev => ({ ...prev, ...d })); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     fetch("/api/auto-start")
       .then(r => r.json())
-      .then(d => { setAutoStart(!!d.enabled); localStorage.setItem("dz_autostart", d.enabled ? "1" : "0"); })
+      .then(d => setAutoStart(!!d.enabled))
       .catch(() => {});
     fetch("/api/auto-start-opts")
       .then(r => r.json())
-      .then(d => { const m = d.minimized === true; setAutoStartMinimized(m); localStorage.setItem("dz_autostart_min", m ? "1" : "0"); })
+      .then(d => setAutoStartMin(!!d.minimized))
       .catch(() => {});
-  }, [showAutoStart]);
+  }, []);
 
-  // 监听手动检查更新结果，显示 toast
   useEffect(() => {
-    if (!showAbout) return;
-    const handler = (e) => {
-      const d = e.detail;
-      if (d.error) toast?.(d.msg, "error");
-      else if (d.upToDate) toast?.("当前已是最新版本", "success");
-      else if (d.skipped) toast?.(`已跳过 v${d.version}，可在跳过列表中取消`, "info");
-    };
-    window.addEventListener("update-check-result", handler);
-    return () => window.removeEventListener("update-check-result", handler);
-  }, [showAbout]);
+    if (!showBackground) return;
+    fetch("/api/background-opts")
+      .then(r => r.json())
+      .then(d => {
+        if (d.source) setBgSource(d.source);
+        if (d.interval) setBgInterval(d.interval);
+      })
+      .catch(() => {});
+  }, []);
 
-  const toggleAutoStart = (v) => {
-    localStorage.setItem("dz_autostart", v ? "1" : "0");
+  const updateBg = (patch) => setBg(prev => ({ ...prev, ...patch }));
+
+  const saveUiState = async (patch) => {
+    try {
+      await fetch("/api/ui-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } catch { /* ignore */ }
+  };
+
+  const setThemeMode = async (mode) => {
+    setTheme(mode);
+    await saveUiState({ theme: mode });
+    document.documentElement.setAttribute("data-theme", mode === "auto" ? "dark" : mode);
+  };
+
+  const setAccentColor = (color) => {
+    setAccent(color);
+    localStorage.setItem("dz_accent_color", color);
+    document.documentElement.style.setProperty("--primary", color);
+  };
+
+  const toggleAutoStart = async (v) => {
     setAutoStart(v);
-    fetch("/api/auto-start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: v })
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.ok) { toast?.(v ? "开机自启已开启" : "开机自启已关闭", "success"); }
-        else { setAutoStart(!v); localStorage.setItem("dz_autostart", !v ? "1" : "0"); toast?.(d.error || "设置失败", "error"); }
-      })
-      .catch(() => { setAutoStart(!v); localStorage.setItem("dz_autostart", !v ? "1" : "0"); toast?.("请求失败", "error"); });
-  };
-  const toggleAutoStartMinimized = (v) => {
-    localStorage.setItem("dz_autostart_min", v ? "1" : "0");
-    setAutoStartMinimized(v);
-    fetch("/api/auto-start-opts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ minimized: v })
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.ok) { toast?.(v ? "开机自启最小化已开启" : "开机自启最小化已关闭", "success"); }
-        else { setAutoStartMinimized(!v); localStorage.setItem("dz_autostart_min", !v ? "1" : "0"); toast?.(d.error || "设置失败", "error"); }
-      })
-      .catch(() => { setAutoStartMinimized(!v); localStorage.setItem("dz_autostart_min", !v ? "1" : "0"); toast?.("请求失败", "error"); });
+    try {
+      const r = await fetch("/api/auto-start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: v }),
+      });
+      const d = await r.json();
+      if (!d.ok) { setAutoStart(!v); toast?.(d.error || "设置失败", "error"); }
+    } catch {
+      setAutoStart(!v);
+      toast?.("请求失败", "error");
+    }
   };
 
-  // ── 自定义背景 ──
-  const fileInputRef = useRef(null);
-  const bgEnabled = bg?.enabled ?? false;
-  const bgOpacity = bg?.opacity ?? 50;
-  const bgMask = bg?.maskColor ?? "black";
-  const bgHasImage = bg?.hasImage ?? false;
-  const bgPreview = bg?.url ?? null;
+  const toggleAutoStartMin = async (v) => {
+    setAutoStartMin(v);
+    try {
+      const r = await fetch("/api/auto-start-opts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minimized: v }),
+      });
+      const d = await r.json();
+      if (!d.ok) { setAutoStartMin(!v); toast?.(d.error || "设置失败", "error"); }
+    } catch {
+      setAutoStartMin(!v);
+      toast?.("请求失败", "error");
+    }
+  };
 
   const saveBgOpts = async (patch) => {
     try {
@@ -88,9 +180,24 @@ export default function SettingsPanel({ settings, setSettings, showSwitches = tr
     await saveBgOpts({ enabled: v });
   };
 
+  const handleBgSource = async (v) => {
+    setBgSource(v);
+    await saveBgOpts({ source: v });
+  };
+
+  const handleBgInterval = async (v) => {
+    setBgInterval(v);
+    await saveBgOpts({ interval: v });
+  };
+
   const handleBgOpacity = async (v) => {
     updateBg({ opacity: v });
     await saveBgOpts({ opacity: v });
+  };
+
+  const handleBgBlur = async (v) => {
+    updateBg({ blur: v });
+    await saveBgOpts({ blur: v });
   };
 
   const handleBgMask = async (v) => {
@@ -103,7 +210,6 @@ export default function SettingsPanel({ settings, setSettings, showSwitches = tr
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { toast?.("图片不能超过 10MB", "error"); return; }
 
-    // 立即显示预览（不等待 base64 编码）
     const previewUrl = URL.createObjectURL(file);
     updateBg({ hasImage: true, url: previewUrl, enabled: true });
 
@@ -150,178 +256,236 @@ export default function SettingsPanel({ settings, setSettings, showSwitches = tr
 
   const toggleSetting = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    // C# HAL 支持的硬件控制走 /api/control
-    const halMap = {
-      fnLock: "fn_lock",
-      numLock: "num_lock",
-      capsLock: "caps_lock",
-      kbBrightnessLevel: "kb_light",
-      touchpadLock: "touchpad_lock",
-      dGpuDirect: "gpu_mode",
-    };
-    if (key === "osdDisabled") {
-      toast?.("关闭 OSD 显示暂不支持", "info");
-      return;
-    }
-    if (key in halMap) {
-      // kb_light 透传数值 0-3，其余开关做 bool→0/1 映射
-      const mappedValue = key === "kbBrightnessLevel" ? value : (key === "dGpuDirect" ? (value ? 1 : 0) : (value ? 1 : 0));
-      applyHardwareControl(halMap[key], mappedValue, settings.mode)
-        .then(() => {
-          if (key === "dGpuDirect") toast?.("GPU 模式切换将在重启后生效，请重启电脑", "info");
-        })
-        .catch(() => toast?.("设置下发失败", "error"));
-    } else {
-      console.warn("[SettingsPanel] unknown key:", key, value);
-    }
   };
 
+  const showSwitches = true;
+  const showKeyboard = true;
+  const showAbout = true;
+  const showAutoStart = true;
+  const showBackground = true;
+  const showHotkey = true;
+
   return (
-    <>
-      {showSwitches && (
-        <Card title="系统开关" className="!p-3">
-          <div className="space-y-1">
-            <SwitchRow label="数字键锁定" checked={settings.numLock} onChange={(v) => toggleSetting("numLock", v)} />
-            <SwitchRow label="大写键锁定" checked={settings.capsLock} onChange={(v) => toggleSetting("capsLock", v)} />
-            <SwitchRow label="触摸板锁定" checked={settings.touchpadLock} onChange={(v) => toggleSetting("touchpadLock", v)} />
-            <SwitchRow label="Fn 锁定" checked={settings.fnLock} onChange={(v) => toggleSetting("fnLock", v)} />
-          </div>
-        </Card>
-      )}
-      {showAutoStart && (
-        <Card title="开机自启" className="!p-3">
-          <div className="space-y-1">
-            <SwitchRow label="开机自动启动" checked={autoStart} onChange={toggleAutoStart} />
-            <SwitchRow label="开机自启最小化" checked={autoStartMinimized} onChange={toggleAutoStartMinimized} />
-          </div>
-        </Card>
-      )}
-      {showHotkey && (
-        <HotkeyCard toast={toast} />
-      )}
-      {showBackground && (
-        <Card title="自定义背景" className="!p-3">
-          <div className="space-y-2">
-            <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFileSelect} className="hidden" />
-            <div className="flex gap-2">
-              <button onClick={() => fileInputRef.current?.click()}
-                className="flex-1 text-sm py-1.5 rounded-lg transition-colors"
-                style={{ background: "var(--card-2)", border: "1px solid var(--border)" }}>
-                选择图片
+    <div className="set-wrap">
+      {/* 外观 */}
+      <div className="card set-card reveal enter" style={{ animationDelay: ".02s" }}>
+        <div className="set-head">
+          <span className="ic">{ICONS.appearance}</span>
+          <span><b>外观</b><small>主题模式将同步影响所有 Fluent 控件与 OSD 提示</small></span>
+        </div>
+        <div className="set-body">
+          <div className="theme-cards">
+            {THEMES.map(t => (
+              <button key={t.id} className={`theme-card ${theme === t.id ? "active" : ""}`} onClick={() => setThemeMode(t.id)}>
+                <span className="prev">
+                  <span className="bar"></span>
+                  <span style={{ flex: 1 }}>
+                    <span className="ln p" style={{ width: "60%" }}></span>
+                    <span className="ln" style={{ width: "88%" }}></span>
+                  </span>
+                </span>
+                <span className="cap">
+                  {t.label}
+                  <svg className="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+                </span>
               </button>
-              {bgHasImage && (
-                <button onClick={handleBgDelete}
-                  className="text-sm px-3 py-1.5 rounded-lg transition-colors"
-                  style={{ background: "var(--card-2)", border: "1px solid var(--border)", color: "var(--danger)" }}>
-                  移除
-                </button>
-              )}
-            </div>
-            {bgPreview && (
-              <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)", aspectRatio: "16/9" }}>
-                <img src={bgPreview} alt="背景预览" className="w-full h-full object-cover" />
-              </div>
-            )}
-            <SwitchRow label="启用背景" checked={bgEnabled} onChange={handleBgToggle} disabled={!bgHasImage} />
-            <SliderRow label="透明度" value={bgOpacity} min={0} max={100} step={5} unit="%"
-              onChange={handleBgOpacity} disabled={!bgEnabled} />
-            <div className="flex items-center justify-between py-1" style={{ opacity: bgEnabled ? 1 : 0.5 }}>
-              <span className="text-sm">遮罩颜色</span>
-              <div className="flex gap-1">
-                <button onClick={() => handleBgMask("black")} disabled={!bgEnabled}
-                  className="text-xs px-3 py-1 rounded-md transition-colors"
-                  style={{
-                    background: bgMask === "black" ? "var(--primary)" : "var(--card-2)",
-                    border: "1px solid var(--border)", cursor: bgEnabled ? "pointer" : "not-allowed",
-                    color: bgMask === "black" ? "#000" : "var(--text)",
-                  }}>黑色</button>
-                <button onClick={() => handleBgMask("white")} disabled={!bgEnabled}
-                  className="text-xs px-3 py-1 rounded-md transition-colors"
-                  style={{
-                    background: bgMask === "white" ? "var(--primary)" : "var(--card-2)",
-                    border: "1px solid var(--border)", cursor: bgEnabled ? "pointer" : "not-allowed",
-                    color: bgMask === "white" ? "#000" : "var(--text)",
-                  }}>白色</button>
-              </div>
-            </div>
+            ))}
           </div>
-        </Card>
-      )}
-      {showKeyboard && (
-        <Card title="键盘灯亮度">
-          <SliderRow label="亮度" value={settings.kbBrightnessLevel}
-            min={0} max={3} step={1} unit=""
-            onChange={(v) => toggleSetting("kbBrightnessLevel", v)} />
-        </Card>
-      )}
-      {showAbout && (<Card title="关于" className="!p-3">
-        <div className="text-xs space-y-1" style={{ color: "var(--muted)" }}>
-          <p>{`Douzhanzhe Console v${__APP_VERSION__}`}</p>
-          <p>适用于联想 Legion N176 2025 (宝龙达 OEM)</p>
-          <p className="mt-2"><span className="font-semibold">开发者：</span>KanzakiK</p>
-          <p><span className="font-semibold">开源协议：</span>GNU General Public License v3.0</p>
-          <p><span className="font-semibold">GitHub：</span>
-            <a href="https://github.com/KanzakiK/DOUZHANZHE-Control" target="_blank" rel="noopener noreferrer"
-              style={{ color: "var(--primary)" }}>KanzakiK/DOUZHANZHE-Control</a>
-          </p>
-          <div className="mt-3 pt-3 flex gap-2" style={{ borderTop: "1px solid var(--border)" }}>
-            <button
-              onClick={() => {
-                // 触发 UpdateDialog 组件检查更新并弹窗
-                window.dispatchEvent(new Event("check-update-manual"));
-              }}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                border: "1px solid var(--border)",
-                background: "transparent",
-                color: "var(--primary)",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              检查更新
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch("/api/logs/export");
-                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  const cd = res.headers.get("content-disposition") || "";
-                  const m = cd.match(/filename="([^"]+)"/) || cd.match(/filename=([^;\s]+)/);
-                  a.download = m?.[1] || `douzhanzhe-log-${Date.now()}.log`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  URL.revokeObjectURL(url);
-                } catch (e) {
-                  toast?.("导出日志失败: " + e.message, "error");
-                }
-              }}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                border: "1px solid var(--border)",
-                background: "transparent",
-                color: "var(--muted)",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              导出日志
+        </div>
+      </div>
+
+      {/* 配色 */}
+      <div className="card set-card reveal enter" style={{ animationDelay: ".05s" }}>
+        <div className="set-head">
+          <span className="ic">{ICONS.palette}</span>
+          <span><b>配色</b><small>只需选择主色，辅助强调色将按色彩规则自动派生</small></span>
+        </div>
+        <div className="set-body">
+          <div className="swatches">
+            {COLORS.map(c => (
+              <button
+                key={c.id}
+                className={`swatch ${accent === c.id ? "active" : ""}`}
+                style={{ background: c.id, color: c.id }}
+                aria-label={c.label}
+                onClick={() => setAccentColor(c.id)}
+              />
+            ))}
+            <button className="swatch swatch-custom" aria-label="自定义颜色">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14"/></svg>
             </button>
           </div>
         </div>
-      </Card>)}
-    </>
+      </div>
+
+      {/* 开机自启 */}
+      <div className="card set-card reveal enter" style={{ animationDelay: ".08s" }}>
+        <div className="set-head">
+          <span className="ic">{ICONS.autostart}</span>
+          <span><b>开机自启</b><small>登录 Windows 时自动运行斗战者控制台</small></span>
+        </div>
+        <div className="set-body">
+          <div className="set-row">
+            <span className="rk"><b>开机时自动启动</b><small>注册为系统启动项，随 Windows 登录运行</small></span>
+            <span className="rctrl">
+              <label className="switch">
+                <input type="checkbox" checked={autoStart} onChange={(e) => toggleAutoStart(e.target.checked)} aria-label="开机时自动启动" />
+                <span className="track"></span>
+              </label>
+            </span>
+          </div>
+          <div className="set-row">
+            <span className="rk"><b>最小化启动</b><small>启动时收起主窗口至托盘，仅在后台守护硬件</small></span>
+            <span className="rctrl">
+              <label className="switch">
+                <input type="checkbox" checked={autoStartMin} onChange={(e) => toggleAutoStartMin(e.target.checked)} aria-label="最小化启动" />
+                <span className="track"></span>
+              </label>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 自定义背景 */}
+      <div className="card set-card reveal enter" style={{ animationDelay: ".11s" }}>
+        <div className="set-head">
+          <span className="ic">{ICONS.background}</span>
+          <span><b>自定义背景</b><small>壁纸经高斯模糊后作为 Mica 材质底层纹理</small></span>
+        </div>
+        <div className="set-body">
+          <div className="set-row">
+            <span className="rk"><b>启用自定义背景</b><small>关闭时退化为默认 Mica 纯色材质</small></span>
+            <span className="rctrl">
+              <label className="switch">
+                <input type="checkbox" checked={bgEnabled} onChange={(e) => handleBgToggle(e.target.checked)} aria-label="启用自定义背景" />
+                <span className="track"></span>
+              </label>
+            </span>
+          </div>
+          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+            <span className="rk"><b>图片来源</b><small>本地上传固定图片，或接入网络 API 自动轮换</small></span>
+            <span className="rctrl">
+              <span className="segmented">
+                <button className={bgSource === "local" ? "active" : ""} onClick={() => handleBgSource("local")}>本地上传</button>
+                <button className={bgSource === "network" ? "active" : ""} onClick={() => handleBgSource("network")}>网络轮换</button>
+              </span>
+            </span>
+          </div>
+          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+            <span className="rk"><b>轮换间隔</b><small>网络轮换模式下每张壁纸的停留时长</small></span>
+            <span className="rctrl">
+              <select className="sel" value={bgInterval} onChange={(e) => handleBgInterval(e.target.value)}>
+                {BG_INTERVALS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+            </span>
+          </div>
+          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+            <span className="rk"><b>透明度</b><small>壁纸层叠加在控件之下的显现程度</small></span>
+            <span className="rctrl"><input type="range" className="slider" min="0" max="100" value={bgOpacity} onChange={(e) => handleBgOpacity(Number(e.target.value))} /><span className="pv">{bgOpacity}%</span></span>
+          </div>
+          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+            <span className="rk"><b>模糊度</b><small>0 时退化为普通壁纸模式，调高则强化 Mica 质感</small></span>
+            <span className="rctrl"><input type="range" className="slider" min="0" max="100" value={bgBlur} onChange={(e) => handleBgBlur(Number(e.target.value))} /><span className="pv">{bgBlur}%</span></span>
+          </div>
+          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+            <span className="rk"><b>遮罩色</b><small>跟随系统主题：深色主题用黑色遮罩，浅色主题用白色遮罩</small></span>
+            <span className="rctrl">
+              <span className="segmented">
+                <button className={bgMask === "black" ? "active" : ""} onClick={() => handleBgMask("black")}>黑色</button>
+                <button className={bgMask === "white" ? "active" : ""} onClick={() => handleBgMask("white")}>白色</button>
+              </span>
+            </span>
+          </div>
+          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+            <span className="rk"><b>图片管理</b><small>{bgHasImage ? "当前已上传图片" : "尚未上传图片"}</small></span>
+            <span className="rctrl">
+              <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFileSelect} className="hidden" />
+              <button className="btn" onClick={() => fileInputRef.current?.click()}>{ICONS.upload}上传</button>
+              {bgHasImage && <button className="btn ghost" onClick={handleBgDelete}>{ICONS.delete}删除</button>}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 快捷键 */}
+      {showHotkey && (
+        <div className="card set-card reveal enter" style={{ animationDelay: ".14s" }}>
+          <div className="set-head">
+            <span className="ic">{ICONS.hotkey}</span>
+            <span><b>快捷键</b><small>全局热键即使在桌面或其他应用中也响应</small></span>
+          </div>
+          <div className="set-body">
+            <HotkeySection toast={toast} />
+          </div>
+        </div>
+      )}
+
+      {/* 配置备份 */}
+      <div className="card set-card reveal enter" style={{ animationDelay: ".17s" }}>
+        <div className="set-head">
+          <span className="ic">{ICONS.backup}</span>
+          <span><b>配置备份</b><small>按分类导出 / 导入，跨机型时自动忽略不支持的 mode 字段</small></span>
+        </div>
+        <div className="set-body">
+          <div className="bak-grid">
+            {[
+              { id: "config", label: "配置参数", desc: "各预设的性能 / 功耗曲线", count: 3 },
+              { id: "games", label: "游戏规则", desc: "游戏绑定与自动切换规则", count: 4 },
+              { id: "hotkeys", label: "快捷键", desc: "全局热键绑定", count: 4 },
+              { id: "appearance", label: "外观与配色", desc: "主题模式与强调色", count: 2 },
+              { id: "autostart", label: "开机自启", desc: "自启与最小化启动", count: 2 },
+              { id: "background", label: "自定义背景", desc: "壁纸来源与模糊参数", count: 5 },
+            ].map(item => (
+              <label key={item.id} className="bak-item">
+                <input type="checkbox" defaultChecked={item.id !== "autostart" && item.id !== "background"} />
+                <span className="bt">{item.label}<small>{item.desc}</small></span>
+                <span className="cnt">{item.count} 项</span>
+              </label>
+            ))}
+          </div>
+          <div className="bak-actions">
+            <button className="btn primary" onClick={() => toast?.("导出备份功能开发中", "info")}>{ICONS.export}导出备份</button>
+            <button className="btn" onClick={() => toast?.("导入恢复功能开发中", "info")}>{ICONS.import}导入恢复</button>
+          </div>
+        </div>
+      </div>
+
+      {/* 关于 */}
+      <div className="card set-card reveal enter" style={{ animationDelay: ".2s" }}>
+        <div className="about">
+          <span className="logo">{ICONS.about}</span>
+          <span className="meta">
+            <b>斗战者控制台</b><span className="ver">{`v${__APP_VERSION__}`}</span>
+            <small>DOUZHANZHE Control Center · 构建 {new Date().toISOString().slice(0, 10).replace(/-/g, ".")}<br />© 2025-2026 斗战者科技 · 保留所有权利</small>
+          </span>
+          <span className="acts">
+            <button className="btn" onClick={() => window.dispatchEvent(new Event("check-update-manual"))}>{ICONS.update}检查更新</button>
+            <button className="btn ghost" onClick={async () => {
+              try {
+                const res = await fetch("/api/logs/export");
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                const cd = res.headers.get("content-disposition") || "";
+                const m = cd.match(/filename="([^"]+)"/);
+                a.download = m?.[1] || `douzhanhe-log-${Date.now()}.log`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                toast?.("导出日志失败: " + e.message, "error");
+              }
+            }}>{ICONS.log}导出日志</button>
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
-// ---- 快捷键卡片组件（数据驱动架构） ----
 const HOTKEY_LABELS = {
   "monitor-off": "关闭屏幕",
   "mode-office": "均衡模式",
@@ -337,13 +501,83 @@ function formatHotkey(mods, k) {
   return parts.join(" + ");
 }
 
+function HotkeySection({ toast }) {
+  const [hotkeys, setHotkeys] = useState(null);
+  const [globalEnabled, setGlobalEnabled] = useState(true);
+  const [recordingId, setRecordingId] = useState(null);
+  const [countdown, setCountdown] = useState(null);
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const cfg = await fetchHotkeyConfig();
+      setHotkeys(cfg);
+      const first = Object.values(cfg)[0];
+      if (first) setGlobalEnabled(first.enabled !== false);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
+
+  const handleGlobalToggle = async (v) => {
+    setGlobalEnabled(v);
+    if (!hotkeys) return;
+    const entries = Object.entries(hotkeys);
+    const updated = {};
+    for (const [id, cfg] of entries) {
+      updated[id] = { ...cfg, enabled: v };
+      try { await setHotkeyConfig(id, { enabled: v, modifiers: cfg.modifiers, key: cfg.key }); } catch { /* ignore */ }
+    }
+    setHotkeys(updated);
+    toast?.(v ? "快捷键已开启" : "快捷键已关闭", "success");
+  };
+
+  const handleExecute = async () => {
+    if (countdown !== null) return;
+    setCountdown(3);
+    for (let i = 2; i >= 0; i--) {
+      await new Promise(r => setTimeout(r, 1000));
+      setCountdown(i);
+    }
+    await new Promise(r => setTimeout(r, 200));
+    setCountdown(null);
+    try { await monitorOff(); } catch { toast?.("关屏失败", "error"); }
+  };
+
+  const handleRowUpdate = useCallback(() => {
+    setTimeout(() => loadConfig(), 500);
+  }, [loadConfig]);
+
+  if (!hotkeys) return null;
+
+  return (
+    <div className="shortcut-list">
+      {Object.entries(hotkeys).map(([id, cfg]) => (
+        <HotkeyRow key={id} id={id} config={cfg}
+          globalEnabled={globalEnabled} toast={toast}
+          recordingId={recordingId} setRecordingId={setRecordingId}
+          onToggle={handleRowUpdate}
+          onExecute={id === "monitor-off" ? handleExecute : undefined}
+          executeCountdown={id === "monitor-off" ? countdown : undefined} />
+      ))}
+      <div className="set-row">
+        <span className="rk"><b>启用全局快捷键</b><small>关闭后下列所有组合键将失效</small></span>
+        <span className="rctrl">
+          <label className="switch">
+            <input type="checkbox" checked={globalEnabled} onChange={(e) => handleGlobalToggle(e.target.checked)} aria-label="启用全局快捷键" />
+            <span className="track"></span>
+          </label>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecordingId, onToggle, onExecute, executeCountdown }) {
   const [modifiers, setModifiers] = useState(config.modifiers);
   const [key, setKey] = useState(config.key);
   const inputRef = useRef(null);
   const isRecording = recordingId === id;
 
-  // 同步后端配置（如冲突恢复后重新加载）
   useEffect(() => {
     setModifiers(config.modifiers);
     setKey(config.key);
@@ -378,113 +612,26 @@ function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecording
     setRecordingId(null);
     try {
       await setHotkeyConfig(id, { enabled: globalEnabled, modifiers: newMods, key: keyName });
-      if (onToggle) onToggle(globalEnabled); // 通知父组件此快捷键已更新
+      if (onToggle) onToggle(globalEnabled);
       toast?.(`快捷键已更新为 ${formatHotkey(newMods, keyName)}`, "success");
     } catch { toast?.("保存失败", "error"); }
   };
 
   return (
-    <>
-      <div className="flex items-center justify-between">
-        <span className="text-sm">{HOTKEY_LABELS[id] || id}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-xs px-2 py-0.5 rounded" style={{
-            background: "var(--card-2)", border: "1px solid var(--border)",
-            fontFamily: "monospace", color: config.conflict ? "var(--danger)" : "var(--text)"
-          }}>
-            {formatHotkey(modifiers, key)}
-          </span>
-          <button onClick={handleRecord}
-            className="text-xs px-2 py-1 rounded-lg transition-colors"
-            style={{ background: isRecording ? "var(--primary-2)" : "var(--card-2)", border: "1px solid var(--border)", color: isRecording ? "#fff" : "var(--text)" }}>
-            {isRecording ? "录制中..." : "录制"}
-          </button>
-          {id === "monitor-off" && (
-            <button onClick={onExecute}
-              className="text-xs px-2 py-1 rounded-lg transition-colors"
-              style={{ background: "var(--card-2)", border: "1px solid var(--border)", color: executeCountdown != null ? "var(--primary)" : "var(--text)" }}
-              disabled={executeCountdown != null}>
-              {executeCountdown != null ? `${executeCountdown}s` : "执行"}
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="shortcut-row">
+      <span className="rk"><b>{HOTKEY_LABELS[id] || id}</b><small>{id === "monitor-off" ? "一键关闭显示器" : "切换到对应性能配置"}</small></span>
+      <span className="keys">{formatHotkey(modifiers, key)}</span>
+      <button className="rec-btn" onClick={handleRecord}>{ICONS.edit}录制</button>
+      {id === "monitor-off" && (
+        <button className="rec-btn" onClick={onExecute} disabled={executeCountdown != null}>
+          {executeCountdown != null ? `${executeCountdown}s` : "执行"}
+        </button>
+      )}
       {isRecording && (
         <input ref={inputRef} onKeyDown={handleKeyDown} onBlur={() => setRecordingId(null)}
-          className="w-full text-xs text-center py-1 rounded"
-          style={{ background: "var(--card-2)", border: "1px solid var(--primary)", color: "var(--text)", outline: "none" }}
+          className="hk-input"
           placeholder="请按下组合键... (Esc 取消)" readOnly autoFocus />
       )}
-      {config.conflict && (
-        <p className="text-xs" style={{ color: "var(--danger)" }}>该快捷键已被占用，请更换组合键</p>
-      )}
-    </>
-  );
-}
-
-function HotkeyCard({ toast }) {
-  const [hotkeys, setHotkeys] = useState(null);
-  const [globalEnabled, setGlobalEnabled] = useState(true);
-  const [recordingId, setRecordingId] = useState(null);
-  const [countdown, setCountdown] = useState(null);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      const cfg = await fetchHotkeyConfig();
-      setHotkeys(cfg);
-      const first = Object.values(cfg)[0];
-      if (first) setGlobalEnabled(first.enabled !== false);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => { loadConfig(); }, [loadConfig]);
-
-  const handleGlobalToggle = async (v) => {
-    setGlobalEnabled(v);
-    if (!hotkeys) return;
-    // 批量更新所有快捷键的 enabled 状态
-    const entries = Object.entries(hotkeys);
-    const updated = {};
-    for (const [id, cfg] of entries) {
-      updated[id] = { ...cfg, enabled: v };
-      try { await setHotkeyConfig(id, { enabled: v, modifiers: cfg.modifiers, key: cfg.key }); } catch { /* ignore */ }
-    }
-    setHotkeys(updated);
-    toast?.(v ? "快捷键已开启" : "快捷键已关闭", "success");
-  };
-
-  const handleExecute = async () => {
-    if (countdown !== null) return;
-    setCountdown(3);
-    for (let i = 2; i >= 0; i--) {
-      await new Promise(r => setTimeout(r, 1000));
-      setCountdown(i);
-    }
-    await new Promise(r => setTimeout(r, 200));
-    setCountdown(null);
-    try { await monitorOff(); } catch { toast?.("关屏失败", "error"); }
-  };
-
-  // 单个快捷键更新后刷新冲突状态
-  const handleRowUpdate = useCallback(() => {
-    setTimeout(() => loadConfig(), 500);
-  }, [loadConfig]);
-
-  if (!hotkeys) return null;
-
-  return (
-    <Card title="快捷键" className="!p-3">
-      <div className="space-y-2">
-        {Object.entries(hotkeys).map(([id, cfg]) => (
-          <HotkeyRow key={id} id={id} config={cfg}
-            globalEnabled={globalEnabled} toast={toast}
-            recordingId={recordingId} setRecordingId={setRecordingId}
-            onToggle={handleRowUpdate}
-            onExecute={id === "monitor-off" ? handleExecute : undefined}
-            executeCountdown={id === "monitor-off" ? countdown : undefined} />
-        ))}
-        <SwitchRow label="启用全局快捷键" checked={globalEnabled} onChange={handleGlobalToggle} />
-      </div>
-    </Card>
+    </div>
   );
 }

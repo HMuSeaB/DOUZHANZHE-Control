@@ -1,29 +1,28 @@
-﻿import { useControlState } from "../hooks/useControlState";
+import { useState } from "react";
 import SettingsPanel from "../components/panels/SettingsPanel";
 
 export default function Settings() {
-  const { settings, setSettings } = useControlState();
+  const [dummySettings, setDummySettings] = useState({
+    mode: "office",
+    numLock: true,
+    capsLock: false,
+    fnLock: false,
+    touchpadLock: false,
+    osdDisabled: false,
+    kbBrightnessLevel: 0,
+  });
 
   return (
     <section className="page active">
       <div className="page-head">
         <div>
           <h1>设置</h1>
-          <p>应用级配置 · 快捷键 · 主题 · 关于</p>
+          <p>应用级配置 · 非硬件控制 · 更改即时生效并本地持久化</p>
         </div>
       </div>
 
-      <div style={{ maxWidth: 600 }} className="reveal enter">
-        <SettingsPanel
-          settings={settings}
-          setSettings={setSettings}
-          showSwitches={true}
-          showKeyboard={true}
-          showAbout={true}
-          showAutoStart={true}
-          showBackground={true}
-          showHotkey={true}
-        />
+      <div className="reveal enter">
+        <SettingsPanel settings={dummySettings} setSettings={setDummySettings} />
       </div>
     </section>
   );
