@@ -83,8 +83,12 @@ CC-Switch 的协议转换层完整支持 Responses API 工具注册。
 - 风扇控制（FanControl / FanCurvePanel）— RPM 曲线、双风扇可视化、手动调速
 - 平台控制（PlatformControl）— 键盘灯/GPU 模式/键盘锁/EC 信息
 - 切换至 CC-Switch，apply_patch 工具恢复
+ - 游戏（Games / GameProfilesPanel）— 海报卡片墙、自动切换、扫描/添加/编辑规则
+ - 系统信息（SysInfo / SystemInfoPanel）— 硬件配置卡片网格、刷新
+ - 设置（Settings / SettingsPanel）— 主题/配色、自启、背景、快捷键、备份、关于
 
 #### 待完成
 - 游戏（Games / GameProfilesPanel）
 - 系统信息（SysInfo / SystemInfoPanel）
 - 设置（Settings / SettingsPanel）
+ - 无
