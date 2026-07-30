@@ -84,7 +84,7 @@ export default function SettingsPanel({ settings, setSettings }) {
        if (d.theme) setTheme(d.theme);
         if (d.accentColor) {
           setAccent(d.accentColor);
-          document.documentElement.style.setProperty("--primary", d.accentColor);
+          document.documentElement.style.setProperty("--seed-primary", d.accentColor);
         }
       })
       .catch(() => {});
@@ -193,7 +193,7 @@ export default function SettingsPanel({ settings, setSettings }) {
     setAccent(color);
     localStorage.setItem("dz_accent_color", color);
     saveUiState({ theme, accentColor: color });
-    document.documentElement.style.setProperty("--primary", color);
+    document.documentElement.style.setProperty("--seed-primary", color);
   };
 
   const toggleAutoStart = async (v) => {
