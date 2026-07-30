@@ -1,170 +1,103 @@
-﻿import { useControlState } from "../hooks/useControlState";
-import { useState, useEffect } from "react";
-import SwitchRow from "../components/ui/SwitchRow";
+﻿import { useState, useEffect } from "react";
+import { useControlState } from "../hooks/useControlState";
 
 export default function PlatformControl() {
   const { settings, setSettings, telemetry } = useControlState();
-  const [kbBrightness, setKbBrightness] = useState(0);
+  const [kbLevel, setKbLevel] = useState(0);
 
   useEffect(() => {
-    fetch("/api/platform/info")
-      .then(r => r.json())
-      .then(d => {
-        if (d.kbBrightnessLevel != null) setKbBrightness(d.kbBrightnessLevel);
-      })
-      .catch(() => {});
+    fetch("/api/platform/info").then(r => r.json()).then(d => { if (d.kbBrightnessLevel != null) setKbLevel(d.kbBrightnessLevel); }).catch(() => {});
   }, []);
 
-  const updateKbBrightness = (v) => {
-    setKbBrightness(v);
-    fetch("/api/platform/kb-brightness", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ level: v }),
-    }).catch(() => {});
+  const setKb = (v) => { setKbLevel(v); fetch("/api/platform/kb-brightness", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ level: v }) }).catch(() => {}); };
+
+  const setSwitch = (key, val, endpoint) => {
+    setSettings(prev => ({ ...prev, [key]: val }));
+    fetch("/api/platform/" + endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: val }) }).catch(() => {});
   };
+
+  const gpuModes = [
+    { id: 2, label: "集显", desc: "节能模式" },
+    { id: 0, label: "混合", desc: "自动切换" },
+    { id: 1, label: "独显", desc: "高性能" },
+  ];
 
   return (
     <section className="page active">
       <div className="page-head">
         <div>
           <h1>平台控制</h1>
-          <p>笔记本型号绑定的 EC / WMI 控制</p>
+          <p>EC / WMI 型号绑定控制 · 后端自动检测 · 动态渲染可用项</p>
         </div>
       </div>
 
-      <div className="grid" style={{ maxWidth: 600, gap: 16 }}>
-        {/* GPU 模式 */}
-        <div className="card reveal enter" style={{ animationDelay: ".04s" }}>
-          <div className="head" style={{ marginBottom: 14 }}>
-            <span className="t">
-              <span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="6" width="20" height="12" rx="1.5"/><circle cx="9" cy="12" r="3"/><path d="M16 10h3M16 14h3"/></svg></span>
-              GPU 模式
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {[
-              { id: 2, label: "集显", desc: "节能模式" },
-              { id: 0, label: "混合", desc: "自动切换" },
-              { id: 1, label: "独显", desc: "高性能" },
-            ].map(m => (
-              <button
-                key={m.id}
-                className={`mode-btn${telemetry?.gpuMode === m.id ? " active" : ""}`}
-                style={{ flex: 1 }}
-                onClick={() => {
-                  fetch("/api/platform/gpu-mode", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mode: m.id }),
-                  }).catch(() => {});
-                }}
-              >
-                <span className="txt">
-                  <b>{m.label}</b>
-                  <small>{m.desc}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="metric-row" style={{ marginTop: 14 }}>
-            <span className="k">当前模式</span>
-            <span className="v">
-              {telemetry?.gpuMode === 1 ? "独显" : telemetry?.gpuMode === 0 ? "混合" : telemetry?.gpuMode === 2 ? "集显" : "未知"}
-            </span>
-          </div>
-        </div>
+      <div className="hint" style={{ margin: "0 0 18px" }}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        本页内容随笔记本型号变化：后端返回什么控制项，前端就渲染什么。
+      </div>
 
-        {/* 键盘背光 */}
-        <div className="card reveal enter" style={{ animationDelay: ".08s" }}>
-          <div className="head" style={{ marginBottom: 14 }}>
-            <span className="t">
-              <span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="4" y="8" width="16" height="8" rx="1.5"/><path d="M7 11h2M11 11h2M15 11h2M9 14h6"/></svg></span>
-              键盘背光
+      <div className="section-title">控制项<span className="line"></span></div>
+      <div className="card reveal enter" style={{ animationDelay: ".02s" }}>
+        <div className="grid2">
+          <div className="g-cell">
+            <span className="rk"><b>键盘灯亮度</b><small>EC 寄存器控制键盘背光 · 0–3 档</small></span>
+            <span className="g-ctrl">
+              <input type="range" className="slider" min="0" max="3" value={kbLevel} onChange={e => setKb(Number(e.target.value))} style={{ width: '60%' }} />
+              <span className="pv">{kbLevel === 0 ? '关' : kbLevel + ' 档'}</span>
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span className="k" style={{ fontSize: 13, color: "var(--fg-3)", minWidth: 50 }}>亮度</span>
-            <div style={{ flex: 1, display: "flex", gap: 6 }}>
-              {[0, 1, 2, 3].map(lvl => (
-                <button
-                  key={lvl}
-                  className="text-xs px-3 py-1.5 rounded-lg transition-all"
-                  style={{
-                    flex: 1,
-                    border: kbBrightness === lvl ? "1px solid var(--primary)" : "1px solid var(--stroke)",
-                    background: kbBrightness === lvl ? "color-mix(in srgb, var(--primary) 20%, var(--surface))" : "transparent",
-                    color: kbBrightness === lvl ? "var(--primary)" : "var(--fg-2)",
-                    cursor: "pointer",
-                  }}
-                  onClick={() => updateKbBrightness(lvl)}
-                >
-                  {["关", "低", "中", "高"][lvl]}
-                </button>
-              ))}
-            </div>
+          <div className="g-cell">
+            <span className="rk"><b>GPU 模式</b><small>混合 / 独显 / 集显 · WMI · 切换需重启</small></span>
+            <span className="g-ctrl">
+              <div className="segmented">
+                {gpuModes.map(m => (
+                  <button key={m.id} className={telemetry?.gpuMode === m.id ? "active" : ""}
+                    onClick={() => fetch("/api/platform/gpu-mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m.id }) }).catch(() => {})}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </span>
           </div>
         </div>
+      </div>
 
-        {/* 系统开关 */}
-        <div className="card reveal enter" style={{ animationDelay: ".12s" }}>
-          <div className="head" style={{ marginBottom: 14 }}>
-            <span className="t">
-              <span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="8" width="18" height="8" rx="1.5"/><path d="M8 2v4M16 2v4M3 14h18"/></svg></span>
-              系统开关
+      <div className="section-title">键盘按键<span className="tag">OEM EC</span><span className="line"></span></div>
+      <div className="card reveal enter" style={{ animationDelay: ".04s" }}>
+        <div className="grid2">
+          <div className="g-cell">
+            <span className="rk"><b>FN 锁</b><small>锁定 Fn 键行为 · F1–F12 与多媒体键互换</small></span>
+            <span className="g-ctrl">
+              <label className="switch"><input type="checkbox" checked={settings.fnLock ?? false} onChange={e => setSwitch("fnLock", e.target.checked, "fnlock")} /><span className="track"></span></label>
             </span>
           </div>
-          <div className="space-y-2">
-            <SwitchRow
-              label="Num Lock"
-              checked={settings.numLock ?? true}
-              onChange={(v) => {
-                setSettings(prev => ({ ...prev, numLock: v }));
-                fetch("/api/platform/numlock", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ enabled: v }),
-                }).catch(() => {});
-              }}
-            />
-            <SwitchRow
-              label="Caps Lock"
-              checked={settings.capsLock ?? false}
-              onChange={(v) => {
-                setSettings(prev => ({ ...prev, capsLock: v }));
-                fetch("/api/platform/capslock", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ enabled: v }),
-                }).catch(() => {});
-              }}
-            />
-            <SwitchRow
-              label="Fn Lock"
-              checked={settings.fnLock ?? false}
-              onChange={(v) => {
-                setSettings(prev => ({ ...prev, fnLock: v }));
-                fetch("/api/platform/fnlock", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ enabled: v }),
-                }).catch(() => {});
-              }}
-            />
-            <SwitchRow
-              label="触控板锁定"
-              checked={settings.touchpadLock ?? false}
-              onChange={(v) => {
-                setSettings(prev => ({ ...prev, touchpadLock: v }));
-                fetch("/api/platform/touchpad", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ locked: v }),
-                }).catch(() => {});
-              }}
-            />
+          <div className="g-cell">
+            <span className="rk"><b>大写锁定</b><small>锁定 Caps Lock 键 · 防游戏中误触</small></span>
+            <span className="g-ctrl">
+              <label className="switch"><input type="checkbox" checked={settings.capsLock ?? false} onChange={e => setSwitch("capsLock", e.target.checked, "capslock")} /><span className="track"></span></label>
+            </span>
+          </div>
+          <div className="g-cell">
+            <span className="rk"><b>数字小键盘锁</b><small>锁定数字小键盘 · 防误触或切换为方向键功能</small></span>
+            <span className="g-ctrl">
+              <label className="switch"><input type="checkbox" checked={settings.numLock ?? true} onChange={e => setSwitch("numLock", e.target.checked, "numlock")} /><span className="track"></span></label>
+            </span>
+          </div>
+          <div className="g-cell">
+            <span className="rk"><b>触控板锁</b><small>禁用触控板 · 外接鼠标时防误触</small></span>
+            <span className="g-ctrl">
+              <label className="switch"><input type="checkbox" checked={settings.touchpadLock ?? false} onChange={e => setSwitch("touchpadLock", e.target.checked, "touchpad")} /><span className="track"></span></label>
+            </span>
           </div>
         </div>
+      </div>
+
+      <div className="section-title">EC 信息<span className="tag">只读</span><span className="line"></span></div>
+      <div className="card reveal enter" style={{ padding: 0, animationDelay: ".06s" }}>
+        <div className="row-line"><span className="rk"><b>EC 固件版本</b><small>嵌入式控制器固件</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
+        <div className="row-line"><span className="rk"><b>CPU 传感器原始值</b><small>EC 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
+        <div className="row-line"><span className="rk"><b>GPU 传感器原始值</b><small>EC 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
+        <div className="row-line"><span className="rk"><b>主板温度</b><small>EC 直读</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
       </div>
     </section>
   );

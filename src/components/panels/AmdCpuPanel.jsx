@@ -7,7 +7,7 @@ const POWER_PLANS = [
   { id: "performance", label: "最佳性能", halValue: powerPlanHALMap.performance },
 ];
 
-export default function IntelCpuPanel({ settings, uxtuParams, setUxtuParams, overrides, saveOverride, switching, customLabel }) {
+export default function AmdCpuPanel({ settings, uxtuParams, setUxtuParams, overrides, saveOverride, switching, customLabel }) {
   const latestModeRef = useRef(settings.mode);
   latestModeRef.current = settings.mode;
   const paramsLocked = !!switching;
@@ -28,11 +28,10 @@ export default function IntelCpuPanel({ settings, uxtuParams, setUxtuParams, ove
   }
 
   function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { const percent = coreCount > 0 ? Math.round(coreCount / 16 * 100) : 100; await setCpuCoreLimitPercent(percent, latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }
-
   return (
     <div className="card" style={{ padding: 20 }}>
       <div className="head" style={{ marginBottom: 18 }}>
-        <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>CPU 频率控制{customLabel}</span>
+        <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 2v4M16 2v4M2 8h4M2 16h4M18 8h4M18 16h4M8 20v2M16 20v2"/></svg></span>CPU 频率控制{customLabel}</span>
       </div>
       <div className="switch-row">
         <span className="k">频率限制</span>
@@ -63,7 +62,7 @@ export default function IntelCpuPanel({ settings, uxtuParams, setUxtuParams, ove
         <div style={{ display: "flex", gap: 6 }}>
           {POWER_PLANS.map(plan => (
             <button key={plan.id} onClick={() => { update("cpuPowerPlan")(plan.id); if (plan.halValue !== undefined) applyHardwareControl("power_plan", plan.halValue, settings.mode).catch(() => {}); }} disabled={paramsLocked}
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--stroke)", background: uxtuParams.cpuPowerPlan === plan.id ? "var(--primary)" : "color-mix(in srgb, var(--surface-2) 70%, transparent)", color: uxtuParams.cpuPowerPlan === plan.id ? "var(--primary-fg)" : "var(--fg-2)", cursor: "pointer", fontSize: 12, fontFamily: "inherit", transition: "all .15s var(--ease)" }}
+              style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--stroke)", background: uxtuParams.cpuPowerPlan === plan.id ? "var(--primary)" : "color-mix(in srgb, var(--surface-2) 70%, transparent)", color: uxtuParams.cpuPowerPlan === plan.id ? "var(--primary-fg)" : "var(--fg-2)", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}
             >{plan.label}</button>
           ))}
         </div>

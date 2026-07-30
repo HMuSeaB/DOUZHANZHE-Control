@@ -29,6 +29,8 @@ export default function App() {
   }, [activePage]);
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
+  useEffect(() => { const h = (e) => { document.querySelectorAll('.reveal').forEach((el) => { const r = el.getBoundingClientRect(); el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%'); el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%'); }); }; window.addEventListener('mousemove', h); return () => window.removeEventListener('mousemove', h); }, []);
+
 
   function Svg({ d }) {
     return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d={d}/></svg>;

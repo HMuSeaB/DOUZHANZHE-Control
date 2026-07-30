@@ -1,29 +1,18 @@
 import { useCallback, useRef, useEffect } from "react";
 import { applySmuSet } from "../../services/uxtuAdapter";
-import Card from "../ui/Card";
-import SliderRow from "../ui/SliderRow";
 
 export default function IntelPowerPanel({
-  settings, uxtuParams, setUxtuParams,
-  overrides, saveOverride, switching, customLabel,
+  settings, uxtuParams, setUxtuParams, overrides, saveOverride, switching, customLabel,
 }) {
   const latestModeRef = useRef(settings.mode);
   latestModeRef.current = settings.mode;
-
   const paramsLocked = !!switching;
-
   const update = useCallback((key) => (value) => {
     setUxtuParams(p => ({ ...p, [key]: value }));
     saveOverride?.(settings.mode, key, value);
   }, [setUxtuParams, saveOverride, settings.mode]);
-
-  const isC = useCallback((key) => (overrides ? key in overrides : undefined), [overrides]);
-
   const smuTimer = useRef(null);
-  useEffect(() => {
-    return () => clearTimeout(smuTimer.current);
-  }, []);
-
+  useEffect(() => () => clearTimeout(smuTimer.current), []);
   function queueSmu(parameter, valueM) {
     clearTimeout(smuTimer.current);
     smuTimer.current = setTimeout(async () => {
@@ -31,19 +20,19 @@ export default function IntelPowerPanel({
       catch (err) { console.error("SMU set failed:", err); }
     }, 600);
   }
-
   return (
-    <Card title={"CPU 功耗与温度" + (customLabel || "")} className="!p-3">
-      <div className="space-y-3">
-        <SliderRow label="长时功耗 (PL1)" value={uxtuParams.cpuLongPptW}
-          min={15} max={120} unit="W"
-          isCustom={isC("cpuLongPptW")}
-          onChange={(v) => { update("cpuLongPptW")(v); queueSmu("power_limit", v); }} disabled={paramsLocked} />
-        <SliderRow label="短时功耗 (PL2)" value={uxtuParams.cpuShortPptW}
-          min={15} max={140} unit="W"
-          isCustom={isC("cpuShortPptW")}
-          onChange={(v) => { update("cpuShortPptW")(v); queueSmu("short_power_limit", v); }} disabled={paramsLocked} />
+    <div className="card" style={{ padding: 20 }}>
+      <div className="head" style={{ marginBottom: 18 }}>
+        <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg></span>CPU 功耗与温度{customLabel}</span>
       </div>
-    </Card>
+      <div className="slider-group">
+        <div className="slider-label"><span className="k">长时功耗 (PL1)</span><span className="v">{uxtuParams.cpuLongPptW}<span className="u">W</span></span></div>
+        <input type="range" className="slider-track" min={15} max={120} step={1} value={uxtuParams.cpuLongPptW} onChange={e => { const v = Number(e.target.value); update("cpuLongPptW")(v); queueSmu("power_limit", v); }} disabled={paramsLocked} />
+      </div>
+      <div className="slider-group">
+        <div className="slider-label"><span className="k">短时功耗 (PL2)</span><span className="v">{uxtuParams.cpuShortPptW}<span className="u">W</span></span></div>
+        <input type="range" className="slider-track" min={15} max={140} step={1} value={uxtuParams.cpuShortPptW} onChange={e => { const v = Number(e.target.value); update("cpuShortPptW")(v); queueSmu("short_power_limit", v); }} disabled={paramsLocked} />
+      </div>
+    </div>
   );
 }

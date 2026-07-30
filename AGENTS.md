@@ -1,4 +1,4 @@
-# DOUZHANZHE-Control — AGENTS.md
+﻿# DOUZHANZHE-Control — AGENTS.md
 
 ## 已否决 / 已废弃方案（AI 请勿重新引入）
 
@@ -40,3 +40,36 @@
 - Shell 标题栏主题同步：按钮 → API → 写入 server/config/ui-state.json → FileSystemWatcher → DWM
 - 自动提交: .csproj AfterTargets=Build 执行 sync-repos.ps1
 - 私有备份: KanzakiK/DOUZHANZHE-Control-private (docs/, canvas-workspace/)
+
+## 开发环境限制
+
+### apply_patch 工具（2026-07-30 已恢复）
+切换至 CC-Switch 后，apply_patch 工具恢复正常。
+CC-Switch 的协议转换层完整支持 Responses API 工具注册。
+如需调整供应商配置，请通过 CC-Switch 管理工具操作，而非手动编辑 config.toml。
+## 开发约定
+
+- 新UI开发阶段严格按产品原型样式还原页面，不自行发挥
+- API对接时发现原型缺内容，先找用户商量，不擅自补充
+- 旧页面有意重写，不做增量修补
+
+### 构建与部署
+- 前端构建：
+pm run build（〜200ms）
+- 部署：运行 deploy.ps1（自动构建 + 复制 dist/* → server/api/bin/run/wwwroot/）
+- 开发启动：运行 start-dev.ps1（自动检测端口占用、杀正式版、构建、启动 API）
+- **禁止手动复制文件**，统一走脚本流程
+
+### UI 迁移进度（2026-07-30）
+
+#### 已完成
+- 仪表盘（Dashboard）— 原型样式重写
+- 控制面板（ControlPanel）— Intel CPU/Power/Performance + AMD CPU/Power
+- 切换至 CC-Switch，apply_patch 工具恢复
+
+#### 待完成
+- 风扇控制（FanControl / FanCurvePanel）
+- 平台控制（PlatformControl）
+- 游戏（Games / GameProfilesPanel）
+- 系统信息（SysInfo / SystemInfoPanel）
+- 设置（Settings / SettingsPanel）
