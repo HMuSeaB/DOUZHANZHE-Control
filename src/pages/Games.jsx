@@ -6,7 +6,7 @@ export default function Games() {
       <div className="page-head">
         <div>
           <h1>游戏</h1>
-          <p>按游戏自动切换参数预设 · 扫描并添加</p>
+          <p>按游戏自动切换参数预设 · 只做预设选择，不做参数编辑</p>
         </div>
       </div>
 
