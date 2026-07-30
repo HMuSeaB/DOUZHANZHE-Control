@@ -1,4 +1,4 @@
-# deploy.ps1 - 一键构建前端并同步到 C# 后端所有 wwwroot 目录
+﻿# deploy.ps1 - 一键构建前端并同步到 C# 后端所有 wwwroot 目录
 # 用法: .\deploy.ps1          (构建 + 部署)
 #       .\deploy.ps1 -SkipBuild  (仅部署，跳过构建)
 
@@ -11,7 +11,7 @@ $Root = $PSScriptRoot
 
 # ── 1. 构建 ──
 if (-not $SkipBuild) {
-    Write-Host "[1/3] Vite build..." -ForegroundColor Cyan
+    Write-Host "[1/4] Vite build..." -ForegroundColor Cyan
     Push-Location $Root
     npx vite build
     if ($LASTEXITCODE -ne 0) {
@@ -21,7 +21,7 @@ if (-not $SkipBuild) {
     }
     Pop-Location
 } else {
-    Write-Host "[1/3] Skip build (--SkipBuild)" -ForegroundColor Yellow
+    Write-Host "[1/4] Skip build (--SkipBuild)" -ForegroundColor Yellow
 }
 
 # ── 2. 定义目标目录 ──
@@ -33,7 +33,7 @@ $Targets = @(
 )
 
 # ── 3. 同步到每个 wwwroot ──
-Write-Host "[2/3] Syncing to wwwroot directories..." -ForegroundColor Cyan
+Write-Host "[2/4] Syncing to wwwroot directories..." -ForegroundColor Cyan
 
 foreach ($Target in $Targets) {
     if (-not (Test-Path $Target)) {
@@ -64,8 +64,17 @@ foreach ($Target in $Targets) {
     Write-Host "  OK: $Target" -ForegroundColor Green
 }
 
-# ── 4. 结果 ──
+# ── 4. 结果与仓库同步 ──
 $JsFile = (Get-ChildItem -Path (Join-Path $Dist "assets") -Filter "*.js" | Select-Object -First 1).Name
-Write-Host "[3/3] Done! Deployed: $JsFile" -ForegroundColor Green
+Write-Host "[3/4] Done! Deployed: $JsFile" -ForegroundColor Green
 Write-Host ""
 Write-Host "Remember to restart the C# backend if it's running." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "[4/4] Syncing repositories..." -ForegroundColor Cyan
+$SyncScript = Join-Path $Root "sync-repos.ps1"
+if (Test-Path $SyncScript) {
+    powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
+    Write-Host "[4/4] Repositories synced." -ForegroundColor Green
+} else {
+    Write-Warn "sync-repos.ps1 not found, skipping repository sync."
+}
