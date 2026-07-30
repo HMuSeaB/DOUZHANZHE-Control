@@ -207,3 +207,13 @@ Write-Host " 安装包已生成: $($SetupFile.Name)" -ForegroundColor Green
 Write-Host " 大小: $([math]::Round($SetupFile.Length / 1MB, 1)) MB" -ForegroundColor Green
 Write-Host " 位置: $($SetupFile.FullName)" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
+
+# 同步仓库
+Write-Host "[6.5/6] Syncing repositories..." -ForegroundColor Cyan
+$SyncScript = Join-Path $Root "sync-repos.ps1"
+if (Test-Path $SyncScript) {
+    powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
+    Write-Host "[6.5/6] Repositories synced." -ForegroundColor Green
+} else {
+    Write-Warn "sync-repos.ps1 not found, skipping repository sync."
+}
