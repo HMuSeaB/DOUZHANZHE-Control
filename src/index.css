@@ -378,3 +378,129 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .g-ctrl{display:flex;align-items:center;justify-content:flex-start;gap:12px}
 .row-line{display:flex;align-items:center;gap:16px;padding:15px 20px}
 .row-line+.row-line{border-top:1px solid var(--stroke)}
+
+/* ============================================================
+   游戏页
+   ============================================================ */
+.master-bar{padding:16px 20px;display:flex;align-items:center;gap:16px;margin-bottom:4px}
+.master-bar .mi{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;
+  background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary)}
+.master-bar .mi svg{width:20px;height:20px}
+.master-bar .mt{flex:1}
+.master-bar .mt b{font-size:14.5px;display:block}
+.master-bar .mt small{font-size:11.5px;color:var(--fg-3)}
+.master-bar .state{font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;
+  color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--ok) 30%,transparent)}
+.master-bar.off .state{color:var(--fg-3);background:var(--stroke);border-color:var(--stroke-strong)}
+.master-bar.off .mi{background:var(--stroke);color:var(--fg-3)}
+
+.list-tools{display:flex;align-items:center;gap:12px;margin:18px 0 12px;
+  padding:14px 18px;border:1px solid var(--stroke);border-radius:var(--radius);
+  background:color-mix(in srgb,var(--surface) 70%,transparent)}
+.list-tools .count{font-size:12.5px;color:var(--fg-3)}
+.list-tools .count b{color:var(--fg-2)}
+.list-tools .sp{flex:1}
+
+.game-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:18px}
+.gcard{position:relative;aspect-ratio:2/3;border-radius:14px;overflow:hidden;
+  border:1px solid var(--stroke);background:var(--surface-2);
+  transition:transform .22s var(--ease),box-shadow .22s var(--ease),border-color .22s var(--ease)}
+.gcard:hover{transform:translateY(-5px);border-color:var(--stroke-strong);
+  box-shadow:0 18px 38px color-mix(in srgb,#000 42%,transparent)}
+.gcard .poster{position:absolute;inset:0;width:100%;height:100%;display:grid;place-items:center}
+.gcard .poster-letter{font-size:48px;font-weight:700;color:color-mix(in srgb,#fff 28%,transparent);
+  text-transform:uppercase;letter-spacing:2px}
+.gcard .shade{position:absolute;inset:0;
+  background:linear-gradient(180deg,color-mix(in srgb,#000 30%,transparent) 0%,transparent 26%,transparent 46%,color-mix(in srgb,#000 80%,transparent) 100%)}
+.gcard .top{position:absolute;top:0;left:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;padding:10px}
+.gcard .cfg{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#fff;
+  padding:4px 9px;border-radius:999px;background:color-mix(in srgb,#000 46%,transparent);
+  backdrop-filter:blur(6px);border:1px solid color-mix(in srgb,#fff 24%,transparent)}
+.gcard .cfg .dot{width:7px;height:7px;border-radius:50%;background:var(--primary)}
+.gcard .sw{transform:scale(.82);transform-origin:top right}
+.gcard .sw .track{background:color-mix(in srgb,#000 50%,transparent);border:1px solid color-mix(in srgb,#fff 30%,transparent)}
+.gcard .sw .track::after{background:#fff}
+.gcard .sw input:checked + .track{background:var(--primary);border-color:transparent}
+.gcard .sw input:checked + .track::after{background:var(--primary-fg)}
+.gcard .info{position:absolute;left:0;right:0;bottom:0;padding:38px 13px 12px}
+.gcard .info b{display:block;color:#fff;font-size:14.5px;font-weight:600;line-height:1.25;
+  text-shadow:0 1px 6px color-mix(in srgb,#000 70%,transparent)}
+.gcard .info small{display:block;color:color-mix(in srgb,#fff 72%,transparent);font-size:11px;margin-top:3px}
+.gcard .acts{position:absolute;top:8px;right:8px;display:flex;gap:5px;opacity:0;transform:translateY(-5px);
+  transition:all .2s var(--ease)}
+.gcard:hover .acts{opacity:1;transform:none}
+.gcard .acts .ico-btn{width:28px;height:28px;border-radius:7px;background:color-mix(in srgb,#000 52%,transparent);
+  backdrop-filter:blur(6px);border:1px solid color-mix(in srgb,#fff 18%,transparent);color:#fff}
+.gcard .acts .ico-btn:hover{background:color-mix(in srgb,#000 72%,transparent);border-color:color-mix(in srgb,#fff 40%,transparent)}
+.gcard .launch{position:absolute;left:12px;right:12px;bottom:12px;justify-content:center;
+  opacity:0;transform:translateY(10px);transition:all .22s var(--ease);z-index:2}
+.gcard:hover .launch{opacity:1;transform:none}
+.gcard:hover .info{padding-bottom:56px}
+.gcard.off .poster{filter:grayscale(.75) brightness(.62)}
+.gcard.off .cfg{opacity:.5}
+
+.hint{display:flex;align-items:center;gap:10px;margin-top:16px;padding:12px 16px;border-radius:var(--radius);
+  border:1px solid var(--stroke);background:color-mix(in srgb,var(--surface) 70%,transparent);
+  font-size:12px;color:var(--fg-3)}
+.hint svg{width:18px;height:18px;flex-shrink:0;color:var(--primary)}
+.hint b{color:var(--fg);font-weight:600}
+
+.empty-state{display:grid;place-items:center;min-height:180px;color:var(--fg-3);font-size:13px}
+
+/* 弹窗 */
+.modal{position:fixed;inset:0;z-index:70;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--bg) 66%,transparent);backdrop-filter:blur(10px);animation:ovIn .2s var(--ease)}
+.modal .panel{width:min(560px,92vw);max-height:84vh;display:flex;flex-direction:column;overflow:hidden;
+  background:color-mix(in srgb,var(--surface) 96%,transparent);
+  border:1px solid var(--stroke-strong);border-radius:var(--radius);box-shadow:var(--card-shadow)}
+.modal .p-head{display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--stroke)}
+.modal .p-head b{font-size:15.5px}
+.modal .p-head small{display:block;color:var(--fg-3);font-size:11.5px;margin-top:2px}
+.modal .p-head .x{margin-left:auto;width:32px;height:32px;border-radius:8px;border:0;background:transparent;
+  color:var(--fg-3);cursor:pointer;display:grid;place-items:center;transition:all var(--dur) var(--ease)}
+.modal .p-head .x svg{width:17px;height:17px}
+.modal .p-head .x:hover{background:var(--stroke);color:var(--fg)}
+.modal .p-body{padding:20px 22px;overflow-y:auto}
+.modal .p-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--stroke)}
+
+/* 表单字段 */
+.field{margin-bottom:16px}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--fg-2);margin-bottom:7px}
+.field label small{font-weight:400;color:var(--fg-3);margin-left:6px}
+.field .in{display:flex;gap:8px}
+.field input[type=text],.field select{
+  flex:1;width:100%;font-family:inherit;font-size:13px;color:var(--fg);
+  background:color-mix(in srgb,var(--bg) 55%,transparent);
+  border:1px solid var(--stroke);border-radius:var(--radius-sm);padding:10px 12px;
+  transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+.field input[type=text]:focus,.field select:focus{outline:none;border-color:var(--primary);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+.field select{cursor:pointer;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23889' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
+
+/* 扫描结果清单 */
+.scan-src{display:flex;gap:8px;margin-bottom:16px}
+.scan-src .chip{flex:1;display:flex;align-items:center;gap:8px;justify-content:center;
+  border:1px solid var(--stroke);border-radius:var(--radius-sm);padding:9px;font-size:12.5px;
+  color:var(--fg-2);cursor:pointer;transition:all var(--dur) var(--ease)}
+.scan-src .chip.active{border-color:var(--primary);color:var(--primary);
+  background:color-mix(in srgb,var(--primary) 10%,transparent)}
+.scan-src .chip svg{width:15px;height:15px}
+.scan-list{border:1px solid var(--stroke);border-radius:var(--radius-sm);overflow:hidden}
+.scan-item{display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;
+  transition:background var(--dur) var(--ease)}
+.scan-item + .scan-item{border-top:1px solid var(--stroke)}
+.scan-item:hover{background:var(--stroke)}
+.scan-item.disabled{opacity:.5;cursor:not-allowed}
+.scan-item input{width:16px;height:16px;accent-color:var(--primary);cursor:pointer;flex-shrink:0}
+.scan-item.disabled input{cursor:not-allowed}
+.scan-item .gi{width:32px;height:46px;border-radius:6px;overflow:hidden;flex-shrink:0;
+  border:1px solid var(--stroke);display:grid;place-items:center}
+.scan-item .gi-letter{font-size:12px;font-weight:700;color:color-mix(in srgb,#fff 40%,transparent)}
+.scan-item .gn{flex:1;font-size:13px}
+.scan-item .gn small{display:block;color:var(--fg-3);font-size:11px;margin-top:2px}
+.scan-bind{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:12.5px;color:var(--fg-2)}
+.scan-bind select{flex:1}
