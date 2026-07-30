@@ -2291,6 +2291,115 @@ app.MapPost("/api/game-profiles/batch", async (HttpRequest req, GameProfileServi
     return Results.Ok(new { added });
 });
 
+
+// ---- Profile Service 初始化 ----
+var profileSvc = app.Services.GetRequiredService<ProfileService>();
+profileSvc.EnsureInitialized(configDir);
+
+// ---- Profiles API ----
+app.MapGet("/api/profiles", (ProfileService svc) =>
+{
+    var profiles = svc.GetAll();
+    return Results.Json(new { profiles });
+});
+
+app.MapGet("/api/profiles/{id}", (string id, ProfileService svc) =>
+{
+    var result = svc.GetById(id);
+    if (result == null) return Results.NotFound(new { error = "配置不存在" });
+    return Results.Json(new { entry = result.Value.Entry, overrides = result.Value.Overrides });
+});
+
+app.MapPut("/api/profiles/{id}", async (string id, HttpContext ctx, ProfileService svc) =>
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var json = await reader.ReadToEndAsync();
+        var overrides = JsonSerializer.Deserialize<PerformanceOverrides>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            IncludeFields = true,
+        }) ?? new PerformanceOverrides();
+        if (!svc.SaveOverrides(id, overrides))
+            return Results.NotFound(new { error = "配置不存在" });
+        return Results.Ok(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, error = ex.Message });
+    }
+});
+
+app.MapPost("/api/profiles", async (HttpRequest req, ProfileService svc) =>
+{
+    try
+    {
+        using var reader = new StreamReader(req.Body);
+        var body = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(await reader.ReadToEndAsync()) ?? new();
+        string? name = null;
+        string? thermalMode = null;
+        if (body.TryGetValue("name", out var nEl) && nEl.ValueKind == JsonValueKind.String)
+            name = nEl.GetString();
+        if (body.TryGetValue("thermalMode", out var tEl) && tEl.ValueKind == JsonValueKind.String)
+            thermalMode = tEl.GetString();
+        if (string.IsNullOrWhiteSpace(name))
+            return Results.BadRequest(new { error = "名称不能为空" });
+        var created = svc.Create(name, thermalMode);
+        if (created == null)
+            return Results.BadRequest(new { error = "创建失败" });
+        return Results.Json(created);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapDelete("/api/profiles/{id}", (string id, ProfileService svc) =>
+{
+    if (!svc.Delete(id))
+        return Results.BadRequest(new { error = "删除失败（可能是内置配置）" });
+    return Results.Ok(new { ok = true });
+});
+
+app.MapPost("/api/profiles/{id}/rename", async (string id, HttpContext ctx, ProfileService svc) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(await reader.ReadToEndAsync()) ?? new();
+    if (!body.TryGetValue("name", out var nEl) || nEl.ValueKind != JsonValueKind.String)
+        return Results.BadRequest(new { error = "名称不能为空" });
+    if (!svc.Rename(id, nEl.GetString() ?? ""))
+        return Results.BadRequest(new { error = "重命名失败" });
+    return Results.Ok(new { ok = true });
+});
+
+app.MapPost("/api/profiles/{id}/copy", (string id, ProfileService svc) =>
+{
+    var created = svc.Copy(id);
+    if (created == null)
+        return Results.BadRequest(new { error = "复制失败" });
+    return Results.Json(created);
+});
+
+app.MapPost("/api/profiles/{id}/reset", (string id, ProfileService svc) =>
+{
+    if (!svc.ResetToDefaults(id))
+        return Results.BadRequest(new { error = "重置失败" });
+    return Results.Ok(new { ok = true });
+});
+
+app.MapPost("/api/profiles/{id}/thermal-mode", async (string id, HttpContext ctx, ProfileService svc) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(await reader.ReadToEndAsync()) ?? new();
+    if (!body.TryGetValue("thermalMode", out var tEl) || tEl.ValueKind != JsonValueKind.String)
+        return Results.BadRequest(new { error = "thermalMode 不能为空" });
+    if (!svc.SetThermalMode(id, tEl.GetString() ?? ""))
+        return Results.BadRequest(new { error = "设置失败" });
+    return Results.Ok(new { ok = true });
+});
+
 // ---- Start server ----
 try
 {
@@ -2405,3 +2514,5 @@ public static class NativeMethods
 public record BackupRequest(string[]? Categories);
 public record BackupImportRequest(JsonElement Data, string[]? Categories);
 
+builder.Services.AddSingleton<GameProfileService>();
+builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
