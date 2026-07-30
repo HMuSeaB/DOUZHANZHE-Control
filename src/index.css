@@ -212,8 +212,8 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .reveal::after{
   content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
   transition:opacity var(--dur) var(--ease);
-  background:radial-gradient(220px circle at var(--mx,50%) var(--my,50%),
-      color-mix(in srgb, var(--fg) 9%, transparent), transparent 60%);
+  background:radial-gradient(200px circle at var(--mx,50%) var(--my,50%),
+      color-mix(in srgb, var(--fg) 4%, transparent), transparent 70%);
 }
 .reveal:hover::after{opacity:1}
 
