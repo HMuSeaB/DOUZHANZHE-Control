@@ -1682,6 +1682,74 @@ app.MapPost("/api/ui-state", async (HttpContext ctx) =>
     }
     catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
 });
+
+// ---- 配置备份/恢复 ----
+var backupCategories = new Dictionary<string, string[]>
+{
+    ["config"] = new[] { "overrides-office.json", "overrides-beast.json", "overrides-silent.json", "overrides-gaming.json", "custom-params.json", "fan-curve.json", "gpu-mode.json" },
+    ["games"] = new[] { "game-profiles.json" },
+    ["hotkeys"] = new[] { "hotkey-config.json", "hotkey-status.json" },
+    ["appearance"] = new[] { "ui-state.json" },
+    ["background"] = new[] { "background.json" },
+    ["autostart"] = Array.Empty<string>(),
+};
+
+app.MapPost("/api/backup/export", async (HttpContext ctx) =>
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var req = JsonSerializer.Deserialize<BackupRequest>(await reader.ReadToEndAsync(), opts);
+        var cats = req?.Categories ?? Array.Empty<string>();
+        var result = new Dictionary<string, object>();
+        foreach (var cat in cats)
+        {
+            if (!backupCategories.TryGetValue(cat, out var files)) continue;
+            var catData = new Dictionary<string, JsonElement>();
+            foreach (var f in files)
+            {
+                var filePath = Path.Combine(configDir, f);
+                if (!File.Exists(filePath)) continue;
+                var json = await File.ReadAllTextAsync(filePath);
+                catData[f] = JsonSerializer.Deserialize<JsonElement>(json);
+            }
+            if (catData.Count > 0) result[cat] = catData;
+        }
+        var payload = JsonSerializer.Serialize(new { version = 1, exportedAt = DateTime.Now, categories = result }, new JsonSerializerOptions { WriteIndented = true });
+        var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
+        var ts = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        return Results.File(bytes, "application/json", $"douzhanzhe-backup-{ts}.json");
+    }
+    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+});
+
+app.MapPost("/api/backup/import", async (HttpContext ctx) =>
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var req = JsonSerializer.Deserialize<BackupImportRequest>(await reader.ReadToEndAsync(), opts);
+        if (req?.Data.ValueKind != JsonValueKind.Object || !req.Data.TryGetProperty("categories", out var cats))
+            return Results.Json(new { ok = false, error = "无效备份文件" });
+        int restored = 0;
+        foreach (var cat in req.Categories ?? Array.Empty<string>())
+        {
+            if (!backupCategories.TryGetValue(cat, out var files)) continue;
+            if (!cats.TryGetProperty(cat, out var catFiles)) continue;
+            foreach (var f in files)
+            {
+                if (!catFiles.TryGetProperty(f, out var content)) continue;
+                var filePath = Path.Combine(configDir, f);
+                await File.WriteAllTextAsync(filePath, JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true }));
+                restored++;
+            }
+        }
+        return Results.Json(new { ok = true, restored });
+    }
+    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+});
 app.MapGet("/api/default-config", () =>
 {
     return Results.Json(JsonRead<DefaultConfig>("dashboard-default.json", new DefaultConfig()));
@@ -2278,10 +2346,11 @@ public record CpuTurboRequest(
 public record CpuCoreLimitRequest(
     [property: JsonPropertyName("percent")] int Percent  // 0-100
 );
-public record UiState(string? Theme)
+public record UiState(string? Theme, string? AccentColor)
 {
-    public UiState() : this((string?)null) { }
+    public UiState() : this((string?)null, (string?)null) { }
     public string Theme { get; init; } = Theme ?? "dark";
+    public string AccentColor { get; init; } = AccentColor ?? "#4cc2ff";
 }
 public record DefaultConfig(string[]? Order, string[]? Hidden)
 {
@@ -2330,3 +2399,9 @@ public static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 }
+
+
+
+public record BackupRequest(string[]? Categories);
+public record BackupImportRequest(JsonElement Data, string[]? Categories);
+
