@@ -52,7 +52,12 @@ const ICONS = {
 export default function SettingsPanel({ settings, setSettings }) {
   const toast = useToast();
 
-  const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
+ const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
+
+  const [selectedCats, setSelectedCats] = useState(() =>
+    Object.fromEntries(["config", "games", "hotkeys", "appearance", "autostart", "background"].map(c => [c, c !== "autostart" && c !== "background"]))
+  );
+  const importInputRef = useRef(null);
 
   const [theme, setTheme] = useState("dark");
   const [accent, setAccent] = useState("#4cc2ff");
@@ -75,8 +80,12 @@ export default function SettingsPanel({ settings, setSettings }) {
   useEffect(() => {
     fetch("/api/ui-state")
       .then(r => r.json())
-      .then(d => {
-        if (d.theme) setTheme(d.theme);
+     .then(d => {
+       if (d.theme) setTheme(d.theme);
+        if (d.accentColor) {
+          setAccent(d.accentColor);
+          document.documentElement.style.setProperty("--primary", d.accentColor);
+        }
       })
       .catch(() => {});
     const savedAccent = localStorage.getItem("dz_accent_color");
@@ -111,6 +120,59 @@ export default function SettingsPanel({ settings, setSettings }) {
 
   const updateBg = (patch) => setBg(prev => ({ ...prev, ...patch }));
 
+  const handleExport = async () => {
+    const cats = Object.entries(selectedCats).filter(([_, v]) => v).map(([k]) => k);
+    if (cats.length === 0) { toast?.("请至少选择一个分类", "info"); return; }
+    try {
+      const res = await fetch("/api/backup/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categories: cats }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = res.headers.get("content-disposition") || "";
+      const m = cd.match(/filename="([^"]+)"/);
+      a.download = m?.[1] || `douzhanzhe-backup-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast?.("备份已导出", "success");
+    } catch (e) {
+      toast?.("导出失败: " + e.message, "error");
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const cats = Object.entries(selectedCats).filter(([_, v]) => v).map(([k]) => k);
+      if (cats.length === 0) { toast?.("请至少选择一个分类", "info"); return; }
+      const res = await fetch("/api/backup/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data, categories: cats }),
+      });
+      const d = await res.json();
+      if (d.ok) {
+        toast?.(`已恢复 ${d.restored} 项配置，刷新后生效`, "success");
+      } else {
+        toast?.(d.error || "导入失败", "error");
+      }
+    } catch (e) {
+      toast?.("导入失败: " + e.message, "error");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   const saveUiState = async (patch) => {
     try {
       await fetch("/api/ui-state", {
@@ -123,13 +185,14 @@ export default function SettingsPanel({ settings, setSettings }) {
 
   const setThemeMode = async (mode) => {
     setTheme(mode);
-    await saveUiState({ theme: mode });
+    await saveUiState({ theme: mode, accentColor: accent });
     document.documentElement.setAttribute("data-theme", mode === "auto" ? "dark" : mode);
   };
 
   const setAccentColor = (color) => {
     setAccent(color);
     localStorage.setItem("dz_accent_color", color);
+    saveUiState({ theme, accentColor: color });
     document.documentElement.style.setProperty("--primary", color);
   };
 
@@ -428,24 +491,28 @@ export default function SettingsPanel({ settings, setSettings }) {
         </div>
         <div className="set-body">
           <div className="bak-grid">
-            {[
-              { id: "config", label: "配置参数", desc: "各预设的性能 / 功耗曲线", count: 3 },
-              { id: "games", label: "游戏规则", desc: "游戏绑定与自动切换规则", count: 4 },
-              { id: "hotkeys", label: "快捷键", desc: "全局热键绑定", count: 4 },
-              { id: "appearance", label: "外观与配色", desc: "主题模式与强调色", count: 2 },
-              { id: "autostart", label: "开机自启", desc: "自启与最小化启动", count: 2 },
-              { id: "background", label: "自定义背景", desc: "壁纸来源与模糊参数", count: 5 },
+           {[
+              { id: "config", label: "配置参数", desc: "各预设的性能 / 功耗曲线" },
+              { id: "games", label: "游戏规则", desc: "游戏绑定与自动切换规则" },
+              { id: "hotkeys", label: "快捷键", desc: "全局热键绑定" },
+              { id: "appearance", label: "外观与配色", desc: "主题模式与强调色" },
+              { id: "autostart", label: "开机自启", desc: "自启与最小化启动" },
+              { id: "background", label: "自定义背景", desc: "壁纸来源与模糊参数" },
             ].map(item => (
               <label key={item.id} className="bak-item">
-                <input type="checkbox" defaultChecked={item.id !== "autostart" && item.id !== "background"} />
+                <input
+                  type="checkbox"
+                  checked={selectedCats[item.id]}
+                  onChange={(e) => setSelectedCats(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                />
                 <span className="bt">{item.label}<small>{item.desc}</small></span>
-                <span className="cnt">{item.count} 项</span>
               </label>
             ))}
           </div>
           <div className="bak-actions">
-            <button className="btn primary" onClick={() => toast?.("导出备份功能开发中", "info")}>{ICONS.export}导出备份</button>
-            <button className="btn" onClick={() => toast?.("导入恢复功能开发中", "info")}>{ICONS.import}导入恢复</button>
+            <input ref={importInputRef} type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
+            <button className="btn primary" onClick={handleExport}>{ICONS.export}导出备份</button>
+            <button className="btn" onClick={() => importInputRef.current?.click()}>{ICONS.import}导入恢复</button>
           </div>
         </div>
       </div>
