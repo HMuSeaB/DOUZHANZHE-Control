@@ -47,6 +47,16 @@ builder.Services.AddSingleton<OsdService>();
 builder.Services.AddSingleton<GameProfileService>();
 builder.Services.AddSingleton<ProcessMonitorService>();
 builder.Services.AddHostedService<TelemetryBackgroundService>();
+// ---- Config directory (shared with Node.js) ----
+// 安装环境: AppContext.BaseDirectory\config\
+// 开发环境: 统一使用 shared config (server/config/)
+var configDir = Path.Combine(AppContext.BaseDirectory, "config");
+var sharedConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "config"));
+if (Directory.Exists(sharedConfig))
+    configDir = sharedConfig;
+else if (!Directory.Exists(configDir))
+    Directory.CreateDirectory(configDir);
+builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -74,17 +84,6 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 app.MapFallbackToFile("index.html");
-// ---- Config directory (shared with Node.js) ----
-// 安装环境: AppContext.BaseDirectory\config\
-// 开发环境: 统一使用 shared config (server/config/)
-// 安装环境: AppContext.BaseDirectory\config\
-// 开发环境: 统一使用 shared config (server/config/)
-var configDir = Path.Combine(AppContext.BaseDirectory, "config");
-var sharedConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "config"));
-if (Directory.Exists(sharedConfig))
-    configDir = sharedConfig;
-else if (!Directory.Exists(configDir))
-    Directory.CreateDirectory(configDir);
 
 // ---- File logger (统一走 AppLog) ----
 void Log(string msg)
@@ -315,7 +314,7 @@ async System.Threading.Tasks.Task RestoreComputeSettings(string tag)
                     int smuCount = 0;
                     if (stapmMw.HasValue) { smuCount++; Log($"[{tag}] SMU stapm → {o.Smu.StapmLimitW!.Value}W"); }
                     if (fastMw.HasValue) { smuCount++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
-                    if (fastMw.HasValue) { smuCount++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
+                if (slowMw.HasValue) { smuCount++; Log($"[{tag}] SMU slow power → {o.Smu.ShortPowerLimitW!.Value}W"); }
                     if (tempC.HasValue) { smuCount++; Log($"[{tag}] SMU temp → {o.Smu.TempLimitC!.Value}°C"); }
                     if (coAll.HasValue) { smuCount++; Log($"[{tag}] SMU CO → {o.Smu.CoAll!.Value}"); }
                     restored += smuCount;
@@ -1563,6 +1562,20 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     await System.Threading.Tasks.Task.Delay(500); // 等 EC 完成模式预设加载
 
     var overrides = LoadPerfOverrides();
+    // 用户自建 profile: 从 ProfileService 加载配置（内置模式使用 overrides-{mode}.json）
+    var profileSvc = app.Services.GetRequiredService<ProfileService>();
+    var isBuiltin = new[] { "silent", "office", "gaming", "beast" }.Contains(req.Mode);
+    if (!isBuiltin)
+    {
+        var profileData = profileSvc.GetById(req.Mode);
+        if (profileData.HasValue)
+        {
+            overrides = profileData.Value.Overrides;
+            // 同步写入 overrides-{id}.json，供 ParameterGuard 周期性重发
+            SavePerfOverrides(o => { o.Cpu = overrides.Cpu; o.Gpu = overrides.Gpu; o.Nvapi = overrides.Nvapi; o.Smu = overrides.Smu; o.Fan = overrides.Fan; o.PowerPlan = overrides.PowerPlan; }, req.Mode);
+            Log($"[overrides/switch] 加载用户 profile '{req.Mode}' 的配置");
+        }
+    }
 
     // 非覆盖通道: 直接调用硬件控制器重置（绕过 SavePerfOverrides，避免并发模式切换写错文件）
     var gpuCtrl = app.Services.GetRequiredService<GpuController>();
@@ -2513,6 +2526,3 @@ public static class NativeMethods
 
 public record BackupRequest(string[]? Categories);
 public record BackupImportRequest(JsonElement Data, string[]? Categories);
-
-builder.Services.AddSingleton<GameProfileService>();
-builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
