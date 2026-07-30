@@ -1,6 +1,12 @@
 ﻿import { useState, useEffect } from "react";
 import { useControlState } from "./hooks/useControlState";
 import Dashboard from "./pages/Dashboard";
+import ControlPanel from "./pages/ControlPanel";
+import FanControl from "./pages/FanControl";
+import PlatformControl from "./pages/PlatformControl";
+import Games from "./pages/Games";
+import SysInfo from "./pages/SysInfo";
+import Settings from "./pages/Settings";
 
 const PAGES = [
   { key: "dashboard", label: "仪表盘", icon: "M3 12l9-8 9 8M5 10v10h14V10" },
@@ -55,93 +61,13 @@ export default function App() {
       {/* 内容区 */}
       <main className="content">
         {activePage === "dashboard" && <Dashboard />}
-        {activePage === "control" && <ControlPanelPage />}
-        {activePage === "fan" && <FanControlPage />}
-        {activePage === "platform" && <PlatformControlPage />}
-        {activePage === "games" && <GamesPage />}
-        {activePage === "sysinfo" && <SysInfoPage />}
-        {activePage === "settings" && <SettingsPage />}
+        {activePage === "control" && <ControlPanel />}
+        {activePage === "fan" && <FanControl />}
+        {activePage === "platform" && <PlatformControl />}
+        {activePage === "games" && <Games />}
+        {activePage === "sysinfo" && <SysInfo />}
+        {activePage === "settings" && <Settings />}
       </main>
     </div>
-  );
-}
-
-/* ======== 页面组件（逐步从原型迁移） ======== */
-function ControlPanelPage() {
-  return (
-    <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>控制面板</h1>
-          <p>CPU / GPU 参数调节</p>
-        </div>
-      </div>
-      <p style={{color:'var(--fg-3)',padding:'20px 0'}}>控制面板 — 待从原型迁移</p>
-    </section>
-  );
-}
-function FanControlPage() {
-  return (
-    <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>风扇控制</h1>
-          <p>EC 寄存器绑定 · 手动调速与自定义曲线</p>
-        </div>
-      </div>
-      <p style={{color:'var(--fg-3)',padding:'20px 0'}}>风扇控制 — 待从原型迁移</p>
-    </section>
-  );
-}
-function PlatformControlPage() {
-  return (
-    <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>平台控制</h1>
-          <p>EC / WMI 型号绑定控制</p>
-        </div>
-      </div>
-      <p style={{color:'var(--fg-3)',padding:'20px 0'}}>平台控制 — 待从原型迁移</p>
-    </section>
-  );
-}
-function GamesPage() {
-  return (
-    <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>游戏</h1>
-          <p>按游戏自动切换参数预设</p>
-        </div>
-      </div>
-      <p style={{color:'var(--fg-3)',padding:'20px 0'}}>游戏 — 待从原型迁移</p>
-    </section>
-  );
-}
-function SysInfoPage() {
-  return (
-    <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>系统信息</h1>
-          <p>硬件配置详情</p>
-        </div>
-      </div>
-      <p style={{color:'var(--fg-3)',padding:'20px 0'}}>系统信息 — 待从原型迁移</p>
-    </section>
-  );
-}
-function SettingsPage() {
-  return (
-    <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>设置</h1>
-          <p>应用级配置</p>
-        </div>
-      </div>
-      <p style={{color:'var(--fg-3)',padding:'20px 0'}}>设置 — 待从原型迁移</p>
-    </section>
   );
 }
