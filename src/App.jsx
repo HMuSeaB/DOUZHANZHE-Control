@@ -38,16 +38,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* 全局工具栏 */}
-      <header className="toolbar">
-        <span className="env-pill"><span className="dot" data-online={backendOnline}></span>{backendOnline ? "后端已连接" : "后端离线"}</span>
-        <div className="spacer"></div>
-        <button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="切换深浅主题">
-          <svg className="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
-          <svg className="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        </button>
-      </header>
-
       {/* 窄边栏 */}
       <nav className="sidebar">
         {PAGES.map(p => (
@@ -58,6 +48,14 @@ export default function App() {
           </button>
         ))}
         <div className="grow"></div>
+        <button className="theme-toggle sidebar-btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="切换深浅主题">
+          <svg className="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          <svg className="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <span className="env-pill sidebar-btn">
+          <span className="dot" data-online={backendOnline}></span>
+          {backendOnline ? "已连接" : "离线"}
+        </span>
       </nav>
 
       {/* 内容区 */}
