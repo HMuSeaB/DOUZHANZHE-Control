@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { applySmuSet, applyHardwareControl, powerPlanHALMap, applyGpuControl, applyNvapiOverclock, applyNvapiThermalLimit, setCpuFreqLimit, setCpuTurbo, setCpuCoreLimitPercent } from "../../services/uxtuAdapter";
 import { useToast } from "../ui/Toast";
+import OverrideSlider from "../ui/OverrideSlider";
 
 const POWER_PLANS = [
   { id: "efficiency", label: "最高能效", halValue: powerPlanHALMap.efficiency },
@@ -31,12 +32,17 @@ function Switch({ label, checked, disabled, onChange }) {
 export default function PerformancePanel({
   settings, setSettings, uxtuParams, setUxtuParams,
   showCpu = true, showGpu = true, showPower = true, editMode = false,
-  overrides, saveOverride, customLabel, gpuMode, switching,
+  overrides, saveOverride, clearOverride, gpuMode, switching,
 }) {
   const toast = useToast();
   const gpuClockDisabled = gpuMode === 0 || gpuMode === 2;
   const gpuAllDisabled = gpuMode === 2;
   const paramsLocked = !!switching;
+  const isSet = (key) => Object.prototype.hasOwnProperty.call(overrides, key);
+  const gpuCoreSet = isSet('gpuCoreFreqMhz') || isSet('gpuFreqLimitEnabled');
+  const gpuMemSet = isSet('gpuMemFreqMhz');
+  const gpuOffsetSet = isSet('ocCoreOffsetMhz');
+  const gpuTempSet = isSet('gpuTempLimitC');
   const latestParamsRef = useRef(uxtuParams);
   latestParamsRef.current = uxtuParams;
   const latestModeRef = useRef(settings.mode);
@@ -95,10 +101,9 @@ export default function PerformancePanel({
   function queueOc() { clearTimeout(ocTimer.current); ocTimer.current = setTimeout(async () => { try { const p = latestParamsRef.current; await applyNvapiOverclock(p.ocCoreOffsetMhz ?? 0, p.ocVoltOffsetMv ?? 0, latestModeRef.current); } catch (err) { console.error('OC failed:', err); } }, 600); }
   function queueGpuMem(level) { clearTimeout(gpuMemTimer.current); gpuMemTimer.current = setTimeout(async () => { try { await applyNvapiOverclock(undefined, undefined, latestModeRef.current, level); } catch (err) { console.error('GPU mem failed:', err); } }, 600); }
   function queueThermal(limit) { clearTimeout(thermalTimer.current); thermalTimer.current = setTimeout(async () => { try { await applyNvapiThermalLimit(limit, latestModeRef.current); } catch (err) { console.error('Thermal limit failed:', err); } }, 600); }
-  function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { const percent = coreCount > 0 ? Math.round(coreCount / 16 * 100) : 100; await setCpuCoreLimitPercent(percent, latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }  return (<>{showCpu && <div className="card" style={{ padding: 20 }}>
-      <div className="head" style={{ marginBottom: 18 }}>
-        <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>CPU 调节{customLabel}</span>
-      </div>
+  function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { const percent = coreCount > 0 ? Math.round(coreCount / 16 * 100) : 100; await setCpuCoreLimitPercent(percent, latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }
+  return (<>
+    {showCpu && <>
       <Switch label="频率限制" checked={uxtuParams.cpuFreqLimitEnabled} disabled={paramsLocked} onChange={on => { update("cpuFreqLimitEnabled")(on); queueCpuFreq(on ? uxtuParams.cpuFreqLimitMhz : 0); }} />
       {uxtuParams.cpuFreqLimitEnabled && <Slider label="最大频率" value={uxtuParams.cpuFreqLimitMhz} min={2000} max={5500} step={100} unit="MHz" disabled={paramsLocked} onChange={v => { update("cpuFreqLimitMhz")(v); queueCpuFreq(v); }} />}
       <Switch label="限制核心数" checked={uxtuParams.cpuCoreLimit > 0} disabled={paramsLocked} onChange={on => { const v = on ? 8 : 0; update("cpuCoreLimit")(v); queueCoreLimit(v); }} />
@@ -110,26 +115,52 @@ export default function PerformancePanel({
         </div>
       </div>
       <Switch label="睿频加速" checked={!uxtuParams.cpuTurboDisabled} disabled={paramsLocked} onChange={on => { const v = !on; update("cpuTurboDisabled")(v); queueTurbo(v); }} />
-    </div>}
+    </>}
 
-    {showPower && <div className="card" style={{ padding: 20 }}>
-      <div className="head" style={{ marginBottom: 18 }}>
-        <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg></span>CPU 功耗与温度{customLabel}</span>
-      </div>
+    {showPower && <>
       <Slider label="温度墙" value={uxtuParams.cpuTempLimitC} min={60} max={100} unit="°C" disabled={paramsLocked} onChange={v => { update("cpuTempLimitC")(v); queueSmu("temp_limit", v); }} />
       <Slider label="电压调节(降压)" value={uxtuParams.cpuVoltageOffset} min={-30} max={0} step={1} unit="mV" disabled={paramsLocked} onChange={v => { update("cpuVoltageOffset")(v); queueSmu("co_all", v); }} />
       <Slider label="长时功耗" value={uxtuParams.cpuLongPptW} min={15} max={120} unit="W" disabled={paramsLocked} onChange={v => { update("cpuLongPptW")(v); queueSmu("power_limit", v); }} />
       <Slider label="短时功耗" value={uxtuParams.cpuShortPptW} min={15} max={140} unit="W" disabled={paramsLocked} onChange={v => { update("cpuShortPptW")(v); queueSmu("short_power_limit", v); }} />
-    </div>}
+    </>}
 
-    {showGpu && <div className="card" style={{ padding: 20 }}>
-      <div className="head" style={{ marginBottom: 18 }}>
-        <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="6" width="20" height="12" rx="1.5"/><circle cx="9" cy="12" r="3"/><path d="M16 10h3M16 14h3"/></svg></span>GPU 调节{customLabel}</span>
-      </div>
+    {showGpu && <>
       {gpuClockDisabled && <p style={{ marginBottom: 12, color: "var(--fg-3)", fontSize: 12, lineHeight: 1.5 }}>{gpuMode === 0 ? "混合模式下 GPU 时钟由系统管理，核心/显存频率设置不生效" : "集显模式下独显不可用，GPU 设置不生效"}</p>}
-      <Slider label="核心频率" value={uxtuParams.gpuCoreFreqMhz} min={1000} max={3100} step={50} unit="MHz" disabled={gpuClockDisabled || paramsLocked} onChange={v => { update("gpuCoreFreqMhz")(v); queueGpuCore(v); }} action={<button onClick={toggleGpuLock} disabled={gpuClockDisabled || paramsLocked} style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, border: "1px solid var(--stroke)", background: uxtuParams.gpuFreqLimitEnabled ? "var(--ok)" : "transparent", color: uxtuParams.gpuFreqLimitEnabled ? "var(--ok-fg)" : "var(--fg-2)", cursor: (gpuClockDisabled || paramsLocked) ? "not-allowed" : "pointer", fontSize: 11, fontFamily: "inherit", opacity: (gpuClockDisabled || paramsLocked) ? .5 : 1 }}>{uxtuParams.gpuFreqLimitEnabled ? "已锁定" : "锁定频率"}</button>} />
-      <Slider label="核心偏移" value={uxtuParams.ocCoreOffsetMhz ?? 0} min={-200} max={300} step={25} unit="MHz" displayValue={((uxtuParams.ocCoreOffsetMhz ?? 0) >= 0 ? "+" : "") + (uxtuParams.ocCoreOffsetMhz ?? 0)} disabled={gpuAllDisabled || paramsLocked} onChange={v => { update("ocCoreOffsetMhz")(v); queueOc(); }} />
-      <Slider label="显存频率" value={uxtuParams.gpuMemFreqMhz} min={0} max={3} step={1} unit="" displayValue={["自动", "9001", "11001", "12001"][uxtuParams.gpuMemFreqMhz] || ""} disabled={gpuClockDisabled || paramsLocked} onChange={v => { update("gpuMemFreqMhz")(v); queueGpuMem(v); }} />
-      <Slider label="温度限制" value={uxtuParams.gpuTempLimitC ?? 87} min={60} max={100} unit="°C" disabled={gpuAllDisabled || paramsLocked} onChange={v => { update("gpuTempLimitC")(v); queueThermal(v); }} />
-    </div>}</>);
+      <OverrideSlider
+        label="核心频率" desc="GPU核心运行的最大频率，影响图形渲染和计算性能" value={uxtuParams.gpuCoreFreqMhz} min={1000} max={3100} step={50} unit="MHz"
+        set={gpuCoreSet} disabled={gpuClockDisabled || paramsLocked}
+        onEnable={() => {
+          update('gpuCoreFreqMhz')(uxtuParams.gpuCoreFreqMhz);
+          update('gpuFreqLimitEnabled')(uxtuParams.gpuFreqLimitEnabled);
+          update('gpuFreqLimitMhz')(uxtuParams.gpuFreqLimitMhz);
+          queueGpuCore(uxtuParams.gpuCoreFreqMhz);
+        }}
+        onClear={() => clearOverride(settings.mode, ['gpuCoreFreqMhz', 'gpuFreqLimitEnabled', 'gpuFreqLimitMhz'])}
+        onChange={v => { update('gpuCoreFreqMhz')(v); queueGpuCore(v); }}
+        action={<button onClick={toggleGpuLock} disabled={gpuClockDisabled || paramsLocked || !gpuCoreSet} style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, border: "1px solid var(--stroke)", background: uxtuParams.gpuFreqLimitEnabled ? "var(--ok)" : "transparent", color: uxtuParams.gpuFreqLimitEnabled ? "var(--ok-fg)" : "var(--fg-2)", cursor: (gpuClockDisabled || paramsLocked || !gpuCoreSet) ? "not-allowed" : "pointer", fontSize: 11, fontFamily: "inherit", opacity: (gpuClockDisabled || paramsLocked || !gpuCoreSet) ? .5 : 1 }}>{uxtuParams.gpuFreqLimitEnabled ? "已锁定" : "锁定频率"}</button>}
+      />
+      <OverrideSlider
+        label="核心偏移" desc="在默认频率基础上偏移的MHz值，正值超频负值降频" value={uxtuParams.ocCoreOffsetMhz ?? 0} min={-200} max={300} step={25} unit="MHz"
+        displayValue={((uxtuParams.ocCoreOffsetMhz ?? 0) >= 0 ? "+" : "") + (uxtuParams.ocCoreOffsetMhz ?? 0)}
+        set={gpuOffsetSet} disabled={gpuAllDisabled || paramsLocked}
+        onEnable={() => { update('ocCoreOffsetMhz')(uxtuParams.ocCoreOffsetMhz ?? 0); update('ocMemOffsetMhz')(uxtuParams.ocMemOffsetMhz ?? 0); queueOc(); }}
+        onClear={() => clearOverride(settings.mode, ['ocCoreOffsetMhz', 'ocMemOffsetMhz'])}
+        onChange={v => { update('ocCoreOffsetMhz')(v); queueOc(); }}
+      />
+      <OverrideSlider
+        label="显存频率" desc="显存运行频率等级，等级越高显存带宽越大" value={uxtuParams.gpuMemFreqMhz} min={0} max={3} step={1} unit=""
+        displayValue={["自动", "9001", "11001", "12001"][uxtuParams.gpuMemFreqMhz] || ""}
+        set={gpuMemSet} disabled={gpuClockDisabled || paramsLocked}
+        onEnable={() => { update('gpuMemFreqMhz')(uxtuParams.gpuMemFreqMhz); queueGpuMem(uxtuParams.gpuMemFreqMhz); }}
+        onClear={() => clearOverride(settings.mode, ['gpuMemFreqMhz'])}
+        onChange={v => { update('gpuMemFreqMhz')(v); queueGpuMem(v); }}
+      />
+      <OverrideSlider
+        label="温度限制" desc="GPU温度达到此值后会自动降频保护" value={uxtuParams.gpuTempLimitC ?? 87} min={60} max={100} unit="°C"
+        set={gpuTempSet} disabled={gpuAllDisabled || paramsLocked}
+        onEnable={() => { update('gpuTempLimitC')(uxtuParams.gpuTempLimitC ?? 87); queueThermal(uxtuParams.gpuTempLimitC ?? 87); }}
+        onClear={() => clearOverride(settings.mode, ['gpuTempLimitC'])}
+        onChange={v => { update('gpuTempLimitC')(v); queueThermal(v); }}
+      />
+    </>}</>);
 }

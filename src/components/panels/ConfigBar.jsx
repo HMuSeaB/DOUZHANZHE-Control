@@ -22,7 +22,8 @@ export default function ConfigBar({
 
   const profileName = currentProfile?.name || settings.mode;
   const isBuiltIn = currentProfile?.builtIn ?? true;
-  const modeLabel = MODE_LABELS[settings.mode] || settings.mode;
+  const boundMode = currentProfile?.thermalMode || settings.mode;
+  const modeLabel = MODE_LABELS[boundMode] || boundMode;
   const subtitle = isBuiltIn
     ? '内置配置 · 绑定散热模式：' + modeLabel
     : '用户自建配置 · 绑定散热模式：' + modeLabel;
@@ -46,7 +47,7 @@ export default function ConfigBar({
         <span className="badge">{profileName.charAt(0).toUpperCase()}</span>
         <span className="info"><b>{profileName}</b><small>{subtitle}</small></span>
       </div>
-      <div className="sel-wrap" ref={dropdownRef} style={{ position: 'relative', marginLeft: 'auto' }}>
+      <div className="sel-wrap" ref={dropdownRef}>
         <button className="sel" onClick={() => !switching && setDropdownOpen(!dropdownOpen)} disabled={switching}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="15" height="15"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
           切换配置

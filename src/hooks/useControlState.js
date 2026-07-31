@@ -5,6 +5,7 @@ import {
   migrateLocalStorageOverrides, flattenBackendOverrides,
   fetchTelemetry, fetchUiState, saveUiState,
   fetchProfiles, fetchProfile, fetchPlatformInfo,
+  clearOverrides,
 } from "../services/uxtuAdapter";
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
@@ -94,8 +95,9 @@ export function useControlState() {
       try {
         const { profiles: list } = await fetchProfiles();
         profileList = list || [];
+        console.log('[useControlState] profiles loaded:', profileList.length, profileList.map(p => p.id));
         setProfiles(profileList);
-      } catch { /* ignore */ }
+      } catch (e) { console.error('[useControlState] profiles fetch error:', e); }
       // 先 HTTP 拿初始遥测数据，避免 mock 闪烁
       try {
         const initialTel = await fetchTelemetry();
@@ -273,10 +275,30 @@ export function useControlState() {
     setOverrides(prev => ({ ...prev, [key]: value }));
   }, []);
 
+  const clearOverrideFn = useCallback(async (mode, fields) => {
+    if (!fields?.length) return;
+    await clearOverrides(mode, fields);
+    const fieldSet = new Set(fields);
+    setOverrides(prev => {
+      const next = { ...prev };
+      for (const k of fieldSet) delete next[k];
+      return next;
+    });
+    setUxtuParams(prev => {
+      const next = { ...prev };
+      for (const k of fieldSet) {
+        if (k in FULL_PARAMS) next[k] = FULL_PARAMS[k];
+        else delete next[k];
+      }
+      return next;
+    });
+  }, []);
+
   // Switch profile (Dashboard Dock / ConfigBar calls this)
   const switchProfile = useCallback((profileId) => {
     setSettings(prev => prev.mode === profileId ? prev : { ...prev, mode: profileId });
-  }, []);
+    setCurrentProfile(profiles.find(p => p.id === profileId) || null);
+  }, [profiles]);
 
   // After profile deleted
   const afterProfileDeleted = useCallback((deletedId) => {
@@ -299,6 +321,7 @@ export function useControlState() {
     history,
     overrides, setOverrides,
     saveOverride: saveOverrideFn,
+    clearOverride: clearOverrideFn,
     resetParams,
     switching,
     backendOnline,

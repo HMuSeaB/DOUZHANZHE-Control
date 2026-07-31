@@ -9,10 +9,32 @@ import IntelPowerPanel from '../components/panels/IntelPowerPanel';
 import AmdCpuPanel from '../components/panels/AmdCpuPanel';
 import AmdPowerPanel from '../components/panels/AmdPowerPanel';
 
+const ACC_STATE_KEY = 'dz_control_acc';
+const DEFAULT_ACC_STATE = {
+  cpuFreqOpen: true,
+  cpuPowerOpen: false,
+  gpuOcOpen: true,
+};
+
+function loadAccState() {
+  try {
+    const raw = localStorage.getItem(ACC_STATE_KEY);
+    if (!raw) return { ...DEFAULT_ACC_STATE };
+    const parsed = JSON.parse(raw);
+    return {
+      cpuFreqOpen: typeof parsed.cpuFreqOpen === 'boolean' ? parsed.cpuFreqOpen : DEFAULT_ACC_STATE.cpuFreqOpen,
+      cpuPowerOpen: typeof parsed.cpuPowerOpen === 'boolean' ? parsed.cpuPowerOpen : DEFAULT_ACC_STATE.cpuPowerOpen,
+      gpuOcOpen: typeof parsed.gpuOcOpen === 'boolean' ? parsed.gpuOcOpen : DEFAULT_ACC_STATE.gpuOcOpen,
+    };
+  } catch {
+    return { ...DEFAULT_ACC_STATE };
+  }
+}
+
 export default function ControlPanel() {
   const {
     telemetry, settings, setSettings, uxtuParams, setUxtuParams,
-    overrides, saveOverride, switching,
+    overrides, saveOverride, clearOverride, switching,
     profiles, setProfiles, currentProfile, setCurrentProfile,
     platformInfo, switchProfile, afterProfileDeleted, afterProfileCreated,
   } = useControlState();
@@ -20,10 +42,8 @@ export default function ControlPanel() {
   const [cpuVendor, setCpuVendor] = useState(null);
   const gpuMode = telemetry?.gpuMode ?? null;
   const [manageOpen, setManageOpen] = useState(false);
-  const [cpuFreqOpen, setCpuFreqOpen] = useState(true);
-  const [cpuPowerOpen, setCpuPowerOpen] = useState(false);
-  const [gpuOcOpen, setGpuOcOpen] = useState(true);
-  const [gpuTempOpen, setGpuTempOpen] = useState(false);
+  const [accState, setAccState] = useState(loadAccState);
+  const { cpuFreqOpen, cpuPowerOpen, gpuOcOpen } = accState;
 
   useEffect(() => {
     fetch('/api/platform/info')
@@ -32,7 +52,15 @@ export default function ControlPanel() {
       .catch(() => setCpuVendor('unknown'));
   }, []);
 
-  const panelProps = { settings, setSettings, uxtuParams, setUxtuParams, overrides, saveOverride, switching };
+  useEffect(() => {
+    try { localStorage.setItem(ACC_STATE_KEY, JSON.stringify(accState)); } catch {}
+  }, [accState]);
+
+  function toggleAcc(key) {
+    setAccState(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  const panelProps = { settings, setSettings, uxtuParams, setUxtuParams, overrides, saveOverride, clearOverride, switching };
 
   return (
     <section className="page active">
@@ -65,7 +93,7 @@ export default function ControlPanel() {
       <div className="section-title">CPU<span className="line" /></div>
       <div className="card accordion reveal enter" style={{ animationDelay: '.1s' }}>
         <div className={'acc-item' + (cpuFreqOpen ? ' open' : '')}>
-          <button className="acc-head" onClick={() => setCpuFreqOpen(!cpuFreqOpen)}>
+          <button className="acc-head" onClick={() => toggleAcc('cpuFreqOpen')}>
             <span className="ic">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
             </span>
@@ -83,7 +111,7 @@ export default function ControlPanel() {
           </div></div>
         </div>
         <div className={'acc-item' + (cpuPowerOpen ? ' open' : '')}>
-          <button className="acc-head" onClick={() => setCpuPowerOpen(!cpuPowerOpen)}>
+          <button className="acc-head" onClick={() => toggleAcc('cpuPowerOpen')}>
             <span className="ic">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
             </span>
@@ -106,7 +134,7 @@ export default function ControlPanel() {
       <div className="section-title">GPU<span className="line" /></div>
       <div className="card accordion reveal enter" style={{ animationDelay: '.14s' }}>
         <div className={'acc-item' + (gpuOcOpen ? ' open' : '')}>
-          <button className="acc-head" onClick={() => setGpuOcOpen(!gpuOcOpen)}>
+          <button className="acc-head" onClick={() => toggleAcc('gpuOcOpen')}>
             <span className="ic">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="6" width="20" height="12" rx="1.5"/><circle cx="9" cy="12" r="3"/><path d="M16 10h3M16 14h3"/></svg>
             </span>
@@ -118,21 +146,6 @@ export default function ControlPanel() {
           </button>
           <div className="acc-body"><div className="acc-inner">
             <PerformancePanel {...panelProps} showCpu={false} showPower={false} showGpu={true} gpuMode={gpuMode} />
-          </div></div>
-        </div>
-        <div className={'acc-item' + (gpuTempOpen ? ' open' : '')}>
-          <button className="acc-head" onClick={() => setGpuTempOpen(!gpuTempOpen)}>
-            <span className="ic">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 3a4 4 0 0 1 4 4c0 1.5-.8 2.7-2 3.4V13h3a3 3 0 0 1 3 3v1"/><circle cx="12" cy="7" r="3"/></svg>
-            </span>
-            <span className="ht">
-              <b>{'GPU \u6e29\u5ea6\u4e0e\u529f\u8017'}</b>
-              <small>{'\u529f\u8017\u4e0a\u9650 \u00b7 \u6e29\u5ea6\u76ee\u6807'}</small>
-            </span>
-            <span className="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="m6 9 6 6 6-6"/></svg></span>
-          </button>
-          <div className="acc-body"><div className="acc-inner">
-            <PerformancePanel {...panelProps} showCpu={false} showGpu={false} showPower={false} gpuMode={gpuMode} customLabel={' \u2014 \u6e29\u5ea6\u4e0e\u529f\u8017'} />
           </div></div>
         </div>
       </div>

@@ -307,6 +307,16 @@ export async function syncOverrides(mode, overrides) {
   }).catch(e => console.warn("[syncOverrides]", e));
 }
 
+export async function clearOverrides(mode, fields) {
+  const res = await fetch("/api/overrides/clear", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, fields }),
+  });
+  if (!res.ok) throw new Error("clear overrides failed");
+  return res.json();
+}
+
 // ── 后端嵌套格式 → 前端扁平格式 ──
 // 后端 PerformanceOverrides 类使用嵌套结构 (cpu.freqLimitMhz)，
 // 但前端 reapplyOverrides 和 UI 使用扁平格式 (cpuFreqLimitMhz)。
@@ -326,8 +336,6 @@ export function flattenBackendOverrides(nested, maxCores = 16) {
     if (nested.cpu.coreLimitPercent != null && nested.cpu.coreLimitPercent > 0) {
       // 百分比 → 核心数（maxCores 默认 16，Intel 251HX 传 18）
       flat.cpuCoreLimit = Math.round(nested.cpu.coreLimitPercent * maxCores / 100);
-    } else {
-      flat.cpuCoreLimit = 0;
     }
   }
 
