@@ -863,4 +863,4 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .profile-actions{display:flex;gap:6px;flex-shrink:0;margin-left:12px}
 .rename-inline{display:flex;gap:6px;align-items:center}
 
-.config-bar{overflow:visible}
+.config-bar{overflow:visible;z-index:20}
