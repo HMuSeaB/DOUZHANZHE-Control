@@ -18,13 +18,33 @@ const MODE_DESCS = {
 
 function tc(t) { return t >= 85 ? 't-danger' : t >= 65 ? 't-warn' : 't-ok'; }
 
-export default function Dashboard() {
+function formatGpuMode(mode) {
+  if (mode === 0) return '混合模式';
+  if (mode === 1) return '独显直连';
+  if (mode === 2) return '集显模式';
+  return mode === null || mode === undefined ? '未知' : `模式 ${mode}`;
+}
+
+function formatThermalMode(mode) {
+  const map = { 0: '均衡', 1: '野兽', 2: '安静', 3: '战斗' };
+  return mode != null ? (map[mode] ?? `模式 ${mode}`) : '-';
+}
+
+export default function Dashboard({ onNavigate }) {
   const { telemetry, settings, profiles, platformInfo, switchProfile } = useControlState();
   const s = telemetry;
   const isBellator = platformInfo.oem === 'Bellator';
 
-  // Filter to built-in profiles only for the dock
   const builtinProfiles = profiles.filter(p => p.builtIn);
+
+  const gpuModeNum = s.gpuMode != null ? Number(s.gpuMode) : null;
+  const memUsedGb = (s.memoryTotalGB ?? 32) * (s.memoryUsage ?? 0) / 100;
+  const memUsedText = `${memUsedGb | 0}.${Math.round(memUsedGb % 1 * 10)} / ${s.memoryTotalGB ?? 32} GB`;
+  const diskUsedGb = (s.diskTotalGB ?? 952) * (s.diskUsage ?? 0) / 100;
+  const diskUsedText = `${diskUsedGb | 0}.${Math.round(diskUsedGb % 1 * 10)} / ${s.diskTotalGB ?? 952} GB`;
+  const diskFreeText = `${Math.round(s.diskFreeGB ?? 0)} GB`;
+  const powerDrawText = `${Math.round(s.gpuPowerDrawW ?? 0)} W`;
+  const memFreqText = `${s.memoryFreq ?? 0} MHz`;
 
   return (
     <section className="page active">
@@ -35,7 +55,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Config switch dock - only on Bellator */}
       {isBellator && builtinProfiles.length > 0 && (
         <div className="dock card reveal enter" style={{ animationDelay: '.02s' }}>
           <span className="label">
@@ -64,9 +83,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Sensor grid */}
       <div className="grid sensors">
-        {/* CPU */}
         <div className="card sensor reveal enter" style={{ animationDelay: '.08s' }}>
           <div className="top">
             <span className="name"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" width="17" height="17"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>CPU</span>
@@ -80,12 +97,11 @@ export default function Dashboard() {
             <div className="meta">
               <div className="metric-row" style={{ border: 0, paddingTop: 0, marginTop: 0 }}><span className="k">{'\u6e29\u5ea6'}</span><span className={'v ' + tc(s.cpuTemp ?? 0)}>{Math.round(s.cpuTemp ?? 0)}{'\u00b0C'}</span></div>
               <div className="metric-row"><span className="k">{'\u9891\u7387'}</span><span className="v">{(s.cpuFreq ?? 0).toFixed(1)} GHz</span></div>
-              <div className="metric-row"><span className="k">{'\u529f\u8017'}</span><span className="v">{Math.round(s.gpuPowerDrawW ?? 0)} W</span></div>
+              <div className="metric-row"><span className="k">{'\u6838\u5fc3'}</span><span className="v">{s.cpuCores ?? 0} {'\u7ebf\u7a0b'}</span></div>
             </div>
           </div>
         </div>
 
-        {/* GPU */}
         <div className="card sensor reveal enter" style={{ animationDelay: '.14s' }}>
           <div className="top">
             <span className="name"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" width="17" height="17"><rect x="2" y="6" width="20" height="12" rx="1.5"/><circle cx="9" cy="12" r="3"/><path d="M16 10h3M16 14h3"/></svg></span>GPU</span>
@@ -100,30 +116,41 @@ export default function Dashboard() {
               <div className="metric-row" style={{ border: 0, paddingTop: 0, marginTop: 0 }}><span className="k">{'\u6e29\u5ea6'}</span><span className={'v ' + tc(s.gpuTemp ?? 0)}>{Math.round(s.gpuTemp ?? 0)}{'\u00b0C'}</span></div>
               <div className="metric-row"><span className="k">{'\u663e\u5b58'}</span><span className="v">{(s.gpuVramUsed ?? 0).toFixed(1)} GB</span></div>
               <div className="metric-row"><span className="k">{'\u9891\u7387'}</span><span className="v">{(s.gpuFreq ?? 0).toFixed(1)} GHz</span></div>
+              <div className="metric-row"><span className="k">{'\u529f\u8017'}</span><span className="v">{powerDrawText}</span></div>
             </div>
           </div>
         </div>
 
-        {/* Memory + Disk */}
-        <div className="card sensor reveal enter" style={{ animationDelay: '.2s' }}>
+        <div className="card sensor memory-card reveal enter" style={{ animationDelay: '.2s' }}>
           <div className="top">
             <span className="name"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" width="17" height="17"><rect x="3" y="8" width="18" height="8" rx="1"/><path d="M7 8V6M12 8V6M17 8V6M7 16v2M12 16v2M17 16v2"/></svg></span>{'\u5185\u5b58 \u00b7 \u786c\u76d8'}</span>
             <span className="live"><span className="d"></span>{'\u5b9e\u65f6'}</span>
           </div>
-          <div style={{ paddingTop: 4 }}>
-            <div className="metric-row" style={{ border: 0, paddingTop: 0, marginTop: 2 }}><span className="k">{'\u5185\u5b58\u5360\u7528'}</span><span className="v">{(s.memoryTotalGB ?? 32) * (s.memoryUsage ?? 0) / 100 | 0}.{(s.memoryTotalGB ?? 32) * (s.memoryUsage ?? 0) / 100 % 1 * 10 | 0} / {s.memoryTotalGB ?? 32} GB</span></div>
-            <div className="bar" style={{ margin: '8px 0 18px' }}><i style={{ width: (s.memoryUsage ?? 0) + '%' }}></i></div>
-            <div className="metric-row" style={{ border: 0, paddingTop: 0, marginTop: 0 }}><span className="k">{'\u786c\u76d8\u5360\u7528'}</span><span className="v">{(s.diskTotalGB ?? 1024) * (s.diskUsage ?? 0) / 100 | 0}.{(s.diskTotalGB ?? 1024) * (s.diskUsage ?? 0) / 100 % 1 * 10 | 0} / {s.diskTotalGB ?? 1024} GB</span></div>
-            <div className="bar" style={{ marginTop: '8px' }}><i style={{ width: (s.diskUsage ?? 0) + '%', background: 'linear-gradient(90deg,var(--accent),var(--primary))' }}></i></div>
+          <div className="mem-grid">
+            <div className="mem-block">
+              <div className="metric-row" style={{ border: 0, paddingTop: 0, marginTop: 0 }}><span className="k">{'\u5185\u5b58\u5360\u7528'}</span><span className="v">{memUsedText}</span></div>
+              <div className="bar"><i style={{ width: (s.memoryUsage ?? 0) + '%' }}></i></div>
+              <div className="metric-row"><span className="k">{'\u9891\u7387'}</span><span className="v">{memFreqText}</span></div>
+            </div>
+            <div className="mem-block">
+              <div className="metric-row" style={{ border: 0, paddingTop: 0, marginTop: 0 }}><span className="k">{'\u786c\u76d8\u5360\u7528'}</span><span className="v">{diskUsedText}</span></div>
+              <div className="bar"><i style={{ width: (s.diskUsage ?? 0) + '%', background: 'linear-gradient(90deg,var(--accent),var(--primary))' }}></i></div>
+              <div className="metric-row"><span className="k">{'\u5269\u4f59'}</span><span className="v">{diskFreeText}</span></div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Fan info */}
       <div className="card fan-card reveal enter" style={{ animationDelay: '.26s' }}>
         <div className="head">
           <span className="t"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" width="17" height="17"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1.5-5 4-5 1.5 2-.5 5-4 5Zm2.1 3.3c2.6 1.5 3.4 3.7 2.2 5.9-2.4.4-4-2.4-2.2-5.9Zm-6.3.1c-2.6 1.5-4.8.7-5.9-1.6 1.6-1.9 4.7-1 6 1.6Z"/></svg></span>{'\u98ce\u6247\u4fe1\u606f'}</span>
-          <span style={{ fontSize: '11.5px', color: 'var(--fg-3)' }}>{'EC \u5bc4\u5b58\u5668\u8bfb\u53d6 \u00b7 \u53ea\u8bfb'}</span>
+          <span className="fan-head-right">
+            <span style={{ fontSize: '11.5px', color: 'var(--fg-3)' }}>{'EC \u5bc4\u5b58\u5668\u8bfb\u53d6 \u00b7 \u53ea\u8bfb'}</span>
+            <button className="btn ghost fan-jump" onClick={() => onNavigate?.('fan')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="15" height="15"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              {'\u81ea\u5b9a\u4e49\u6563\u70ed'}
+            </button>
+          </span>
         </div>
         <div className="fan-row">
           <span className="fname"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" width="18" height="18"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1.5-5 4-5 1.5 2-.5 5-4 5Zm2.1 3.3c2.6 1.5 3.4 3.7 2.2 5.9-2.4.4-4-2.4-2.2-5.9Zm-6.3.1c-2.6 1.5-4.8.7-5.9-1.6 1.6-1.9 4.7-1 6 1.6Z"/></svg>{'\u5927\u98ce\u6247'}</span>
@@ -135,6 +162,14 @@ export default function Dashboard() {
           <div className="bar"><i style={{ width: Math.min(100, Math.round((s.fanSmallRpm ?? 0) / ((s.fanSmallMax ?? 8200) || 1) * 100)) + '%' }}></i></div>
           <span className="rpm"><b>{Math.round(s.fanSmallRpm ?? 0)}</b> RPM<small>{'EC \u76f4\u8bfb'}</small></span>
         </div>
+      </div>
+
+      <div className="card sys-status-card reveal enter" style={{ animationDelay: '.32s' }}>
+        <span className="ss-title"><span className="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" width="16" height="16"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>{'\u7cfb\u7edf\u72b6\u6001'}</span>
+        <span className="ss-item"><span className="k">{'\u6563\u70ed\u6a21\u5f0f'}</span><b>{formatThermalMode(s.thermalMode)}</b></span>
+        <span className="ss-item"><span className="k">{'GPU \u6a21\u5f0f'}</span><b>{formatGpuMode(gpuModeNum)}</b></span>
+        <span className="ss-item"><span className="k">{'\u7535\u6e90\u8ba1\u5212'}</span><b>{s.powerPlan === 0 ? '\u5e73\u8861' : s.powerPlan === 1 ? '\u9ad8\u6027\u80fd' : s.powerPlan === 2 ? '\u8282\u80fd' : '-'}</b></span>
+        <span className="ss-item"><span className="k">{'\u952e\u76d8\u80cc\u5149'}</span><b>{s.kbBrightness != null ? s.kbBrightness + ' \u7ea7' : '-'}</b></span>
       </div>
     </section>
   );

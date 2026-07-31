@@ -681,6 +681,21 @@ export async function setHotkeyConfig(id, config) {
   return res.json();
 }
 
+// ---- Game auto-switch status / launch ----
+
+export async function fetchGameAutoSwitchStatus() {
+  const res = await fetch("/api/game-profiles/status");
+  if (!res.ok) throw new Error("game status returned " + res.status);
+  return res.json();
+}
+
+export async function launchGameProfile(id) {
+  const res = await fetch(`/api/game-profiles/${encodeURIComponent(id)}/launch`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `launch returned ${res.status}`);
+  return data;
+}
+
 // ---- Profile CRUD API ----
 
 export async function fetchProfiles() {

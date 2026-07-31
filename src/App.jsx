@@ -38,6 +38,8 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Mica wallpaper layer */}
+      <div className="wallpaper" aria-hidden="true"></div>
       {/* 窄边栏 */}
       <nav className="sidebar">
         {PAGES.map(p => (
@@ -60,7 +62,7 @@ export default function App() {
 
       {/* 内容区 */}
       <main className="content">
-        {activePage === "dashboard" && <Dashboard />}
+        {activePage === "dashboard" && <Dashboard onNavigate={setActivePage} />}
         {activePage === "control" && <ControlPanel />}
         {activePage === "fan" && <FanControl />}
         {activePage === "platform" && <PlatformControl />}

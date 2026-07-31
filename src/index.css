@@ -52,13 +52,21 @@ html[data-theme="light"]{
    Base
    ============================================================ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+html,body{
+  height:100%;
+  -webkit-user-select:none;
+  user-select:none;
+}
 body{
   font-family:"Segoe UI Variable","Segoe UI",system-ui,"Microsoft YaHei",sans-serif;
   background:var(--bg);
   color:var(--fg);
   overflow:hidden;
   -webkit-font-smoothing:antialiased;
+}
+input,textarea,[contenteditable]{
+  -webkit-user-select:text;
+  user-select:text;
 }
 ::selection{background:color-mix(in srgb,var(--primary) 40%,transparent)}
 
@@ -78,6 +86,14 @@ body{
   background:var(--mica-overlay);
   opacity:.9;
 }
+.wallpaper{
+  position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  opacity:var(--wallpaper-opacity,0);
+  background:var(--wallpaper-image,none) center/cover no-repeat;
+  filter:blur(var(--wallpaper-blur,0px)) saturate(120%);
+  transform:scale(1.03);
+}
+.app::before{opacity:.82}
 .toolbar{display:none}
 .toolbar .spacer{flex:1}
 
@@ -256,7 +272,7 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 
 /* 传感器网格 */
 .grid{display:grid;gap:var(--sp)}
-.grid.sensors{grid-template-columns:repeat(3,1fr);margin-bottom:16px}
+.grid.sensors{grid-template-columns:repeat(3,1fr);grid-auto-rows:196px;gap:var(--sp);margin-bottom:16px}
 
 .sensor{padding:18px}
 .sensor .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
@@ -277,6 +293,12 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .ring .val small{font-size:12px;color:var(--fg-3);font-weight:500;margin-left:1px}
 .sensor .meta{flex:1}
 
+/* 内存 + 硬盘双栏 */
+.memory-card .mem-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding-top:8px}
+.memory-card .mem-block{display:flex;flex-direction:column;gap:10px;min-width:0}
+.memory-card .mem-block .metric-row{margin-top:0;padding-top:0;border:0}
+.memory-card .mem-block .bar{margin:0}
+
 .metric-row{display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;
   padding-top:12px;border-top:1px solid var(--stroke)}
 .metric-row .k{font-size:12px;color:var(--fg-3)}
@@ -292,6 +314,8 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .fan-card .head .t .chip{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
   background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .fan-card .head .t .chip svg{width:17px;height:17px}
+.fan-head-right{display:flex;align-items:center;gap:12px}
+.fan-jump{white-space:nowrap;padding:6px 12px;font-size:12px}
 .fan-row{display:grid;grid-template-columns:96px 1fr 130px;align-items:center;gap:16px;padding:11px 0}
 .fan-row + .fan-row{border-top:1px solid var(--stroke)}
 .fan-row .fname{font-size:13px;color:var(--fg-2);display:flex;align-items:center;gap:8px}
@@ -305,6 +329,15 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .fan-row .rpm b{font-size:15px}
 .fan-row .rpm small{display:block;font-size:11px;color:var(--fg-3)}
 .fan-foot{display:flex;justify-content:flex-end;margin-top:16px}
+
+/* 系统状态横条 */
+.sys-status-card{display:grid;grid-template-columns:auto repeat(4,1fr);align-items:center;gap:10px;padding:12px 18px;margin-top:16px}
+.sys-status-card .ss-title{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--fg-2);white-space:nowrap}
+.sys-status-card .ss-title .chip{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}
+.sys-status-card .ss-item{display:flex;flex-direction:column;gap:3px;min-width:0;padding-left:10px;border-left:1px solid var(--stroke)}
+.sys-status-card .ss-item .k{font-size:10.5px;color:var(--fg-3)}
+.sys-status-card .ss-item b{font-size:12.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 控制面板/风扇控制 附加组件 */
 .section-title{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--fg-2);text-transform:uppercase;letter-spacing:1px;margin:22px 2px 12px}
 .section-title .line{flex:1;height:1px;background:var(--stroke)}
@@ -316,6 +349,7 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .param .pv small{color:var(--fg-3);font-weight:400}
 .hint{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--fg-3);margin-top:14px;padding:10px 14px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--warn) 9%,transparent);border:1px solid color-mix(in srgb,var(--warn) 24%,transparent)}
 .curve-wrap{display:grid;grid-template-columns:1fr 200px;gap:20px;padding:18px 20px 20px}
+.curve-wrap > *{min-width:0}
 .curve-svg{width:100%;height:auto;background:color-mix(in srgb,var(--bg) 40%,transparent);border:1px solid var(--stroke);border-radius:var(--radius-sm)}
 .curve-svg .grid-l{stroke:var(--stroke);stroke-width:1}
 .curve-svg .axis-t{fill:var(--fg-3);font-size:10px;font-family:inherit}
@@ -329,11 +363,40 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .curve-readout{font-size:12px;color:var(--fg-2);padding:9px 14px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--primary) 10%,transparent);border:1px solid color-mix(in srgb,var(--primary) 26%,transparent)}
 .curve-status{font-size:11.5px;color:var(--fg-3);line-height:1.7;padding:12px 14px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--bg) 45%,transparent);border:1px solid var(--stroke)}
 .curve-actions{display:flex;gap:8px;margin-top:auto}
+.curve-presets{display:flex;flex-direction:column;gap:8px}
+.cp-label{font-size:11px;color:var(--fg-3);font-weight:600;letter-spacing:.5px}
+.cp-row{display:flex;gap:6px;flex-wrap:wrap}
+.cp-btn{
+  flex:1;min-width:0;border:1px solid var(--stroke);border-radius:var(--radius-sm);
+  background:color-mix(in srgb,var(--surface-2) 72%,transparent);color:var(--fg-2);
+  font-family:inherit;font-size:11.5px;padding:7px 4px;cursor:pointer;transition:all var(--dur) var(--ease);
+}
+.cp-btn:hover{border-color:var(--stroke-strong);color:var(--fg);background:var(--stroke)}
+.cp-btn:disabled{opacity:.45;cursor:not-allowed}
+.curve-params{display:flex;flex-direction:column;gap:8px}
+.cp-field{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--fg-2)}
+.cp-field select{
+  flex:1;max-width:120px;font-family:inherit;font-size:12px;color:var(--fg);
+  background:color-mix(in srgb,var(--bg) 55%,transparent);
+  border:1px solid var(--stroke);border-radius:var(--radius-sm);padding:6px 8px;cursor:pointer;
+}
+.cp-field select:disabled{opacity:.45;cursor:not-allowed}
+.curve-footer{border-top:1px solid var(--stroke)}
+.curve-point-actions{display:flex;align-items:center;gap:6px;padding:12px 20px 16px;flex-wrap:wrap}
+.curve-point-actions .btn{white-space:nowrap}
 .value-strip{display:flex;gap:8px;padding:16px 20px;border-top:1px solid var(--stroke);overflow-x:auto}
-.vs-col{min-width:60px;text-align:center}
+.vs-col{min-width:74px;text-align:center;flex-shrink:0}
 .vs-temp{font-size:11px;color:var(--fg-3);margin-bottom:6px}
 .vs-input{width:100%;text-align:center;font-family:inherit;font-size:13px;font-weight:600;color:var(--fg);background:color-mix(in srgb,var(--bg) 55%,transparent);border:1px solid var(--stroke);border-radius:var(--radius-sm);padding:7px 2px}
 .vs-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+.vs-del{
+  width:24px;height:24px;margin:6px auto 0;display:grid;place-items:center;
+  border:1px solid var(--stroke);border-radius:6px;background:transparent;color:var(--fg-3);
+  cursor:pointer;transition:all var(--dur) var(--ease);
+}
+.vs-del:hover{border-color:var(--danger);color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.vs-del:disabled{opacity:.4;cursor:not-allowed}
+.vs-del svg{width:13px;height:13px}
 .value-strip::-webkit-scrollbar-track{background:transparent}
 .value-strip::-webkit-scrollbar{height:4px}
 .value-strip::-webkit-scrollbar-thumb{background:var(--stroke-strong);border-radius:4px}
@@ -397,6 +460,20 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
   border:1px solid color-mix(in srgb,var(--ok) 30%,transparent)}
 .master-bar.off .state{color:var(--fg-3);background:var(--stroke);border-color:var(--stroke-strong)}
 .master-bar.off .mi{background:var(--stroke);color:var(--fg-3)}
+
+/* 自动切换状态条 */
+.auto-switch-status{
+  display:flex;align-items:flex-start;gap:22px;padding:12px 18px;margin:10px 0 4px;flex-wrap:wrap;
+}
+.auto-switch-status .as-item{display:flex;flex-direction:column;gap:3px;min-width:82px}
+.auto-switch-status .as-label{font-size:10.5px;color:var(--fg-3)}
+.auto-switch-status b{font-size:12.5px;color:var(--fg)}
+.auto-switch-status .as-games{flex:1;min-width:220px}
+.auto-switch-status .as-tags{display:flex;gap:6px;flex-wrap:wrap}
+.auto-switch-status .as-tag{
+  font-size:11.5px;color:var(--fg-2);padding:3px 9px;border-radius:999px;
+  background:color-mix(in srgb,var(--surface-2) 78%,transparent);border:1px solid var(--stroke);
+}
 
 .list-tools{display:flex;align-items:center;gap:12px;margin:18px 0 12px;
   padding:14px 18px;border:1px solid var(--stroke);border-radius:var(--radius);
@@ -624,6 +701,12 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .shortcut-row .rk small{font-size:11px;color:var(--fg-3);display:block;margin-top:1px}
 .shortcut-row .keys{display:flex;align-items:center;gap:4px;font-size:12px;font-family:monospace;
   color:var(--fg-2);background:var(--stroke);padding:4px 10px;border-radius:var(--radius-sm)}
+.shortcut-row.disabled{opacity:.55}
+.shortcut-row.disabled .rec-btn{cursor:not-allowed}
+.hk-conflict{
+  font-size:10.5px;color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 55%,transparent);
+  background:color-mix(in srgb,var(--danger) 12%,transparent);padding:3px 8px;border-radius:999px;white-space:nowrap;
+}
 .keycap{min-width:24px;padding:3px 6px;text-align:center;border-radius:4px;background:var(--surface-2);
   border:1px solid var(--stroke-strong);font-size:11px;color:var(--fg)}
 .plus{color:var(--fg-3);padding:0 2px}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { fetchGameAutoSwitchStatus, launchGameProfile } from "../../services/uxtuAdapter";
 
 const MODES = [
   { id: "silent", label: "安静", color: "#4CAF50" },
@@ -50,6 +51,8 @@ export default function GameProfilesPanel() {
   const [selectedGames, setSelectedGames] = useState(new Set());
   const [batchTargetMode, setBatchTargetMode] = useState("gaming");
   const [scanTab, setScanTab] = useState("steam");
+  const [switchStatus, setSwitchStatus] = useState(null);
+  const [launchingId, setLaunchingId] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -65,6 +68,32 @@ export default function GameProfilesPanel() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const loadStatus = async () => {
+      try {
+        const data = await fetchGameAutoSwitchStatus();
+        if (!disposed) setSwitchStatus(data);
+      } catch { /* backend offline */ }
+    };
+    loadStatus();
+    const timer = setInterval(loadStatus, 2000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, []);
+
+  const launchGame = async (p) => {
+    if (!p?.id || !p?.exePath) return;
+    setLaunchingId(p.id);
+    try {
+      const data = await launchGameProfile(p.id);
+      if (!data?.ok) alert(data?.error || "启动失败");
+    } catch (err) {
+      alert(err.message || "启动失败");
+    } finally {
+      setLaunchingId(null);
+    }
+  };
 
   const updateConfig = async (patch) => {
     try {
@@ -270,6 +299,33 @@ export default function GameProfilesPanel() {
         </label>
       </div>
 
+      <div className={`card auto-switch-status reveal enter ${config.enabled && switchStatus?.activeGames?.length ? "active" : ""}`} style={{ animationDelay: ".03s" }}>
+        <span className="as-item">
+          <span className="as-label">服务状态</span>
+          <b>{switchStatus?.serviceRunning ? "运行中" : "未知"}</b>
+        </span>
+        <span className="as-item">
+          <span className="as-label">生效模式</span>
+          <b>{switchStatus?.effectiveMode && switchStatus.effectiveMode !== "none" ? modeLabel(switchStatus.effectiveMode) : "无"}</b>
+        </span>
+        <span className="as-item">
+          <span className="as-label">快照模式</span>
+          <b>{switchStatus?.snapshotMode && switchStatus.snapshotMode !== "none" ? modeLabel(switchStatus.snapshotMode) : "无"}</b>
+        </span>
+        <span className="as-item as-games">
+          <span className="as-label">运行中游戏</span>
+          <span className="as-tags">
+            {switchStatus?.activeGames?.length
+              ? switchStatus.activeGames.map((g, i) => (
+                  <span key={`${g.pid}-${i}`} className="as-tag" style={{ borderColor: modeColor(g.targetMode) }}>
+                    {g.name} · {modeLabel(g.targetMode)}
+                  </span>
+                ))
+              : <b>0 个</b>}
+          </span>
+        </span>
+      </div>
+
       <div className="list-tools reveal enter" style={{ animationDelay: ".04s" }}>
         <span className="count">共 <b>{profiles.length}</b> 条规则 · 启用 <b>{activeCount}</b> 条</span>
         <span className="sp"></span>
@@ -318,8 +374,8 @@ export default function GameProfilesPanel() {
                 <b>{p.name}</b>
                 <small>{p.exeName}</small>
               </div>
-              <button className="btn primary launch" onClick={() => { if (p.exePath) { /* launch game */ } }}>
-                {ICONS.play}启动
+              <button className="btn primary launch" onClick={() => launchGame(p)} disabled={launchingId === p.id}>
+                {ICONS.play}{launchingId === p.id ? "启动中..." : "启动"}
               </button>
             </div>
           ))}

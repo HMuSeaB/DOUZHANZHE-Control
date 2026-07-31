@@ -52,7 +52,7 @@ const ICONS = {
 export default function SettingsPanel({ settings, setSettings }) {
   const toast = useToast();
 
- const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
+  const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
 
   const [selectedCats, setSelectedCats] = useState(() =>
     Object.fromEntries(["config", "games", "hotkeys", "appearance", "autostart", "background"].map(c => [c, c !== "autostart" && c !== "background"]))
@@ -69,6 +69,7 @@ export default function SettingsPanel({ settings, setSettings }) {
   const [bgInterval, setBgInterval] = useState("1h");
 
   const fileInputRef = useRef(null);
+  const colorInputRef = useRef(null);
 
   const bgEnabled = bg.enabled;
   const bgOpacity = bg.opacity;
@@ -76,6 +77,13 @@ export default function SettingsPanel({ settings, setSettings }) {
   const bgMask = bg.maskColor;
   const bgHasImage = bg.hasImage;
   const bgPreview = bg.url;
+
+  const syncWallpaperCss = (next) => {
+    const root = document.documentElement;
+    root.style.setProperty("--wallpaper-opacity", next.enabled && next.hasImage ? String((next.opacity ?? 60) / 100) : "0");
+    root.style.setProperty("--wallpaper-blur", String(Math.round((next.blur ?? 45) / 100 * 60)) + "px");
+    root.style.setProperty("--wallpaper-image", next.enabled && next.url ? `url("${next.url}")` : "none");
+  };
 
   useEffect(() => {
     fetch("/api/ui-state")
@@ -90,9 +98,17 @@ export default function SettingsPanel({ settings, setSettings }) {
       .catch(() => {});
     const savedAccent = localStorage.getItem("dz_accent_color");
     if (savedAccent) setAccent(savedAccent);
-    fetch("/api/background")
+    fetch("/api/background-opts")
       .then(r => r.json())
-      .then(d => { if (d) setBg(prev => ({ ...prev, ...d })); })
+      .then(d => {
+        if (d) {
+          setBg(prev => {
+            const next = { ...prev, ...d, enabled: !!d.enabled, url: d.hasImage ? "/api/background" : prev.url };
+            syncWallpaperCss(next);
+            return next;
+          });
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -118,7 +134,9 @@ export default function SettingsPanel({ settings, setSettings }) {
       .catch(() => {});
   }, []);
 
-  const updateBg = (patch) => setBg(prev => ({ ...prev, ...patch }));
+  const updateBg = (patch) => {
+    setBg(prev => typeof patch === "function" ? patch(prev) : { ...prev, ...patch });
+  };
 
   const handleExport = async () => {
     const cats = Object.entries(selectedCats).filter(([_, v]) => v).map(([k]) => k);
@@ -239,7 +257,11 @@ export default function SettingsPanel({ settings, setSettings }) {
   };
 
   const handleBgToggle = async (v) => {
-    updateBg({ enabled: v });
+    updateBg((prev) => {
+      const next = { ...prev, enabled: v };
+      syncWallpaperCss(next);
+      return next;
+    });
     await saveBgOpts({ enabled: v });
   };
 
@@ -254,17 +276,29 @@ export default function SettingsPanel({ settings, setSettings }) {
   };
 
   const handleBgOpacity = async (v) => {
-    updateBg({ opacity: v });
+    updateBg((prev) => {
+      const next = { ...prev, opacity: v };
+      syncWallpaperCss(next);
+      return next;
+    });
     await saveBgOpts({ opacity: v });
   };
 
   const handleBgBlur = async (v) => {
-    updateBg({ blur: v });
+    updateBg((prev) => {
+      const next = { ...prev, blur: v };
+      syncWallpaperCss(next);
+      return next;
+    });
     await saveBgOpts({ blur: v });
   };
 
   const handleBgMask = async (v) => {
-    updateBg({ maskColor: v });
+    updateBg((prev) => {
+      const next = { ...prev, maskColor: v };
+      syncWallpaperCss(next);
+      return next;
+    });
     await saveBgOpts({ maskColor: v });
   };
 
@@ -275,6 +309,7 @@ export default function SettingsPanel({ settings, setSettings }) {
 
     const previewUrl = URL.createObjectURL(file);
     updateBg({ hasImage: true, url: previewUrl, enabled: true });
+    syncWallpaperCss({ ...bg, hasImage: true, url: previewUrl, enabled: true });
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -288,7 +323,11 @@ export default function SettingsPanel({ settings, setSettings }) {
         .then(d => {
           URL.revokeObjectURL(previewUrl);
           if (d.ok) {
-            updateBg({ hasImage: true, enabled: true });
+            updateBg(prev => {
+              const next = { ...prev, hasImage: true, enabled: true, url: "/api/background" };
+              syncWallpaperCss(next);
+              return next;
+            });
             saveBgOpts({ hasImage: true, enabled: true });
             toast?.("背景图片已设置", "success");
           } else {
@@ -309,7 +348,11 @@ export default function SettingsPanel({ settings, setSettings }) {
       const r = await fetch("/api/background", { method: "DELETE" });
       const d = await r.json();
       if (d.ok) {
-        updateBg({ enabled: false, hasImage: false, url: null });
+        updateBg(prev => {
+          const next = { ...prev, enabled: false, hasImage: false, url: null };
+          syncWallpaperCss(next);
+          return next;
+        });
         toast?.("背景图片已移除", "success");
       }
     } catch {
@@ -374,7 +417,15 @@ export default function SettingsPanel({ settings, setSettings }) {
                 onClick={() => setAccentColor(c.id)}
               />
             ))}
-            <button className="swatch swatch-custom" aria-label="自定义颜色">
+            <input
+              ref={colorInputRef}
+              type="color"
+              className="hidden"
+              value={/^#[0-9a-fA-F]{6}$/.test(accent) ? accent : "#4cc2ff"}
+              onChange={(e) => setAccentColor(e.target.value)}
+              aria-label="自定义强调色"
+            />
+            <button className="swatch swatch-custom" aria-label="自定义颜色" onClick={() => colorInputRef.current?.click()}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14"/></svg>
             </button>
           </div>
@@ -578,8 +629,8 @@ function HotkeySection({ toast }) {
     try {
       const cfg = await fetchHotkeyConfig();
       setHotkeys(cfg);
-      const first = Object.values(cfg)[0];
-      if (first) setGlobalEnabled(first.enabled !== false);
+      const values = Object.values(cfg);
+      setGlobalEnabled(values.length > 0 ? values.some(c => c.enabled !== false) : true);
     } catch { /* ignore */ }
   }, []);
 
@@ -623,6 +674,7 @@ function HotkeySection({ toast }) {
           globalEnabled={globalEnabled} toast={toast}
           recordingId={recordingId} setRecordingId={setRecordingId}
           onToggle={handleRowUpdate}
+          conflict={!!cfg.conflict}
           onExecute={id === "monitor-off" ? handleExecute : undefined}
           executeCountdown={id === "monitor-off" ? countdown : undefined} />
       ))}
@@ -639,7 +691,7 @@ function HotkeySection({ toast }) {
   );
 }
 
-function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecordingId, onToggle, onExecute, executeCountdown }) {
+function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecordingId, onToggle, onExecute, executeCountdown, conflict }) {
   const [modifiers, setModifiers] = useState(config.modifiers);
   const [key, setKey] = useState(config.key);
   const inputRef = useRef(null);
@@ -685,12 +737,13 @@ function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecording
   };
 
   return (
-    <div className="shortcut-row">
+    <div className={"shortcut-row" + (globalEnabled ? "" : " disabled")}>
       <span className="rk"><b>{HOTKEY_LABELS[id] || id}</b><small>{id === "monitor-off" ? "一键关闭显示器" : "切换到对应性能配置"}</small></span>
       <span className="keys">{formatHotkey(modifiers, key)}</span>
-      <button className="rec-btn" onClick={handleRecord}>{ICONS.edit}录制</button>
+      {conflict && <span className="hk-conflict" title="与其他快捷键冲突，可能无法注册">冲突</span>}
+      <button className="rec-btn" onClick={handleRecord} disabled={!globalEnabled}>{ICONS.edit}录制</button>
       {id === "monitor-off" && (
-        <button className="rec-btn" onClick={onExecute} disabled={executeCountdown != null}>
+        <button className="rec-btn" onClick={onExecute} disabled={executeCountdown != null || !globalEnabled}>
           {executeCountdown != null ? `${executeCountdown}s` : "执行"}
         </button>
       )}
