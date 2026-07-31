@@ -135,7 +135,12 @@ export default function PerformancePanel({
           update('gpuFreqLimitMhz')(uxtuParams.gpuFreqLimitMhz);
           queueGpuCore(uxtuParams.gpuCoreFreqMhz);
         }}
-        onClear={() => clearOverride(settings.mode, ['gpuCoreFreqMhz', 'gpuFreqLimitEnabled', 'gpuFreqLimitMhz'])}
+        onClear={async () => {
+          if (uxtuParams.gpuFreqLimitEnabled) {
+            await gpuCmd('reset-clocks').catch(() => {});
+          }
+          clearOverride(settings.mode, ['gpuCoreFreqMhz', 'gpuFreqLimitEnabled', 'gpuFreqLimitMhz']);
+        }}
         onChange={v => { update('gpuCoreFreqMhz')(v); queueGpuCore(v); }}
         action={<button onClick={toggleGpuLock} disabled={gpuClockDisabled || paramsLocked || !gpuCoreSet} style={{ marginLeft: 8, padding: "3px 10px", borderRadius: 6, border: "1px solid var(--stroke)", background: uxtuParams.gpuFreqLimitEnabled ? "var(--ok)" : "transparent", color: uxtuParams.gpuFreqLimitEnabled ? "var(--ok-fg)" : "var(--fg-2)", cursor: (gpuClockDisabled || paramsLocked || !gpuCoreSet) ? "not-allowed" : "pointer", fontSize: 11, fontFamily: "inherit", opacity: (gpuClockDisabled || paramsLocked || !gpuCoreSet) ? .5 : 1 }}>{uxtuParams.gpuFreqLimitEnabled ? "已锁定" : "锁定频率"}</button>}
       />
