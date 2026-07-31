@@ -83,7 +83,6 @@ app.UseStaticFiles(new StaticFileOptions
         }
     }
 });
-app.MapFallbackToFile("index.html");
 
 // ---- File logger (统一走 AppLog) ----
 void Log(string msg)
@@ -146,6 +145,18 @@ void SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
         var o = JsonRead(file, new PerformanceOverrides());
         mutate(o);
         JsonWrite(file, o);
+        // 用户自建配置同时写回 profiles/{id}.json，避免切换配置后编辑丢失
+        if (mode != null && !_modeToThermal.ContainsKey(mode))
+        {
+            try
+            {
+                app.Services.GetRequiredService<ProfileService>().SaveOverrides(mode, o);
+            }
+            catch (Exception ex)
+            {
+                Log($"[overrides] profile sync failed: {ex.Message}");
+            }
+        }
         Log($"[overrides] ✓ saved → {file}{(mode != null ? " (pinned)" : "")}");
     }
 }
@@ -1640,6 +1651,118 @@ app.MapPost("/api/overrides/sync", (SyncOverridesRequest req) =>
     return Results.Ok();
 });
 
+app.MapPost("/api/overrides/clear", async (ClearOverridesRequest req, ProfileService profileSvc,
+    CpuPowerController cpu, GpuController gpu, NvapiGpuController nv,
+    WmiInterface wmi, HardwareAbstractionLayer hal) =>
+{
+    try
+    {
+        var fields = new HashSet<string>(req.Fields ?? [], StringComparer.OrdinalIgnoreCase);
+        if (fields.Count == 0) return Results.Ok(new { ok = true });
+        var mode = string.IsNullOrWhiteSpace(req.Mode) ? CurrentMode() : req.Mode;
+
+        SavePerfOverrides(o =>
+        {
+            if (fields.Contains("cpuFreqLimitMhz")) o.Cpu.FreqLimitMhz = null;
+            if (fields.Contains("cpuTurboDisabled")) o.Cpu.TurboEnabled = null;
+            if (fields.Contains("cpuCoreLimit")) o.Cpu.CoreLimitPercent = null;
+            if (fields.Contains("cpuPowerPlan")) o.PowerPlan = null;
+            if (fields.Contains("gpuCoreFreqMhz") || fields.Contains("gpuFreqLimitEnabled"))
+            {
+                o.Gpu.CoreFreqMhz = null;
+                o.Gpu.FreqLocked = null;
+            }
+            if (fields.Contains("gpuMemFreqMhz")) o.Gpu.MemFreqLevel = null;
+            if (fields.Contains("ocCoreOffsetMhz") || fields.Contains("ocMemOffsetMhz"))
+            {
+                o.Nvapi.OcCoreOffsetMhz = null;
+                o.Nvapi.OcMemOffsetMhz = null;
+            }
+            if (fields.Contains("gpuTempLimitC")) o.Nvapi.ThermalLimitC = null;
+            if (fields.Contains("cpuLongPptW")) o.Smu.StapmLimitW = null;
+            if (fields.Contains("cpuShortPptW")) o.Smu.ShortPowerLimitW = null;
+            if (fields.Contains("cpuTempLimitC")) o.Smu.TempLimitC = null;
+            if (fields.Contains("cpuVoltageOffset")) o.Smu.CoAll = null;
+            if (fields.Contains("fanLargeRpmTarget")) o.Fan.LargeRpm = null;
+            if (fields.Contains("fanSmallRpmTarget")) o.Fan.SmallRpm = null;
+        }, mode);
+
+        if (fields.Contains("cpuFreqLimitMhz"))
+        {
+            try { await cpu.SetFreqLimitAsync(0); } catch (Exception ex) { Log($"[overrides/clear] CPU freq reset: {ex.Message}"); }
+        }
+        if (fields.Contains("cpuTurboDisabled"))
+        {
+            try { await cpu.SetTurboAsync(true); } catch (Exception ex) { Log($"[overrides/clear] CPU turbo reset: {ex.Message}"); }
+        }
+        if (fields.Contains("cpuCoreLimit"))
+        {
+            try { await cpu.SetCoreLimitAsync(100); } catch (Exception ex) { Log($"[overrides/clear] CPU core reset: {ex.Message}"); }
+        }
+        if (fields.Contains("cpuPowerPlan"))
+        {
+            try { hal.PowerPlan = 0; } catch (Exception ex) { Log($"[overrides/clear] power plan reset: {ex.Message}"); }
+        }
+        if (fields.Contains("gpuCoreFreqMhz") || fields.Contains("gpuFreqLimitEnabled"))
+        {
+            try { gpu.ResetGpuClocks(); } catch (Exception ex) { Log($"[overrides/clear] GPU clock reset: {ex.Message}"); }
+        }
+        if (fields.Contains("gpuMemFreqMhz"))
+        {
+            try { gpu.ResetMemoryClocks(); } catch (Exception ex) { Log($"[overrides/clear] GPU memory reset: {ex.Message}"); }
+        }
+        if (fields.Contains("ocCoreOffsetMhz") || fields.Contains("ocMemOffsetMhz"))
+        {
+            try { if (nv.IsAvailable) nv.SetP0Offset(0, 0); } catch (Exception ex) { Log($"[overrides/clear] NVAPI OC reset: {ex.Message}"); }
+        }
+        if (fields.Contains("gpuTempLimitC"))
+        {
+            try { if (nv.IsAvailable) nv.SetThermalLimit(87); } catch (Exception ex) { Log($"[overrides/clear] NVAPI thermal reset: {ex.Message}"); }
+        }
+
+        var smuCleared = fields.Overlaps(new[] { "cpuLongPptW", "cpuShortPptW", "cpuTempLimitC", "cpuVoltageOffset" });
+        if (smuCleared)
+        {
+            var thermalMode = mode;
+            if (!_modeToThermal.TryGetValue(thermalMode, out var tv))
+            {
+                var profileData = profileSvc.GetById(mode);
+                if (profileData.HasValue && _modeToThermal.TryGetValue(profileData.Value.Entry.ThermalMode, out tv))
+                    thermalMode = profileData.Value.Entry.ThermalMode;
+                else
+                {
+                    thermalMode = "office";
+                    tv = _modeToThermal[thermalMode];
+                }
+            }
+            try
+            {
+                if (wmi.Available) wmi.SetThermalMode(tv);
+                else hal.ThermalMode = tv;
+                Log($"[overrides/clear] SMU cleared, re-applied thermal mode {thermalMode}({tv})");
+            }
+            catch (Exception ex) { Log($"[overrides/clear] SMU thermal reset: {ex.Message}"); }
+        }
+
+        if (fields.Contains("fanLargeRpmTarget") || fields.Contains("fanSmallRpmTarget"))
+        {
+            try
+            {
+                wmi.SetFanManual(0, false);
+                wmi.SetFanManual(1, false);
+            }
+            catch (Exception ex) { Log($"[overrides/clear] fan restore: {ex.Message}"); }
+        }
+
+        return Results.Ok(new { ok = true, cleared = req.Fields });
+    }
+    catch (Exception ex)
+    {
+        Log($"[overrides/clear] ✗ {ex.Message}");
+        return Results.Json(new { ok = false, error = ex.Message });
+    }
+});
+
 app.MapPost("/api/overrides/import", (SyncOverridesRequest req) =>
 {
     if (req.Overrides == null) return Results.BadRequest("overrides required");
@@ -2451,6 +2574,9 @@ app.MapPost("/api/profiles/{id}/thermal-mode", async (string id, HttpContext ctx
     return Results.Ok(new { ok = true });
 });
 
+// ---- SPA fallback (必须在所有 API 路由之后) ----
+app.MapFallbackToFile("index.html");
+
 // ---- Start server ----
 try
 {
@@ -2544,6 +2670,7 @@ public class FanOverrides { public int? LargeRpm; public int? SmallRpm; }
 public class PerformanceOverrides { public CpuOverrides Cpu = new(); public GpuOverrides Gpu = new(); public NvapiOverrides Nvapi = new(); public SmuOverrides Smu = new(); public FanOverrides Fan = new(); public int? PowerPlan; }
 public record SwitchModeRequest([property: JsonPropertyName("mode")] string Mode);
 public record SyncOverridesRequest([property: JsonPropertyName("mode")] string Mode, [property: JsonPropertyName("overrides")] PerformanceOverrides? Overrides);
+public record ClearOverridesRequest([property: JsonPropertyName("mode")] string Mode, [property: JsonPropertyName("fields")] List<string>? Fields);
 public record FrontendLogRequest([property: JsonPropertyName("tag")] string Tag, [property: JsonPropertyName("msg")] string Msg);
 
 // ---- 快捷键请求模型 ----

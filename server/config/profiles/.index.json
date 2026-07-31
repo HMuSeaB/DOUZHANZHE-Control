@@ -29,11 +29,32 @@
       "createdAt": null
     },
     {
-      "id": "\u91CE\u517D-\u526F\u672C",
-      "name": "\u91CE\u517D (\u526F\u672C)",
+      "id": "\u5B89\u9759\u6027\u80FD",
+      "name": "\u5B89\u9759\u6027\u80FD",
       "builtIn": false,
-      "thermalMode": "beast",
-      "createdAt": "2026-07-30T23:09:36"
+      "thermalMode": "silent",
+      "createdAt": "2026-07-31T17:37:56"
+    },
+    {
+      "id": "\u5F02\u73AF",
+      "name": "\u5F02\u73AF",
+      "builtIn": false,
+      "thermalMode": "\u5B89\u9759\u6027\u80FD",
+      "createdAt": "2026-07-31T17:38:42"
+    },
+    {
+      "id": "\u7EC8\u672B\u5730",
+      "name": "\u7EC8\u672B\u5730",
+      "builtIn": false,
+      "thermalMode": "\u5F02\u73AF",
+      "createdAt": "2026-07-31T17:38:54"
+    },
+    {
+      "id": "\u5F00\u53D1",
+      "name": "\u5F00\u53D1",
+      "builtIn": false,
+      "thermalMode": "\u7EC8\u672B\u5730",
+      "createdAt": "2026-07-31T17:39:03"
     }
   ]
 }

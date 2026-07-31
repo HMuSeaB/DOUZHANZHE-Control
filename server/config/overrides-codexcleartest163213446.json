@@ -1,22 +1,22 @@
 {
   "cpu": {
-    "freqLimitMhz": 4500,
-    "turboEnabled": true,
-    "coreLimitPercent": 50
+    "freqLimitMhz": null,
+    "turboEnabled": null,
+    "coreLimitPercent": null
   },
   "gpu": {
-    "coreFreqMhz": 2750,
+    "coreFreqMhz": null,
     "freqLocked": null,
     "memFreqLevel": null
   },
   "nvapi": {
-    "ocCoreOffsetMhz": 0,
-    "ocMemOffsetMhz": 0,
+    "ocCoreOffsetMhz": null,
+    "ocMemOffsetMhz": null,
     "powerLimitW": null,
     "thermalLimitC": null
   },
   "smu": {
-    "stapmLimitW": null,
+    "stapmLimitW": 70,
     "shortPowerLimitW": null,
     "tempLimitC": null,
     "coAll": null
