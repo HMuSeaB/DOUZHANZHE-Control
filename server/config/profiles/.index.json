@@ -1,0 +1,39 @@
+{
+  "profiles": [
+    {
+      "id": "silent",
+      "name": "\u5B89\u9759",
+      "builtIn": true,
+      "thermalMode": "silent",
+      "createdAt": null
+    },
+    {
+      "id": "office",
+      "name": "\u5747\u8861",
+      "builtIn": true,
+      "thermalMode": "office",
+      "createdAt": null
+    },
+    {
+      "id": "gaming",
+      "name": "\u6597\u6218",
+      "builtIn": true,
+      "thermalMode": "gaming",
+      "createdAt": null
+    },
+    {
+      "id": "beast",
+      "name": "\u91CE\u517D",
+      "builtIn": true,
+      "thermalMode": "beast",
+      "createdAt": null
+    },
+    {
+      "id": "\u91CE\u517D-\u526F\u672C",
+      "name": "\u91CE\u517D (\u526F\u672C)",
+      "builtIn": false,
+      "thermalMode": "beast",
+      "createdAt": "2026-07-30T23:09:36"
+    }
+  ]
+}

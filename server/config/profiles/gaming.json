@@ -1,0 +1,29 @@
+{
+  "cpu": {
+    "freqLimitMhz": null,
+    "turboEnabled": null,
+    "coreLimitPercent": null
+  },
+  "gpu": {
+    "coreFreqMhz": null,
+    "freqLocked": null,
+    "memFreqLevel": null
+  },
+  "nvapi": {
+    "ocCoreOffsetMhz": null,
+    "ocMemOffsetMhz": null,
+    "powerLimitW": null,
+    "thermalLimitC": null
+  },
+  "smu": {
+    "stapmLimitW": null,
+    "shortPowerLimitW": null,
+    "tempLimitC": null,
+    "coAll": null
+  },
+  "fan": {
+    "largeRpm": null,
+    "smallRpm": null
+  },
+  "powerPlan": null
+}
