@@ -1229,6 +1229,8 @@ app.MapGet("/api/fan-curve/status", (FanCurveService svc) =>
     {
         ok = true,
         active = svc.Active,
+        intervalMs = svc.IntervalMs,
+        hysteresisC = svc.HysteresisC,
         points = svc.Points.Select(p => new { temp = p.Temp, largeRpm = p.LargeRpm, smallRpm = p.SmallRpm }),
     });
 });
@@ -1699,18 +1701,25 @@ app.MapPost("/api/ui-state", async (HttpContext ctx) =>
 // ---- 配置备份/恢复 ----
 var backupCategories = new Dictionary<string, string[]>
 {
-    ["config"] = new[] { "overrides-office.json", "overrides-beast.json", "overrides-silent.json", "overrides-gaming.json", "custom-params.json", "fan-curve.json", "gpu-mode.json" },
+    ["config"] = new[] { "overrides-office.json", "overrides-beast.json", "overrides-silent.json", "overrides-gaming.json", "custom-params.json", "fan-curve.json", "gpu-mode.json", "profiles/.index.json" },
     ["games"] = new[] { "game-profiles.json" },
     ["hotkeys"] = new[] { "hotkey-config.json", "hotkey-status.json" },
     ["appearance"] = new[] { "ui-state.json" },
     ["background"] = new[] { "background.json" },
-    ["autostart"] = Array.Empty<string>(),
+    ["autostart"] = new[] { "auto-start-opts.json" },
 };
 
 app.MapPost("/api/backup/export", async (HttpContext ctx) =>
 {
     try
     {
+        string[] ProfileFiles() =>
+            Directory.Exists(Path.Combine(configDir, "profiles"))
+                ? Directory.GetFiles(Path.Combine(configDir, "profiles"), "*.json")
+                    .Select(p => "profiles/" + Path.GetFileName(p))
+                    .ToArray()
+                : Array.Empty<string>();
+
         using var reader = new StreamReader(ctx.Request.Body);
         var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var req = JsonSerializer.Deserialize<BackupRequest>(await reader.ReadToEndAsync(), opts);
@@ -1719,6 +1728,7 @@ app.MapPost("/api/backup/export", async (HttpContext ctx) =>
         foreach (var cat in cats)
         {
             if (!backupCategories.TryGetValue(cat, out var files)) continue;
+            if (cat == "config") files = files.Concat(ProfileFiles()).Distinct().ToArray();
             var catData = new Dictionary<string, JsonElement>();
             foreach (var f in files)
             {
@@ -1755,6 +1765,7 @@ app.MapPost("/api/backup/import", async (HttpContext ctx) =>
             {
                 if (!catFiles.TryGetProperty(f, out var content)) continue;
                 var filePath = Path.Combine(configDir, f);
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? configDir);
                 await File.WriteAllTextAsync(filePath, JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true }));
                 restored++;
             }
@@ -1781,7 +1792,7 @@ app.MapPost("/api/default-config", async (HttpContext ctx) =>
 });
 
 // ---- Auto-start options (minimized preference + enabled cache) ----
-var autoStartOptsPath = Path.Combine(AppContext.BaseDirectory, "config", "auto-start-opts.json");
+var autoStartOptsPath = Path.Combine(configDir, "auto-start-opts.json");
 Directory.CreateDirectory(Path.GetDirectoryName(autoStartOptsPath)!);
 
 // 读取本地缓存的 auto-start 状态（快速路径，无 COM 开销）
@@ -2219,6 +2230,33 @@ app.MapDelete("/api/game-profiles/{id}", (string id, GameProfileService svc) =>
 {
     svc.Delete(id);
     return Results.Ok();
+});
+
+app.MapPost("/api/game-profiles/{id}/launch", (string id, GameProfileService svc) =>
+{
+    var profile = svc.GetById(id);
+    if (profile == null)
+        return Results.NotFound(new { ok = false, error = "规则不存在" });
+    if (string.IsNullOrWhiteSpace(profile.ExePath) || !File.Exists(profile.ExePath))
+        return Results.BadRequest(new { ok = false, error = "游戏可执行文件不存在" });
+
+    try
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = profile.ExePath,
+            WorkingDirectory = Path.GetDirectoryName(profile.ExePath) ?? "",
+            UseShellExecute = true,
+        };
+        Process.Start(psi);
+        Log($"[game-profiles/launch] {profile.Name} → {profile.ExePath}");
+        return Results.Ok(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        Log($"[game-profiles/launch] ✗ {ex.Message}");
+        return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
+    }
 });
 
 app.MapPut("/api/game-profiles/config", (GameConfigRequest req, GameProfileService svc) =>

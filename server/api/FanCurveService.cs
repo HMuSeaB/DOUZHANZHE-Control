@@ -43,6 +43,8 @@ public sealed class FanCurveService : IDisposable
     private int _consecutiveDeviation;        // 连续偏离 tick 计数
 
     public bool Active => _active;
+    public int IntervalMs => _intervalMs;
+    public int HysteresisC => _hysteresisC;
 
     /// <summary>
     /// 睡眠恢复后调用：重置内部状态，让下一个 Tick 强制重新下发 ITSM 和风扇转速
