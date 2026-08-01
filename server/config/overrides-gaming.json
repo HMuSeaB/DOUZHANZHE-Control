@@ -10,10 +10,10 @@
     "memFreqLevel": null
   },
   "nvapi": {
-    "ocCoreOffsetMhz": null,
-    "ocMemOffsetMhz": null,
+    "ocCoreOffsetMhz": 0,
+    "ocMemOffsetMhz": 0,
     "powerLimitW": null,
-    "thermalLimitC": null
+    "thermalLimitC": 87
   },
   "smu": {
     "stapmLimitW": null,

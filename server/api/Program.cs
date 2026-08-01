@@ -2546,6 +2546,25 @@ app.MapPost("/api/game-profiles/batch", async (HttpRequest req, GameProfileServi
 // ---- Profile Service 初始化 ----
 var profileSvc = app.Services.GetRequiredService<ProfileService>();
 profileSvc.EnsureInitialized(configDir);
+var validProfileIds = new HashSet<string>(profileSvc.GetAll().Select(p => p.Id));
+if (!validProfileIds.Contains(CurrentMode()))
+{
+    Log($"[Profiles] 当前模式 {CurrentMode()} 不存在，回退到 office");
+    SetCurrentMode("office");
+}
+foreach (var orphanFile in Directory.GetFiles(configDir, "overrides-*.json"))
+{
+    var orphanId = Path.GetFileNameWithoutExtension(orphanFile)["overrides-".Length..];
+    if (!validProfileIds.Contains(orphanId))
+    {
+        try
+        {
+            File.Delete(orphanFile);
+            Log($"[Profiles] 清理孤立 overrides 文件: {Path.GetFileName(orphanFile)}");
+        }
+        catch (Exception ex) { Log($"[Profiles] 清理孤立 overrides 失败: {ex.Message}"); }
+    }
+}
 
 // ---- Profiles API ----
 app.MapGet("/api/profiles", (ProfileService svc) =>
@@ -2607,10 +2626,26 @@ app.MapPost("/api/profiles", async (HttpRequest req, ProfileService svc) =>
     }
 });
 
-app.MapDelete("/api/profiles/{id}", (string id, ProfileService svc) =>
+app.MapDelete("/api/profiles/{id}", (string id, ProfileService svc, GameProfileService gameSvc) =>
 {
+    var entry = svc.GetAll().FirstOrDefault(p => p.Id == id);
+    if (entry == null)
+        return Results.NotFound(new { error = "配置不存在" });
+    if (entry.BuiltIn)
+        return Results.BadRequest(new { error = "内置配置不能删除" });
+    if (id == CurrentMode())
+        return Results.BadRequest(new { error = "当前正在使用此配置，请先切换到其他配置再删除" });
+
+    var boundGames = gameSvc.GetAll().Where(p => p.TargetMode == id).ToList();
+    if (boundGames.Count > 0)
+        return Results.BadRequest(new { error = $"有 {boundGames.Count} 条游戏规则绑定此配置，请先解除绑定再删除" });
+
+    // 清理用户配置的 overrides 缓存，避免删除后继续被 current mode 使用
+    var orphanPath = Path.Combine(configDir, $"overrides-{id}.json");
+    if (File.Exists(orphanPath)) File.Delete(orphanPath);
+
     if (!svc.Delete(id))
-        return Results.BadRequest(new { error = "删除失败（可能是内置配置）" });
+        return Results.BadRequest(new { error = "删除失败" });
     return Results.Ok(new { ok = true });
 });
 
