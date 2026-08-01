@@ -167,7 +167,7 @@ function Sync-PrivateDir($dirName, $branch) {
     git commit -m "sync: $desc ($timestamp)" 2>&1 | Out-Null
 
     if ($LASTEXITCODE -eq 0) {
-        git push origin $branch 2>&1 | Out-Null
+        git push origin "HEAD:$branch" 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Log "$dirName/ → 私有仓库 ($branch 分支)"
         } else {
