@@ -97,7 +97,7 @@ function Sync-MainRepo {
     # 先清理暂存区，确保按类别分组提交
     git reset -q 2>$null
 
-    $files = git status --porcelain | ForEach-Object {
+    $files = git -c core.quotepath=false status --porcelain | ForEach-Object {
         # porcelain 格式: "XY filename" 或 "XY orig -> new"
         $_.Substring(3)
     } | Where-Object { $_ -ne '' }
