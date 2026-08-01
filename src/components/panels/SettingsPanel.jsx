@@ -66,6 +66,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
 
   const [bgSource, setBgSource] = useState("local");
   const [bgInterval, setBgInterval] = useState("1h");
+  const [bgApiUrl, setBgApiUrl] = useState("");
 
   const fileInputRef = useRef(null);
   const colorInputRef = useRef(null);
@@ -128,6 +129,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
       .then(d => {
         if (d.source) setBgSource(d.source);
         if (d.interval) setBgInterval(d.interval);
+        if (d.apiUrl != null) setBgApiUrl(d.apiUrl);
       })
       .catch(() => {});
   }, []);
@@ -269,6 +271,14 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
   const handleBgInterval = async (v) => {
     setBgInterval(v);
     await saveBgOpts({ interval: v });
+  };
+
+  const handleBgApiUrlChange = (v) => {
+    setBgApiUrl(v);
+  };
+
+  const handleBgApiUrlCommit = async () => {
+    await saveBgOpts({ apiUrl: bgApiUrl.trim() });
   };
 
   const handleBgOpacity = async (v) => {
@@ -481,14 +491,26 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
               </span>
             </span>
           </div>
-          <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
-            <span className="rk"><b>轮换间隔</b><small>网络轮换模式下每张壁纸的停留时长</small></span>
-            <span className="rctrl">
-              <select className="sel" value={bgInterval} onChange={(e) => handleBgInterval(e.target.value)}>
-                {BG_INTERVALS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-            </span>
-          </div>
+          {bgSource === "network" && (
+            <>
+              <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+                <span className="rk"><b>API 地址</b><small>返回 {`{ urls: [...] }`} 或顶层数组的 JSON 接口</small></span>
+                <span className="rctrl">
+                  <input type="text" className="api-input" value={bgApiUrl} placeholder="https://example.com/wallpapers.json"
+                    onChange={(e) => handleBgApiUrlChange(e.target.value)}
+                    onBlur={() => handleBgApiUrlCommit()} />
+                </span>
+              </div>
+              <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
+                <span className="rk"><b>轮换间隔</b><small>网络轮换模式下每张壁纸的停留时长</small></span>
+                <span className="rctrl">
+                  <select className="sel" value={bgInterval} onChange={(e) => handleBgInterval(e.target.value)}>
+                    {BG_INTERVALS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                </span>
+              </div>
+            </>
+          )}
           <div className={`set-row bg-dep ${bgEnabled ? "" : "disabled"}`}>
             <span className="rk"><b>透明度</b><small>壁纸层叠加在控件之下的显现程度</small></span>
             <span className="rctrl"><input type="range" className="slider" min="0" max="100" value={bgOpacity} onChange={(e) => handleBgOpacity(Number(e.target.value))} /><span className="pv">{bgOpacity}%</span></span>
