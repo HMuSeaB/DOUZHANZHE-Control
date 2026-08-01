@@ -1,12 +1,14 @@
 ﻿import { useState, useEffect } from "react";
 import { useControlState } from "../hooks/useControlState";
 import FanCurvePanel from "../components/panels/FanCurvePanel";
+import { fetchFanCurveStatus, fetchRouteInfo } from "../services/uxtuAdapter";
 
 export default function FanControl() {
   const { telemetry } = useControlState();
   const [curveActive, setCurveActive] = useState(false);
   const [fan1Pct, setFan1Pct] = useState(80);
   const [fan2Pct, setFan2Pct] = useState(60);
+  const [routeInfo, setRouteInfo] = useState(null);
 
   const fan1Rpm = telemetry?.fan?.rpm?.[0] ?? 0;
   const fan2Rpm = telemetry?.fan?.rpm?.[1] ?? 0;
@@ -14,9 +16,18 @@ export default function FanControl() {
   const fan2TelePct = telemetry?.fan?.pct?.[1] ?? 0;
 
   useEffect(() => {
-    import("../services/uxtuAdapter").then(({ fetchFanCurveStatus }) =>
-      fetchFanCurveStatus().then((s) => { if (s?.ok) setCurveActive(s.active); })
-    ).catch(() => {});
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const [status, route] = await Promise.all([fetchFanCurveStatus(), fetchRouteInfo()]);
+        if (disposed) return;
+        if (status?.ok) setCurveActive(status.active);
+        setRouteInfo(route);
+      } catch { /* backend offline */ }
+    };
+    refresh();
+    const timer = setInterval(refresh, 2000);
+    return () => { disposed = true; clearInterval(timer); };
   }, []);
 
   const setFanTarget = async (fanIdx, pct) => {
@@ -37,6 +48,16 @@ export default function FanControl() {
           <p>EC 寄存器绑定 · 手动调速与自定义曲线互斥 · 仅斗战者机型可见</p>
         </div>
       </div>
+
+      {routeInfo?.deviationAlert && (
+        <div className="fan-alert reveal enter">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          <span className="fa-text">
+            <b>风扇偏离告警</b>
+            <small>连续 {routeInfo.consecutiveDeviation} 次采样未达到目标转速：大风扇偏差 {routeInfo.largeDeviationRpm} RPM · 小风扇偏差 {routeInfo.smallDeviationRpm} RPM</small>
+          </span>
+        </div>
+      )}
 
       {/* 实时监控 */}
       <div className="section-title">实时监控<span className="line"></span></div>

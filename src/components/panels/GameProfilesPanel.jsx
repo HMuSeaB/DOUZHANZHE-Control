@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { fetchGameAutoSwitchStatus, launchGameProfile } from "../../services/uxtuAdapter";
+import { fetchGameAutoSwitchStatus, launchGameProfile, fetchProfiles } from "../../services/uxtuAdapter";
 
 const MODES = [
   { id: "silent", label: "安静", color: "#4CAF50" },
@@ -24,9 +24,6 @@ const ICONS = {
   epic: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2 3 7v10l9 5 9-5V7Z"/></svg>,
 };
 
-function modeLabel(id) { return MODE_MAP[id]?.label || id; }
-function modeColor(id) { return MODE_MAP[id]?.color || "#888"; }
-
 function initials(name) {
   if (!name) return "?";
   const chars = name.match(/[\u4e00-\u9fa5]/g);
@@ -37,6 +34,7 @@ function initials(name) {
 export default function GameProfilesPanel() {
   const [config, setConfig] = useState({ enabled: true, defaultMode: "gaming" });
   const [profiles, setProfiles] = useState([]);
+  const [configProfiles, setConfigProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [showAdd, setShowAdd] = useState(false);
@@ -54,6 +52,39 @@ export default function GameProfilesPanel() {
   const [switchStatus, setSwitchStatus] = useState(null);
   const [launchingId, setLaunchingId] = useState(null);
 
+  const resolveProfile = (id) =>
+    configProfiles.find(p => p.id === id) ||
+    (MODE_MAP[id] ? { id, name: MODE_MAP[id].label, builtIn: true, thermalMode: id } : null);
+
+  const targetLabel = (id) => resolveProfile(id)?.name || id;
+  const targetColor = (id) => {
+    const p = resolveProfile(id);
+    return (p && MODE_MAP[p.thermalMode]?.color) || "#888";
+  };
+
+  const firstTargetId = configProfiles[0]?.id || MODES[0].id;
+  const validTargetId = (id) => (resolveProfile(id) ? id : firstTargetId);
+
+  const profileOptions = () => {
+    const list = configProfiles.length
+      ? configProfiles
+      : MODES.map(m => ({ id: m.id, name: m.label, builtIn: true, thermalMode: m.id }));
+    const builtin = list.filter(p => p.builtIn);
+    const user = list.filter(p => !p.builtIn);
+    return (
+      <>
+        <optgroup label="内置配置">
+          {builtin.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </optgroup>
+        {user.length > 0 && (
+          <optgroup label="用户自建配置">
+            {user.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </optgroup>
+        )}
+      </>
+    );
+  };
+
   const fetchData = async () => {
     try {
       const res = await fetch("/api/game-profiles");
@@ -68,6 +99,14 @@ export default function GameProfilesPanel() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    fetchProfiles()
+      .then(data => { if (!disposed) setConfigProfiles(data.profiles || []); })
+      .catch(err => console.error("Failed to load config profiles:", err));
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -139,7 +178,7 @@ export default function GameProfilesPanel() {
         return;
       }
       setShowAdd(false);
-      setAddForm({ name: "", exePath: "", targetMode: config.defaultMode });
+      setAddForm({ name: "", exePath: "", targetMode: validTargetId(config.defaultMode) });
       fetchData();
     } catch (err) {
       console.error("Failed to add profile:", err);
@@ -199,7 +238,7 @@ export default function GameProfilesPanel() {
       const data = await res.json();
       setScanResults(data || []);
       setSelectedGames(new Set());
-      setBatchTargetMode(config.defaultMode);
+      setBatchTargetMode(validTargetId(config.defaultMode));
       setShowScan(true);
     } catch (err) {
       console.error("Failed to scan games:", err);
@@ -306,19 +345,19 @@ export default function GameProfilesPanel() {
         </span>
         <span className="as-item">
           <span className="as-label">生效模式</span>
-          <b>{switchStatus?.effectiveMode && switchStatus.effectiveMode !== "none" ? modeLabel(switchStatus.effectiveMode) : "无"}</b>
+          <b>{switchStatus?.effectiveMode && switchStatus.effectiveMode !== "none" ? targetLabel(switchStatus.effectiveMode) : "无"}</b>
         </span>
         <span className="as-item">
           <span className="as-label">快照模式</span>
-          <b>{switchStatus?.snapshotMode && switchStatus.snapshotMode !== "none" ? modeLabel(switchStatus.snapshotMode) : "无"}</b>
+          <b>{switchStatus?.snapshotMode && switchStatus.snapshotMode !== "none" ? targetLabel(switchStatus.snapshotMode) : "无"}</b>
         </span>
         <span className="as-item as-games">
           <span className="as-label">运行中游戏</span>
           <span className="as-tags">
             {switchStatus?.activeGames?.length
               ? switchStatus.activeGames.map((g, i) => (
-                  <span key={`${g.pid}-${i}`} className="as-tag" style={{ borderColor: modeColor(g.targetMode) }}>
-                    {g.name} · {modeLabel(g.targetMode)}
+                  <span key={`${g.pid}-${i}`} className="as-tag" style={{ borderColor: targetColor(g.targetMode) }}>
+                    {g.name} · {targetLabel(g.targetMode)}
                   </span>
                 ))
               : <b>0 个</b>}
@@ -332,7 +371,7 @@ export default function GameProfilesPanel() {
         <button className="btn" onClick={scanGames} disabled={scanning}>
           {scanning ? ICONS.search : ICONS.search}扫描游戏
         </button>
-        <button className="btn primary" onClick={() => { setShowAdd(true); setAddForm({ name: "", exePath: "", targetMode: config.defaultMode }); }}>
+        <button className="btn primary" onClick={() => { setShowAdd(true); setAddForm({ name: "", exePath: "", targetMode: validTargetId(config.defaultMode) }); }}>
           {ICONS.plus}添加规则
         </button>
       </div>
@@ -345,12 +384,12 @@ export default function GameProfilesPanel() {
         <div className="game-grid reveal enter" style={{ animationDelay: ".06s" }}>
           {profiles.map(p => (
             <div key={p.id} className={`gcard ${p.enabled ? "" : "off"}`}>
-              <div className="poster" style={{ background: `linear-gradient(135deg, ${modeColor(p.targetMode)}66, #1a1a2e)` }}>
+              <div className="poster" style={{ background: `linear-gradient(135deg, ${targetColor(p.targetMode)}66, #1a1a2e)` }}>
                 <span className="poster-letter">{initials(p.name)}</span>
               </div>
               <span className="shade"></span>
               <div className="top">
-                <span className="cfg"><span className="dot" style={{ background: modeColor(p.targetMode) }}></span>{modeLabel(p.targetMode)}</span>
+                <span className="cfg"><span className="dot" style={{ background: targetColor(p.targetMode) }}></span>{targetLabel(p.targetMode)}</span>
                 <label className="switch sw">
                   <input
                     type="checkbox"
@@ -429,7 +468,7 @@ export default function GameProfilesPanel() {
                   onChange={(e) => setAddForm({ ...addForm, targetMode: e.target.value })}
                   aria-label="绑定配置"
                 >
-                  {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  {profileOptions()}
                 </select>
               </div>
             </div>
@@ -476,7 +515,7 @@ export default function GameProfilesPanel() {
                   value={editForm.targetMode}
                   onChange={(e) => setEditForm({ ...editForm, targetMode: e.target.value })}
                 >
-                  {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  {profileOptions()}
                 </select>
               </div>
             </div>
@@ -513,7 +552,7 @@ export default function GameProfilesPanel() {
                           onChange={() => !g.alreadyAdded && toggleGameSelection(g.index)}
                           disabled={g.alreadyAdded}
                         />
-                        <span className="gi" style={{ background: `linear-gradient(135deg, ${modeColor(batchTargetMode)}66, #1a1a2e)` }}>
+                        <span className="gi" style={{ background: `linear-gradient(135deg, ${targetColor(batchTargetMode)}66, #1a1a2e)` }}>
                           <span className="gi-letter">{initials(g.name)}</span>
                         </span>
                         <span className="gn">
@@ -526,7 +565,7 @@ export default function GameProfilesPanel() {
                   <div className="scan-bind">
                     <span>统一绑定到</span>
                     <select value={batchTargetMode} onChange={(e) => setBatchTargetMode(e.target.value)} aria-label="批量绑定配置">
-                      {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                      {profileOptions()}
                     </select>
                   </div>
                 </>

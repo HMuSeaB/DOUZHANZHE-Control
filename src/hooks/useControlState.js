@@ -30,7 +30,7 @@ function saveToLS(key, value) {
 export function useControlState() {
 
   // ── Theme ──
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState(() => document.documentElement?.getAttribute("data-theme-mode") || "dark");
 
   // ── Telemetry + History ──
   const [telemetry, setTelemetry] = useState({});
@@ -88,7 +88,7 @@ export function useControlState() {
       // 加载机型信息
       try {
         const pi = await fetchPlatformInfo();
-        setPlatformInfo({ oem: pi.oem || 'Unknown', vendor: pi.vendor || '', model: pi.model || '' });
+        setPlatformInfo({ oem: pi.oem || 'Unknown', vendor: pi.vendor || '', model: pi.model || '', isElevated: pi.isElevated ?? null });
         setPlatformInfoReady(true);
       } catch { /* ignore */ }
       // 加载配置列表
@@ -189,7 +189,7 @@ export function useControlState() {
   const [backendOnline, setBackendOnline] = useState(false);
   const [profiles, setProfiles] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(null);
-  const [platformInfo, setPlatformInfo] = useState({ oem: 'Unknown', vendor: '', model: '' });
+  const [platformInfo, setPlatformInfo] = useState({ oem: 'Unknown', vendor: '', model: '', isElevated: null });
   const [platformInfoReady, setPlatformInfoReady] = useState(false);
   useEffect(() => {
     let disposed = false;

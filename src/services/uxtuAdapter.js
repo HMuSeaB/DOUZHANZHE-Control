@@ -706,6 +706,15 @@ export async function launchGameProfile(id) {
 
 // ---- Profile CRUD API ----
 
+// 将背景配置同步到 CSS 变量（App 启动与设置页共用）
+export function applyWallpaperCss(opts) {
+  const root = document.documentElement;
+  const show = !!opts.enabled && !!opts.hasImage && !!opts.url;
+  root.style.setProperty("--wallpaper-opacity", show ? String((opts.opacity ?? 60) / 100) : "0");
+  root.style.setProperty("--wallpaper-blur", String(Math.round((opts.blur ?? 45) / 100 * 60)) + "px");
+  root.style.setProperty("--wallpaper-image", show ? `url("${opts.url}")` : "none");
+}
+
 export async function fetchProfiles() {
   const res = await fetch("/api/profiles");
   if (!res.ok) throw new Error("profiles fetch failed");

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchHotkeyConfig, setHotkeyConfig, monitorOff } from "../../services/uxtuAdapter";
+import { fetchHotkeyConfig, setHotkeyConfig, monitorOff, applyWallpaperCss } from "../../services/uxtuAdapter";
 import { useToast } from "../ui/Toast";
 
 const MODES = [
@@ -79,10 +79,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
   const bgPreview = bg.url;
 
   const syncWallpaperCss = (next) => {
-    const root = document.documentElement;
-    root.style.setProperty("--wallpaper-opacity", next.enabled && next.hasImage ? String((next.opacity ?? 60) / 100) : "0");
-    root.style.setProperty("--wallpaper-blur", String(Math.round((next.blur ?? 45) / 100 * 60)) + "px");
-    root.style.setProperty("--wallpaper-image", next.enabled && next.url ? `url("${next.url}")` : "none");
+    applyWallpaperCss(next);
   };
 
   useEffect(() => {
@@ -330,7 +327,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
           URL.revokeObjectURL(previewUrl);
           if (d.ok) {
             updateBg(prev => {
-              const next = { ...prev, hasImage: true, enabled: true, url: "/api/background" };
+              const next = { ...prev, hasImage: true, enabled: true, url: "/api/background?t=" + Date.now() };
               syncWallpaperCss(next);
               return next;
             });
@@ -388,7 +385,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
         <div className="set-body">
           <div className="theme-cards">
             {THEMES.map(t => (
-              <button key={t.id} className={`theme-card ${theme === t.id ? "active" : ""}`} onClick={() => setThemeMode(t.id)}>
+              <button key={t.id} className={`theme-card ${t.id} ${theme === t.id ? "active" : ""}`} onClick={() => setThemeMode(t.id)}>
                 <span className="prev">
                   <span className="bar"></span>
                   <span style={{ flex: 1 }}>
@@ -630,10 +627,42 @@ const HOTKEY_LABELS = {
   "mode-gaming": "斗战模式",
 };
 
+const CODE_LABELS = (() => {
+  const map = {
+    Space: "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace",
+    Delete: "Delete", Insert: "Insert", Home: "Home", End: "End",
+    PageUp: "PageUp", PageDown: "PageDown", CapsLock: "CapsLock",
+    NumpadEnter: "Num Enter",
+    NumpadMultiply: "Num *", NumpadAdd: "Num +", NumpadSubtract: "Num -",
+    NumpadDecimal: "Num .", NumpadDivide: "Num /",
+    ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→",
+    Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]",
+    Backslash: "\\", Semicolon: ";", Quote: "'", Comma: ",", Period: ".",
+    Slash: "/", IntlBackslash: "\\",
+  };
+  for (let i = 0; i <= 9; i++) {
+    map["Digit" + i] = String(i);
+    map["Numpad" + i] = "Num " + i;
+  }
+  for (let c = 65; c <= 90; c++) {
+    const ch = String.fromCharCode(c);
+    map["Key" + ch] = ch;
+  }
+  return map;
+})();
+
+function formatKey(code) {
+  if (!code) return "";
+  if (CODE_LABELS[code]) return CODE_LABELS[code];
+  if (/^F\d{1,2}$/.test(code)) return code;
+  if (code.length === 1) return code.toUpperCase();
+  return code;
+}
+
 function formatHotkey(mods, k) {
   const names = { ctrl: "Ctrl", control: "Ctrl", alt: "Alt", shift: "Shift", win: "Win" };
   const parts = (mods || "").split(",").map(m => names[m.trim().toLowerCase()] || m.trim()).filter(Boolean);
-  parts.push((k || "").toUpperCase());
+  parts.push(formatKey(k));
   return parts.join(" + ");
 }
 
@@ -734,14 +763,11 @@ function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecording
     if (e.altKey) mods.push("alt");
     if (e.shiftKey) mods.push("shift");
     if (e.metaKey) mods.push("win");
-    const k = e.key;
-    if (["Control", "Alt", "Shift", "Meta"].includes(k)) return;
-    let keyName = k;
-    if (k.length === 1) keyName = k.toUpperCase();
-    else if (k === " ") keyName = "Space";
-    else if (k.startsWith("F") && /^F\d+$/.test(k)) keyName = k;
-    else if (k === "Escape") { setRecordingId(null); return; }
-    else return;
+    const code = e.code;
+    if (["ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight"].includes(code)) return;
+    if (code === "Escape") { setRecordingId(null); return; }
+    const keyName = code;
+    if (!keyName) return;
     if (mods.length === 0) { toast?.("请至少按下一个修饰键 (Ctrl/Alt/Shift)", "error"); return; }
     const newMods = mods.join(",");
     setModifiers(newMods);

@@ -9,6 +9,7 @@ import SysInfo from "./pages/SysInfo";
 import Settings from "./pages/Settings";
 import SwitchingOverlay from "./components/ui/SwitchingOverlay";
 import UpdateDialog from "./components/ui/UpdateDialog";
+import { applyWallpaperCss } from "./services/uxtuAdapter";
 
 const PAGES = [
   { key: "dashboard", label: "仪表盘", icon: "M3 12l9-8 9 8M5 10v10h14V10" },
@@ -22,6 +23,7 @@ const PAGES = [
 
 export default function App() {
   const { theme, setTheme, backendOnline, platformInfo, platformInfoReady, switching } = useControlState();
+  const [adminGuideOpen, setAdminGuideOpen] = useState(false);
   const [systemTheme, setSystemTheme] = useState(() =>
     typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"
   );
@@ -49,7 +51,23 @@ export default function App() {
     return () => mq.removeEventListener?.("change", update);
   }, []);
   const effectiveTheme = theme === "auto" ? systemTheme : theme;
-  useEffect(() => { document.documentElement.setAttribute("data-theme", effectiveTheme); }, [effectiveTheme]);
+  useEffect(() => {
+    const el = document.documentElement;
+    el.setAttribute("data-theme-mode", theme);
+    el.setAttribute("data-theme", effectiveTheme);
+  }, [theme, effectiveTheme]);
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/background-opts");
+        const d = await res.json();
+        if (disposed || !d) return;
+        applyWallpaperCss({ ...d, enabled: !!d.enabled, hasImage: !!d.hasImage, url: d.hasImage ? "/api/background" : null });
+      } catch { /* backend offline */ }
+    })();
+    return () => { disposed = true; };
+  }, []);
   useEffect(() => { const h = (e) => { document.querySelectorAll('.reveal').forEach((el) => { const r = el.getBoundingClientRect(); el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%'); el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%'); }); }; window.addEventListener('mousemove', h); return () => window.removeEventListener('mousemove', h); }, []);
 
 
@@ -83,6 +101,20 @@ export default function App() {
 
       {/* 内容区 */}
       <main className="content">
+        {platformInfo.isElevated === false && (
+          <div className="admin-banner reveal enter">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M12 2 4 5v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V5l-8-3Z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span className="ab-text"><b>未以管理员身份运行</b><small>PawnIO / EC / NVAPI 等硬件控制需要管理员权限</small></span>
+            <button className="btn" onClick={() => setAdminGuideOpen(v => !v)}>提权引导</button>
+            {adminGuideOpen && (
+              <div className="admin-guide">
+                <p>1. 完全退出斗战者控制台（含托盘图标）。</p>
+                <p>2. 右键应用快捷方式，选择“以管理员身份运行”。</p>
+                <p>3. 安装版可在开始菜单右键“斗战者控制台”，选择“更多 → 以管理员身份运行”。</p>
+              </div>
+            )}
+          </div>
+        )}
         {resolvedPage === "dashboard" && <Dashboard onNavigate={setActivePage} />}
         {resolvedPage === "control" && <ControlPanel />}
         {resolvedPage === "fan" && <FanControl />}

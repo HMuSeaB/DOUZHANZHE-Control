@@ -69,8 +69,9 @@ export default function UpdateDialog({ autoCheck = true }) {
 
   // 前往下载
   const handleDownload = () => {
-    if (updateInfo?.url) {
-      window.open(updateInfo.url, "_blank", "noopener,noreferrer");
+    const target = updateInfo?.downloadUrl || updateInfo?.url;
+    if (target) {
+      window.open(target, "_blank", "noopener,noreferrer");
     }
     setVisible(false);
   };
