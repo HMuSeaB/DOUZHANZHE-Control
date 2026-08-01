@@ -22,12 +22,6 @@
     <ProjectReference Include="..\hal\Douzhanzhe.HAL.csproj" />
   </ItemGroup>
 
-
-
-  <ItemGroup>
-    <None Include="../tools/inpoutx64.dll" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="System.Management" Version="*" />
   </ItemGroup>
@@ -40,4 +34,3 @@
     <Exec Command="powershell -NoProfile -File &quot;$(ProjectDir)..\..\sync-repos.ps1&quot; -Quiet" ContinueOnError="WarnAndContinue" />
   </Target>
 </Project>
-
