@@ -49,7 +49,7 @@ const ICONS = {
   close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>,
 };
 
-export default function SettingsPanel({ settings, setSettings }) {
+export default function SettingsPanel({ settings, setSettings, theme, setTheme }) {
   const toast = useToast();
 
   const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
@@ -59,7 +59,6 @@ export default function SettingsPanel({ settings, setSettings }) {
   );
   const importInputRef = useRef(null);
 
-  const [theme, setTheme] = useState("dark");
   const [accent, setAccent] = useState("#4cc2ff");
 
   const [autoStart, setAutoStart] = useState(false);
@@ -88,8 +87,7 @@ export default function SettingsPanel({ settings, setSettings }) {
   useEffect(() => {
     fetch("/api/ui-state")
       .then(r => r.json())
-     .then(d => {
-       if (d.theme) setTheme(d.theme);
+      .then(d => {
         if (d.accentColor) {
           setAccent(d.accentColor);
           document.documentElement.style.setProperty("--seed-primary", d.accentColor);
@@ -201,10 +199,8 @@ export default function SettingsPanel({ settings, setSettings }) {
     } catch { /* ignore */ }
   };
 
-  const setThemeMode = async (mode) => {
+  const setThemeMode = (mode) => {
     setTheme(mode);
-    await saveUiState({ theme: mode, accentColor: accent });
-    document.documentElement.setAttribute("data-theme", mode === "auto" ? "dark" : mode);
   };
 
   const setAccentColor = (color) => {

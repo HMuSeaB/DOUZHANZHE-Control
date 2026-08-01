@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SettingsPanel from "../components/panels/SettingsPanel";
 
-export default function Settings() {
+export default function Settings({ theme, setTheme }) {
   const [dummySettings, setDummySettings] = useState({
     mode: "office",
     numLock: true,
@@ -22,7 +22,7 @@ export default function Settings() {
       </div>
 
       <div className="reveal enter">
-        <SettingsPanel settings={dummySettings} setSettings={setDummySettings} />
+        <SettingsPanel settings={dummySettings} setSettings={setDummySettings} theme={theme} setTheme={setTheme} />
       </div>
     </section>
   );

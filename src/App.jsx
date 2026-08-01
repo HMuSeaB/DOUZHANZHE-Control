@@ -22,6 +22,9 @@ const PAGES = [
 
 export default function App() {
   const { theme, setTheme, backendOnline, platformInfo, platformInfoReady, switching } = useControlState();
+  const [systemTheme, setSystemTheme] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+  );
 
   const [activePage, setActivePage] = useState(() => {
     try { return localStorage.getItem("dz_page") || "dashboard"; } catch { return "dashboard"; }
@@ -37,7 +40,16 @@ export default function App() {
     if (resolvedPage !== activePage) setActivePage(resolvedPage);
   }, [resolvedPage, activePage]);
 
-  useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mq) return;
+    const update = (e) => setSystemTheme(e.matches ? "dark" : "light");
+    setSystemTheme(mq.matches ? "dark" : "light");
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  const effectiveTheme = theme === "auto" ? systemTheme : theme;
+  useEffect(() => { document.documentElement.setAttribute("data-theme", effectiveTheme); }, [effectiveTheme]);
   useEffect(() => { const h = (e) => { document.querySelectorAll('.reveal').forEach((el) => { const r = el.getBoundingClientRect(); el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%'); el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%'); }); }; window.addEventListener('mousemove', h); return () => window.removeEventListener('mousemove', h); }, []);
 
 
@@ -59,7 +71,7 @@ export default function App() {
           </button>
         ))}
         <div className="grow"></div>
-        <button className="theme-toggle sidebar-btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="切换深浅主题">
+        <button className="theme-toggle sidebar-btn" onClick={() => setTheme(effectiveTheme === "dark" ? "light" : "dark")} title="切换深浅主题">
           <svg className="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
           <svg className="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
         </button>
@@ -77,7 +89,7 @@ export default function App() {
         {resolvedPage === "platform" && <PlatformControl />}
         {resolvedPage === "games" && <Games />}
         {resolvedPage === "sysinfo" && <SysInfo />}
-        {resolvedPage === "settings" && <Settings />}
+        {resolvedPage === "settings" && <Settings theme={theme} setTheme={setTheme} />}
       </main>
       <SwitchingOverlay active={switching} />
       <UpdateDialog />
