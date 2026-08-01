@@ -2,26 +2,34 @@ import { useState, useEffect } from "react";
 
 const STORAGE_KEY = "douzhanzhe_update_check";
 const SKIP_KEY = "douzhanzhe_update_skip_version";
+const CLOSE_MS = 1800;
+
+function formatSize(bytes) {
+  if (!bytes && bytes !== 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function UpdateDialog({ autoCheck = true }) {
   const [visible, setVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [downloadState, setDownloadState] = useState("idle");
+  const [downloadInfo, setDownloadInfo] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  // 检查更新
+  const canDownload = !!updateInfo?.downloadUrl && /\.exe(\?.*)?$/i.test(updateInfo.downloadUrl);
+
   const checkUpdate = async (manual = false) => {
-    setLoading(true);
     try {
       const res = await fetch("/api/update/check");
       const data = await res.json();
       if (data.error) {
         console.warn("[update] check failed:", data.error);
-        if (manual) window.dispatchEvent(new CustomEvent("update-check-result", { detail: { error: true, msg: "检查更新失败: " + data.error } }));
+        if (manual) window.dispatchEvent(new CustomEvent("update-check-result", { detail: { error: true, msg: `检查更新失败: ${data.error}` } }));
         return;
       }
 
       if (data.available) {
-        // 检查用户是否跳过了此版本
         const skipped = localStorage.getItem(SKIP_KEY);
         if (skipped === data.latestVersion) {
           if (manual) window.dispatchEvent(new CustomEvent("update-check-result", { detail: { skipped: true, version: data.latestVersion } }));
@@ -29,6 +37,9 @@ export default function UpdateDialog({ autoCheck = true }) {
         }
 
         setUpdateInfo(data);
+        setDownloadState("idle");
+        setDownloadInfo(null);
+        setErrorMsg("");
         setVisible(true);
       } else {
         if (manual) window.dispatchEvent(new CustomEvent("update-check-result", { detail: { upToDate: true } }));
@@ -36,24 +47,15 @@ export default function UpdateDialog({ autoCheck = true }) {
     } catch (e) {
       console.warn("[update] check error:", e);
       if (manual) window.dispatchEvent(new CustomEvent("update-check-result", { detail: { error: true, msg: "检查更新失败" } }));
-    } finally {
-      setLoading(false);
     }
   };
 
-  // 监听手动检查事件
   useEffect(() => {
     const handler = () => checkUpdate(true);
     window.addEventListener("check-update-manual", handler);
     return () => window.removeEventListener("check-update-manual", handler);
   }, []);
 
-  // 记录检查时间
-  const recordCheck = () => {
-    localStorage.setItem(STORAGE_KEY, Date.now().toString());
-  };
-
-  // 启动时自动检查
   useEffect(() => {
     if (!autoCheck) return;
 
@@ -62,21 +64,88 @@ export default function UpdateDialog({ autoCheck = true }) {
     const DAY_MS = 24 * 60 * 60 * 1000;
 
     if (!lastCheck || now - parseInt(lastCheck, 10) > DAY_MS) {
-      // 首次或超过 24 小时，检查更新
-      checkUpdate().then(() => recordCheck());
+      const timer = setTimeout(() => {
+        checkUpdate().then(() => {
+          localStorage.setItem(STORAGE_KEY, Date.now().toString());
+        });
+      }, 0);
+      return () => clearTimeout(timer);
     }
+    return undefined;
   }, [autoCheck]);
 
-  // 前往下载
-  const handleDownload = () => {
+  useEffect(() => {
+    if (downloadState !== "done") return;
+    const t = setTimeout(() => setVisible(false), CLOSE_MS);
+    return () => clearTimeout(t);
+  }, [downloadState]);
+
+  const handleDownload = async () => {
     const target = updateInfo?.downloadUrl || updateInfo?.url;
-    if (target) {
-      window.open(target, "_blank", "noopener,noreferrer");
+    if (!target || !canDownload) {
+      setErrorMsg("未找到可下载的安装包，请前往发布页手动下载。");
+      setDownloadState("error");
+      return;
     }
+
+    setDownloadState("downloading");
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/update/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: target }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) throw new Error(data?.error || `下载失败: ${res.status}`);
+      setDownloadInfo(data);
+      setDownloadState("ready");
+    } catch (e) {
+      console.error("[update] download error:", e);
+      setErrorMsg(e.message || "下载失败");
+      setDownloadState("error");
+    }
+  };
+
+  const handleInstall = async () => {
+    if (!downloadInfo?.path) return;
+    setDownloadState("installing");
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/update/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: downloadInfo.path }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "启动安装失败");
+      setDownloadState("done");
+    } catch (e) {
+      console.error("[update] install error:", e);
+      setErrorMsg(e.message || "启动安装失败");
+      setDownloadState("error");
+    }
+  };
+
+  const handleOpenRelease = () => {
+    const target = updateInfo?.url || updateInfo?.downloadUrl;
+    if (target) window.open(target, "_blank", "noopener,noreferrer");
     setVisible(false);
   };
 
-  // 跳过此版本
+  const handleMain = () => {
+    if (downloadState === "downloading" || downloadState === "installing" || downloadState === "done") return;
+    if (downloadState === "ready" || (downloadState === "error" && downloadInfo)) {
+      handleInstall();
+      return;
+    }
+    if (canDownload) {
+      handleDownload();
+    } else {
+      handleOpenRelease();
+    }
+  };
+
   const handleSkip = () => {
     if (updateInfo?.latestVersion) {
       localStorage.setItem(SKIP_KEY, updateInfo.latestVersion);
@@ -84,12 +153,26 @@ export default function UpdateDialog({ autoCheck = true }) {
     setVisible(false);
   };
 
-  // 稍后提醒
   const handleLater = () => {
     setVisible(false);
   };
 
   if (!visible || !updateInfo) return null;
+
+  const busy = downloadState === "downloading" || downloadState === "installing";
+  const mainLabel = downloadState === "downloading"
+    ? "下载中..."
+    : downloadState === "ready"
+      ? "立即安装"
+      : downloadState === "installing"
+        ? "正在启动安装..."
+        : downloadState === "done"
+          ? "已启动安装程序"
+          : downloadState === "error"
+            ? (downloadInfo ? "重试安装" : "重试下载")
+            : canDownload
+              ? "下载并安装"
+              : "前往发布页";
 
   return (
     <div
@@ -117,9 +200,21 @@ export default function UpdateDialog({ autoCheck = true }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 标题 */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-          <span style={{ fontSize: "24px" }}>🎉</span>
+          <span
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+              background: "color-mix(in srgb, var(--primary) 16%, transparent)",
+              color: "var(--primary)",
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>
+          </span>
           <div>
             <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600, color: "var(--text, #fff)" }}>
               发现新版本
@@ -130,7 +225,6 @@ export default function UpdateDialog({ autoCheck = true }) {
           </div>
         </div>
 
-        {/* 更新日志 */}
         <div
           style={{
             background: "var(--card-2, #181825)",
@@ -148,24 +242,45 @@ export default function UpdateDialog({ autoCheck = true }) {
           {updateInfo.body || "暂无更新日志"}
         </div>
 
-        {/* 发布时间 */}
         {updateInfo.publishedAt && (
           <p style={{ margin: "0 0 16px", fontSize: "12px", color: "var(--muted, #888)" }}>
             发布于 {new Date(updateInfo.publishedAt).toLocaleDateString("zh-CN")}
           </p>
         )}
 
-        {/* 按钮组 */}
+        {(downloadState !== "idle" || errorMsg) && (
+          <div
+            style={{
+              margin: "0 0 16px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              fontSize: "12.5px",
+              lineHeight: 1.55,
+              color: downloadState === "error" ? "#ffb454" : "var(--text-secondary, #ccc)",
+              background: "var(--card-2, #181825)",
+              border: "1px solid var(--border, #333)",
+            }}
+          >
+            {downloadState === "downloading" && "正在应用内下载安装包，请稍候..."}
+            {downloadState === "ready" && `安装包已下载${formatSize(downloadInfo?.size) ? `（${formatSize(downloadInfo.size)}）` : ""}，点击“立即安装”启动安装程序。`}
+            {downloadState === "installing" && "正在启动安装程序..."}
+            {downloadState === "done" && "安装程序已启动，安装完成后请重新打开应用。"}
+            {downloadState === "error" && `操作失败：${errorMsg}`}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
           <button
             onClick={handleSkip}
+            disabled={busy}
             style={{
               padding: "8px 16px",
               borderRadius: "6px",
               border: "1px solid var(--border, #333)",
               background: "transparent",
               color: "var(--muted, #888)",
-              cursor: "pointer",
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.5 : 1,
               fontSize: "13px",
             }}
           >
@@ -173,32 +288,36 @@ export default function UpdateDialog({ autoCheck = true }) {
           </button>
           <button
             onClick={handleLater}
+            disabled={busy}
             style={{
               padding: "8px 16px",
               borderRadius: "6px",
               border: "1px solid var(--border, #333)",
               background: "transparent",
               color: "var(--text, #fff)",
-              cursor: "pointer",
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.5 : 1,
               fontSize: "13px",
             }}
           >
             稍后提醒
           </button>
           <button
-            onClick={handleDownload}
+            onClick={handleMain}
+            disabled={busy || downloadState === "done"}
             style={{
               padding: "8px 20px",
               borderRadius: "6px",
               border: "none",
               background: "var(--primary, #4f46e5)",
               color: "#fff",
-              cursor: "pointer",
+              cursor: busy || downloadState === "done" ? "default" : "pointer",
+              opacity: busy || downloadState === "done" ? 0.6 : 1,
               fontSize: "13px",
               fontWeight: 500,
             }}
           >
-            前往下载
+            {mainLabel}
           </button>
         </div>
       </div>
