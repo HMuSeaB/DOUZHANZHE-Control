@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Skeleton, OfflineCard, EmptyState } from "../ui/PageState";
 
 const LS_SYS_INFO = "douzhanzhe_sys_info";
 const LS_SYS_EXT  = "douzhanzhe_sys_info_ext";
@@ -26,6 +27,32 @@ function formatNumber(n, digits = 2) {
   return Number(n).toFixed(digits).replace(/\.0+$/, "");
 }
 
+function SysInfoSkeleton() {
+  return (
+    <div className="spec-grid" aria-hidden="true">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div className="card spec-card skeleton-card" key={i}>
+          <div className="sc-head">
+            <Skeleton className="sk-chip" />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <Skeleton className="sk-line" style={{ width: "46%" }} />
+              <Skeleton className="sk-line" style={{ width: "68%", marginTop: 7 }} />
+            </span>
+          </div>
+          <div className="sc-body">
+            {Array.from({ length: 4 }).map((_, r) => (
+              <div className="spec-row" key={r}>
+                <Skeleton className="sk-line" style={{ width: "34%" }} />
+                <Skeleton className="sk-line" style={{ width: "46%" }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function SystemInfoPanel({ trigger, onRefreshDone }) {
   const [info, setInfo] = useState(() => {
     try { const r = localStorage.getItem(LS_SYS_INFO); return r ? JSON.parse(r) : null; } catch { return null; }
@@ -34,6 +61,7 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
     try { const r = localStorage.getItem(LS_SYS_EXT); return r ? JSON.parse(r) : null; } catch { return null; }
   });
   const [loading, setLoading] = useState(!info || !ext);
+  const [offline, setOffline] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -44,6 +72,7 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
       ]);
       if (r1) { setInfo(r1); localStorage.setItem(LS_SYS_INFO, JSON.stringify(r1)); }
       if (r2) { setExt(r2); localStorage.setItem(LS_SYS_EXT, JSON.stringify(r2)); }
+      setOffline(!r1 && !r2);
     } finally {
       setLoading(false);
       onRefreshDone?.();
@@ -58,6 +87,7 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
 
   const i = info || {};
   const e = ext || {};
+  const hasCache = !!(info || ext);
 
   const battHealth = e.battDesign > 0 ? (e.battFull / e.battDesign * 100) : 0;
 
@@ -160,36 +190,71 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
     },
   ];
 
+  if (loading && !hasCache) {
+    return <SysInfoSkeleton />;
+  }
+
+  if (offline && !hasCache) {
+    return (
+      <OfflineCard
+        title="系统信息暂不可用"
+        description="无法连接后端服务，当前没有可用的本地缓存。"
+        onRetry={fetchData}
+        retrying={loading}
+      />
+    );
+  }
+
+  if (!loading && !offline && !hasCache) {
+    return (
+      <EmptyState
+        title="暂无系统信息"
+        description="后端未返回硬件信息，请稍后重试。"
+        action={<button className="btn" onClick={fetchData}>重试</button>}
+      />
+    );
+  }
+
   return (
-    <div className="spec-grid">
-      {cards.map((card, idx) => (
-        <div key={card.id} className="card spec-card reveal enter" style={{ animationDelay: `${0.02 + idx * 0.03}s` }}>
-          <div className="sc-head">
-            <span className="ic">{card.icon}</span>
-            <span><b>{card.title}</b><small>{card.subtitle}</small></span>
-          </div>
-          <div className="sc-body">
-            {card.rows.map((row, ridx) => {
-              if (row.k === "bar") {
+    <>
+      {offline && (
+        <OfflineCard
+          title="系统信息来自本地缓存"
+          description="后端服务未连接，以下为上次加载的硬件信息。"
+          onRetry={fetchData}
+          retrying={loading}
+        />
+      )}
+      <div className="spec-grid">
+        {cards.map((card, idx) => (
+          <div key={card.id} className="card spec-card reveal enter" style={{ animationDelay: `${0.02 + idx * 0.03}s` }}>
+            <div className="sc-head">
+              <span className="ic">{card.icon}</span>
+              <span><b>{card.title}</b><small>{card.subtitle}</small></span>
+            </div>
+            <div className="sc-body">
+              {card.rows.map((row, ridx) => {
+                if (row.k === "bar") {
+                  return (
+                    <div key={ridx}>
+                      <div className="batt-bar"><i style={{ width: `${Math.min(100, Math.max(0, row.v))}%` }}></i></div>
+                    </div>
+                  );
+                }
+                if (row.k === "note") {
+                  return <div key={ridx} className="batt-note">{row.v}</div>;
+                }
                 return (
-                  <div key={ridx}>
-                    <div className="batt-bar"><i style={{ width: `${Math.min(100, Math.max(0, row.v))}%` }}></i></div>
+                  <div key={ridx} className="spec-row">
+                    <span className="k">{row.k}</span>
+                    <span className="v">{row.v}</span>
                   </div>
                 );
-              }
-              if (row.k === "note") {
-                return <div key={ridx} className="batt-note">{row.v}</div>;
-              }
-              return (
-                <div key={ridx} className="spec-row">
-                  <span className="k">{row.k}</span>
-                  <span className="v">{row.v}</span>
-                </div>
-              );
-            })}
+              })}
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }

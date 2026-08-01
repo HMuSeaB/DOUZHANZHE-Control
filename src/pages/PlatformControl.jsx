@@ -1,8 +1,69 @@
 import { useControlState } from "../hooks/useControlState";
 import { applyHardwareControl, log } from "../services/uxtuAdapter";
+import { Skeleton, OfflineCard, EmptyState } from "../components/ui/PageState";
+import { useStall } from "../hooks/useStall";
+
+function PageHead() {
+  return (
+    <div className="page-head">
+      <div>
+        <h1>平台控制</h1>
+        <p>EC / WMI 型号绑定控制 · 后端自动检测 · 动态渲染可用项</p>
+      </div>
+    </div>
+  );
+}
+
+function PlatformSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <div className="section-title"><Skeleton className="sk-line" style={{ width: 76, height: 13 }} /><span className="line"></span></div>
+      <div className="card reveal enter skeleton-card">
+        <div className="grid2">
+          {[0, 1].map((i) => (
+            <div className="g-cell" key={i}>
+              <span className="rk">
+                <Skeleton className="sk-line" style={{ width: "52%" }} />
+                <Skeleton className="sk-line" style={{ width: "68%", marginTop: 8 }} />
+              </span>
+              <span className="g-ctrl" style={{ width: "100%" }}>
+                <Skeleton className="sk-line" style={{ width: "56%", height: 18 }} />
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="section-title"><Skeleton className="sk-line" style={{ width: 76, height: 13 }} /><span className="line"></span></div>
+      <div className="card reveal enter keys-card skeleton-card">
+        <div className="grid2">
+          {[0, 1, 2, 3].map((i) => (
+            <div className="g-cell" key={i} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="rk">
+                <Skeleton className="sk-line" style={{ width: "58%" }} />
+                <Skeleton className="sk-line" style={{ width: "74%", marginTop: 8 }} />
+              </span>
+              <Skeleton className="sk-line" style={{ width: 44, height: 24, borderRadius: 999 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="section-title"><Skeleton className="sk-line" style={{ width: 76, height: 13 }} /><span className="line"></span></div>
+      <div className="card reveal enter skeleton-card">
+        {[0, 1, 2, 3].map((i) => (
+          <div className="row-line" key={i}>
+            <span className="rk">
+              <Skeleton className="sk-line" style={{ width: "34%" }} />
+            </span>
+            <Skeleton className="sk-line" style={{ width: 48 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function PlatformControl() {
-  const { telemetry } = useControlState();
+  const { telemetry, backendOnline } = useControlState();
 
   const asBool = (value) => value === true || value === 1 || value === "1";
   const kbLevel = telemetry?.kbBrightness != null ? Number(telemetry.kbBrightness) : 0;
@@ -28,15 +89,59 @@ export default function PlatformControl() {
     { id: 1, label: "独显", desc: "高性能" },
   ];
 
+  const isOffline = useStall(!backendOnline, 1500);
+  const hasAnyTelemetry = !!telemetry && Object.keys(telemetry).length > 0;
+  const hasControlData = !!telemetry && (
+    telemetry.kbBrightness != null ||
+    telemetry.fnLock != null ||
+    telemetry.capsLock != null ||
+    telemetry.numLock != null ||
+    telemetry.touchpadLock != null ||
+    telemetry.gpuMode != null ||
+    telemetry.savedGpuMode != null
+  );
+  const stalled = useStall(isOffline ? false : !hasControlData);
+
+  if (!isOffline && !hasAnyTelemetry) {
+    return (
+      <section className="page active">
+        <PageHead />
+        {stalled
+          ? (
+            <EmptyState
+              title="暂无可用控制项"
+              description="后端已连接但尚未返回平台控制数据，请确认机型支持或稍后重试。"
+            />
+          )
+          : <PlatformSkeleton />}
+      </section>
+    );
+  }
+
+  if (!isOffline && !hasControlData) {
+    return (
+      <section className="page active">
+        <PageHead />
+        <EmptyState
+          title="暂无可用控制项"
+          description="后端已连接但未返回平台控制数据，当前机型可能不支持这些控制项。"
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="page active">
-      <div className="page-head">
-        <div>
-          <h1>平台控制</h1>
-          <p>EC / WMI 型号绑定控制 · 后端自动检测 · 动态渲染可用项</p>
-        </div>
-      </div>
+      <PageHead />
 
+      {isOffline && (
+        <OfflineCard
+          title="平台控制暂不可用"
+          description="后端服务未连接，控制项已禁用；正在自动重连。"
+        />
+      )}
+
+      <div className={isOffline ? "is-offline" : ""}>
       <div className="hint" style={{ margin: "0 0 18px" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
         本页内容随笔记本型号变化：后端返回什么控制项，前端就渲染什么。
@@ -105,6 +210,7 @@ export default function PlatformControl() {
         <div className="row-line"><span className="rk"><b>CPU 传感器原始值</b><small>EC 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
         <div className="row-line"><span className="rk"><b>GPU 传感器原始值</b><small>EC 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
         <div className="row-line"><span className="rk"><b>主板温度</b><small>EC 直读</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
+      </div>
       </div>
     </section>
   );

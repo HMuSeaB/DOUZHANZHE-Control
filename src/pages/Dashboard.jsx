@@ -1,4 +1,6 @@
 import { useControlState } from '../hooks/useControlState';
+import { Skeleton, OfflineCard, EmptyState } from '../components/ui/PageState';
+import { useStall } from '../hooks/useStall';
 
 const C = 207; // ring circumference
 
@@ -30,10 +32,66 @@ function formatThermalMode(mode) {
   return mode != null ? (map[mode] ?? `模式 ${mode}`) : '-';
 }
 
+function DashboardSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <div className="grid sensors">
+        {[0, 1, 2].map((i) => (
+          <div className="card sensor skeleton-card" key={i}>
+            <div className="sk-top">
+              <span className="sk-top-left">
+                <Skeleton className="sk-chip" />
+                <Skeleton className="sk-line" style={{ width: 58 }} />
+              </span>
+              <Skeleton className="sk-line" style={{ width: 38 }} />
+            </div>
+            <div className="sk-body">
+              <Skeleton className="sk-ring" />
+              <div className="sk-meta">
+                {[0, 1, 2, 3].map((j) => (
+                  <div className="sk-row-line" key={j}>
+                    <Skeleton className="sk-line" style={{ width: "34%" }} />
+                    <Skeleton className="sk-line" style={{ width: "44%" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="card fan-card skeleton-card" style={{ marginTop: 16 }}>
+        <div className="sk-top">
+          <span className="sk-top-left">
+            <Skeleton className="sk-chip" />
+            <Skeleton className="sk-line" style={{ width: 76 }} />
+          </span>
+          <Skeleton className="sk-line" style={{ width: 120 }} />
+        </div>
+        {[0, 1].map((i) => (
+          <div className="sk-row-line" key={i} style={{ padding: "13px 0", borderTop: i ? "1px solid var(--stroke)" : "none" }}>
+            <Skeleton className="sk-line" style={{ width: 92 }} />
+            <Skeleton className="sk-line" style={{ width: "42%", height: 8 }} />
+            <Skeleton className="sk-line" style={{ width: 96 }} />
+          </div>
+        ))}
+      </div>
+      <div className="card sys-status-card skeleton-card" style={{ marginTop: 16 }}>
+        <Skeleton className="sk-chip" />
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="sk-line" style={{ width: "72%" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ onNavigate }) {
-  const { telemetry, settings, profiles, platformInfo, switchProfile } = useControlState();
+  const { telemetry, settings, profiles, platformInfo, switchProfile, backendOnline } = useControlState();
   const s = telemetry;
   const isBellator = platformInfo.oem === 'Bellator';
+  const hasAnyTelemetry = !!telemetry && Object.keys(telemetry).length > 0;
+  const stalled = useStall(!hasAnyTelemetry);
+  const isOffline = useStall(!backendOnline, 1500);
 
   const builtinProfiles = profiles.filter(p => p.builtIn);
 
@@ -46,6 +104,33 @@ export default function Dashboard({ onNavigate }) {
   const powerDrawText = `${Math.round(s.gpuPowerDrawW ?? 0)} W`;
   const memFreqText = `${s.memoryFreq ?? 0} MHz`;
 
+  if (!hasAnyTelemetry) {
+    return (
+      <section className="page active">
+        <div className="page-head">
+          <div>
+            <h1>{'\u4eea\u8868\u76d8'}</h1>
+            <p>{'\u786c\u4ef6\u5b9e\u65f6\u76d1\u63a7 \u00b7 \u6570\u636e\u6bcf 250ms \u63a8\u9001 \u00b7 \u5361\u7247\u53ea\u8bfb'}</p>
+          </div>
+        </div>
+        {isOffline && (
+          <OfflineCard
+            title={'\u540e\u7aef\u670d\u52a1\u672a\u8fde\u63a5'}
+            description={'\u6b63\u5728\u81ea\u52a8\u91cd\u8fde\uff0c\u5f53\u524d\u6682\u65e0\u5b9e\u65f6\u6570\u636e\u3002'}
+          />
+        )}
+        {stalled
+          ? (
+            <EmptyState
+              title={'\u6682\u65e0\u5b9e\u65f6\u6570\u636e'}
+              description={'\u540e\u7aef\u672a\u8fd4\u56de\u9065\u6d4b\u6570\u636e\uff0c\u8bf7\u68c0\u67e5\u670d\u52a1\u72b6\u6001\u3002'}
+            />
+          )
+          : <DashboardSkeleton />}
+      </section>
+    );
+  }
+
   return (
     <section className="page active">
       <div className="page-head">
@@ -54,6 +139,13 @@ export default function Dashboard({ onNavigate }) {
           <p>{'\u786c\u4ef6\u5b9e\u65f6\u76d1\u63a7 \u00b7 \u6570\u636e\u6bcf 250ms \u63a8\u9001 \u00b7 \u5361\u7247\u53ea\u8bfb'}</p>
         </div>
       </div>
+
+      {isOffline && (
+        <OfflineCard
+          title={'\u540e\u7aef\u670d\u52a1\u672a\u8fde\u63a5'}
+          description={'\u6b63\u5728\u81ea\u52a8\u91cd\u8fde\uff0c\u5f53\u524d\u663e\u793a\u6a21\u62df\u6216\u7f13\u5b58\u6570\u636e\u3002'}
+        />
+      )}
 
       {isBellator && builtinProfiles.length > 0 && (
         <div className="dock card reveal enter" style={{ animationDelay: '.02s' }}>

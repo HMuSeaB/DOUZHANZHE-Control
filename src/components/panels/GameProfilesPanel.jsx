@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { fetchGameAutoSwitchStatus, launchGameProfile, fetchProfiles } from "../../services/uxtuAdapter";
+import { Skeleton, OfflineCard, EmptyState } from "../ui/PageState";
 
 const MODES = [
   { id: "silent", label: "安静", color: "#4CAF50" },
@@ -31,11 +32,49 @@ function initials(name) {
   return name.slice(0, 2).toUpperCase();
 }
 
+function GameSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <div className="card master-bar skeleton-card" style={{ marginBottom: 10 }}>
+        <Skeleton className="sk-chip" style={{ width: 40, height: 40, borderRadius: 10 }} />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <Skeleton className="sk-line" style={{ width: "22%", height: 13 }} />
+          <Skeleton className="sk-line" style={{ width: "46%", marginTop: 8 }} />
+        </span>
+        <Skeleton className="sk-line" style={{ width: 52, height: 20, borderRadius: 999 }} />
+        <Skeleton className="sk-line" style={{ width: 44, height: 24, borderRadius: 999 }} />
+      </div>
+      <div className="card auto-switch-status skeleton-card" style={{ marginBottom: 4 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} style={{ flex: 1, minWidth: 90 }}>
+            <Skeleton className="sk-line" style={{ width: "48%" }} />
+            <Skeleton className="sk-line" style={{ width: "62%", marginTop: 7 }} />
+          </span>
+        ))}
+      </div>
+      <div className="list-tools skeleton-card" style={{ marginTop: 18, marginBottom: 12 }}>
+        <Skeleton className="sk-line" style={{ width: 96 }} />
+        <span style={{ flex: 1 }} />
+        <Skeleton className="sk-line" style={{ width: 84, height: 32, borderRadius: 8 }} />
+        <Skeleton className="sk-line" style={{ width: 84, height: 32, borderRadius: 8 }} />
+      </div>
+      <div className="game-grid">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div className="card skeleton-card" key={i} style={{ aspectRatio: "2 / 3", borderRadius: 14 }}>
+            <div className="sk" style={{ position: "absolute", inset: 0, borderRadius: 14 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GameProfilesPanel() {
   const [config, setConfig] = useState({ enabled: true, defaultMode: "gaming" });
   const [profiles, setProfiles] = useState([]);
   const [configProfiles, setConfigProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", exePath: "", targetMode: "gaming" });
@@ -88,14 +127,22 @@ export default function GameProfilesPanel() {
   const fetchData = async () => {
     try {
       const res = await fetch("/api/game-profiles");
+      if (!res.ok) throw new Error(`game-profiles returned ${res.status}`);
       const data = await res.json();
       setConfig({ enabled: data.enabled, defaultMode: data.defaultMode });
       setProfiles(data.profiles || []);
+      setOffline(false);
     } catch (err) {
       console.error("Failed to load game profiles:", err);
+      setOffline(true);
     } finally {
       setLoading(false);
     }
+  };
+
+  const retry = async () => {
+    setLoading(true);
+    await fetchData();
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -309,12 +356,18 @@ export default function GameProfilesPanel() {
     [scanResults, scanTab]
   );
 
-  if (loading) {
+  if (loading && !offline) {
+    return <GameSkeleton />;
+  }
+
+  if (offline) {
     return (
-      <div className="card master-bar">
-        <span className="mi">{ICONS.zap}</span>
-        <span className="mt"><b>加载中...</b></span>
-      </div>
+      <OfflineCard
+        title="游戏规则暂不可用"
+        description="无法连接后端服务，自动切换与游戏规则列表暂时不可用。"
+        onRetry={retry}
+        retrying={loading}
+      />
     );
   }
 
@@ -377,9 +430,21 @@ export default function GameProfilesPanel() {
       </div>
 
       {profiles.length === 0 ? (
-        <div className="card empty-state reveal enter" style={{ animationDelay: ".06s" }}>
-          <p>暂无游戏规则，点击上方按钮添加或扫描</p>
-        </div>
+        <EmptyState
+          title="暂无游戏规则"
+          description="添加或扫描游戏后，启动对应进程时会自动切换到绑定的配置。"
+          action={<>
+            <button className="btn" onClick={scanGames} disabled={scanning}>
+              {ICONS.search}扫描游戏
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => { setShowAdd(true); setAddForm({ name: "", exePath: "", targetMode: validTargetId(config.defaultMode) }); }}
+            >
+              {ICONS.plus}添加规则
+            </button>
+          </>}
+        />
       ) : (
         <div className="game-grid reveal enter" style={{ animationDelay: ".06s" }}>
           {profiles.map(p => (
