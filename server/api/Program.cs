@@ -57,6 +57,7 @@ if (Directory.Exists(sharedConfig))
 else if (!Directory.Exists(configDir))
     Directory.CreateDirectory(configDir);
 builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
+builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -2070,13 +2071,17 @@ app.MapGet("/api/background-opts", () =>
             var root = doc.RootElement;
             var enabled = root.TryGetProperty("enabled", out var ev) && ev.ValueKind == JsonValueKind.True;
             var opacity = root.TryGetProperty("opacity", out var ov) ? Math.Clamp(ov.GetInt32(), 0, 100) : 50;
+            var blur = root.TryGetProperty("blur", out var blv) ? Math.Clamp(blv.GetInt32(), 0, 100) : 45;
             var maskColor = root.TryGetProperty("maskColor", out var mv) && mv.GetString() == "white" ? "white" : "black";
+            var source = root.TryGetProperty("source", out var sv) && sv.ValueKind == JsonValueKind.String ? sv.GetString() ?? "local" : "local";
+            var interval = root.TryGetProperty("interval", out var iv) && iv.ValueKind == JsonValueKind.String ? iv.GetString() ?? "1h" : "1h";
+            var apiUrl = root.TryGetProperty("apiUrl", out var av) && av.ValueKind == JsonValueKind.String ? av.GetString() ?? "" : "";
             var hasImage = BgImageFiles().Length > 0;
-            return Results.Json(new { enabled, opacity, maskColor, hasImage });
+            return Results.Json(new { enabled, opacity, blur, maskColor, source, interval, apiUrl, hasImage });
         }
-        return Results.Json(new { enabled = false, opacity = 50, maskColor = "black", hasImage = false });
+        return Results.Json(new { enabled = false, opacity = 50, blur = 45, maskColor = "black", source = "local", interval = "1h", apiUrl = "", hasImage = false });
     }
-    catch { return Results.Json(new { enabled = false, opacity = 50, maskColor = "black", hasImage = false }); }
+    catch { return Results.Json(new { enabled = false, opacity = 50, blur = 45, maskColor = "black", source = "local", interval = "1h", apiUrl = "", hasImage = false }); }
 });
 
 app.MapPost("/api/background-opts", async (HttpContext ctx) =>
@@ -2088,7 +2093,8 @@ app.MapPost("/api/background-opts", async (HttpContext ctx) =>
         if (body == null) return Results.Json(new { ok = false, error = "无效请求" });
 
         // 读取当前配置
-        bool enabled = false; int opacity = 50; string maskColor = "black";
+        bool enabled = false; int opacity = 50; int blur = 45; string maskColor = "black";
+        string source = "local"; string interval = "1h"; string apiUrl = "";
         if (File.Exists(bgOptsPath))
         {
             try
@@ -2096,17 +2102,25 @@ app.MapPost("/api/background-opts", async (HttpContext ctx) =>
                 var old = JsonDocument.Parse(File.ReadAllText(bgOptsPath)).RootElement;
                 enabled = old.TryGetProperty("enabled", out var e) && e.ValueKind == JsonValueKind.True;
                 opacity = old.TryGetProperty("opacity", out var o) ? o.GetInt32() : 50;
+                blur = old.TryGetProperty("blur", out var b) ? b.GetInt32() : 45;
                 maskColor = old.TryGetProperty("maskColor", out var m) && m.GetString() == "white" ? "white" : "black";
+                source = old.TryGetProperty("source", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "local" : "local";
+                interval = old.TryGetProperty("interval", out var i) && i.ValueKind == JsonValueKind.String ? i.GetString() ?? "1h" : "1h";
+                apiUrl = old.TryGetProperty("apiUrl", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() ?? "" : "";
             }
             catch { }
         }
 
         if (body.TryGetValue("enabled", out var ev)) enabled = ev.ValueKind == JsonValueKind.True;
         if (body.TryGetValue("opacity", out var ov)) opacity = Math.Clamp(ov.GetInt32(), 0, 100);
+        if (body.TryGetValue("blur", out var bv)) blur = Math.Clamp(bv.GetInt32(), 0, 100);
         if (body.TryGetValue("maskColor", out var mv)) maskColor = mv.GetString() == "white" ? "white" : "black";
+        if (body.TryGetValue("source", out var ssv) && ssv.ValueKind == JsonValueKind.String) source = ssv.GetString() ?? "local";
+        if (body.TryGetValue("interval", out var siv) && siv.ValueKind == JsonValueKind.String) interval = siv.GetString() ?? "1h";
+        if (body.TryGetValue("apiUrl", out var av) && av.ValueKind == JsonValueKind.String) apiUrl = av.GetString() ?? "";
 
-        File.WriteAllText(bgOptsPath, JsonSerializer.Serialize(new { enabled, opacity, maskColor }));
-        return Results.Json(new { ok = true, enabled, opacity, maskColor });
+        JsonWrite("background-opts.json", new { enabled, opacity, blur, maskColor, source, interval, apiUrl });
+        return Results.Json(new { ok = true, enabled, opacity, blur, maskColor, source, interval, apiUrl });
     }
     catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
 });
@@ -2183,18 +2197,23 @@ app.MapDelete("/api/background", () =>
         foreach (var f in BgImageFiles())
             File.Delete(f);
         // 同时禁用
-        int opacity = 50; string maskColor = "black";
+        int opacity = 50; int blur = 45; string maskColor = "black";
+        string source = "local"; string interval = "1h"; string apiUrl = "";
         if (File.Exists(bgOptsPath))
         {
             try
             {
                 var old = JsonDocument.Parse(File.ReadAllText(bgOptsPath)).RootElement;
                 opacity = old.TryGetProperty("opacity", out var o) ? o.GetInt32() : 50;
+                blur = old.TryGetProperty("blur", out var b) ? b.GetInt32() : 45;
                 maskColor = old.TryGetProperty("maskColor", out var m) && m.GetString() == "white" ? "white" : "black";
+                source = old.TryGetProperty("source", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "local" : "local";
+                interval = old.TryGetProperty("interval", out var i) && i.ValueKind == JsonValueKind.String ? i.GetString() ?? "1h" : "1h";
+                apiUrl = old.TryGetProperty("apiUrl", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() ?? "" : "";
             }
             catch { }
         }
-        File.WriteAllText(bgOptsPath, JsonSerializer.Serialize(new { enabled = false, opacity, maskColor }));
+        JsonWrite("background-opts.json", new { enabled = false, opacity, blur, maskColor, source, interval, apiUrl });
         return Results.Json(new { ok = true });
     }
     catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
