@@ -1,17 +1,17 @@
 {
   "cpu": {
     "freqLimitMhz": 4500,
-    "turboEnabled": true,
+    "turboEnabled": false,
     "coreLimitPercent": 50
   },
   "gpu": {
-    "coreFreqMhz": 2750,
+    "coreFreqMhz": null,
     "freqLocked": null,
     "memFreqLevel": null
   },
   "nvapi": {
-    "ocCoreOffsetMhz": 0,
-    "ocMemOffsetMhz": 0,
+    "ocCoreOffsetMhz": null,
+    "ocMemOffsetMhz": null,
     "powerLimitW": null,
     "thermalLimitC": null
   },
@@ -25,5 +25,5 @@
     "largeRpm": null,
     "smallRpm": null
   },
-  "powerPlan": null
+  "powerPlan": 0
 }
