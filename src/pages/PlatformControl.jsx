@@ -70,7 +70,7 @@ export default function PlatformControl() {
       </div>
 
       <div className="section-title">键盘按键<span className="tag">OEM EC</span><span className="line"></span></div>
-      <div className="card reveal enter" style={{ animationDelay: ".04s" }}>
+      <div className="card reveal enter keys-card" style={{ animationDelay: ".04s" }}>
         <div className="grid2">
           <div className="g-cell">
             <span className="rk"><b>FN 锁</b><small>锁定 Fn 键行为 · F1–F12 与多媒体键互换</small></span>

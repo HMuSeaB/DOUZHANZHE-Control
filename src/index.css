@@ -443,6 +443,8 @@ html[data-theme="light"] .theme-toggle .moon{display:none}
 .rk b{font-size:13.5px;display:block}
 .rk small{font-size:11px;color:var(--fg-3)}
 .g-ctrl{display:flex;align-items:center;justify-content:flex-start;gap:12px}
+.keys-card .g-cell{flex-direction:row;align-items:center;justify-content:space-between;gap:16px}
+.keys-card .g-ctrl{flex-shrink:0}
 .row-line{display:flex;align-items:center;gap:16px;padding:15px 20px}
 .row-line+.row-line{border-top:1px solid var(--stroke)}
 
