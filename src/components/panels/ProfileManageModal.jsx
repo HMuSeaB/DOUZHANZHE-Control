@@ -5,7 +5,7 @@ const THERMAL_LABELS = { silent: '安静', office: '均衡', gaming: '斗战', b
 
 export default function ProfileManageModal({
   open, onClose, profiles, setProfiles, currentProfile, setCurrentProfile,
-  switchProfile, afterProfileDeleted,
+  switchProfile, afterProfileDeleted, onResetProfile,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -44,7 +44,8 @@ export default function ProfileManageModal({
 
   async function handleReset(id) {
     try {
-      await resetProfile(id);
+      if (onResetProfile) await onResetProfile(id);
+      else await resetProfile(id);
     } catch (e) { console.error('reset failed:', e); }
   }
 

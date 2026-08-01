@@ -315,6 +315,22 @@ export function useControlState() {
     setSettings(prev => ({ ...prev, mode: entry.id }));
   }, []);
 
+  // 重新拉取当前配置并同步到 UI（恢复出厂/导入后使用）
+  const refreshOverrides = useCallback(async () => {
+    try {
+      const { mode, overrides: rawOv } = await fetchOverrides();
+      const ov = flattenBackendOverrides(rawOv, _maxCores);
+      prevModeRef.current = mode;
+      setSettings(prev => ({ ...prev, mode }));
+      const fanDefaults = MODE_FAN_DEFAULTS[mode] || {};
+      setUxtuParams({ ...FULL_PARAMS, ...fanDefaults, ...ov });
+      setOverrides(ov);
+      setCurrentProfile(profiles.find(p => p.id === mode) || null);
+    } catch (e) {
+      console.error('[useControlState] refresh overrides error:', e);
+    }
+  }, [profiles]);
+
   return {
     theme, setTheme,
     telemetry, setTelemetry,
@@ -334,5 +350,6 @@ export function useControlState() {
     switchProfile,
     afterProfileDeleted,
     afterProfileCreated,
+    refreshOverrides,
   };
 }

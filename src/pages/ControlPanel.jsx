@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useControlState } from '../hooks/useControlState';
+import { resetProfile, resetToFactoryDefaults } from '../services/uxtuAdapter';
 import ConfigBar from '../components/panels/ConfigBar';
 import ThermalModeRow from '../components/panels/ThermalModeRow';
 import ProfileManageModal from '../components/panels/ProfileManageModal';
@@ -36,7 +37,7 @@ export default function ControlPanel() {
     telemetry, settings, setSettings, uxtuParams, setUxtuParams,
     overrides, saveOverride, clearOverride, switching,
     profiles, setProfiles, currentProfile, setCurrentProfile,
-    platformInfo, switchProfile, afterProfileDeleted, afterProfileCreated,
+    platformInfo, switchProfile, afterProfileDeleted, afterProfileCreated, refreshOverrides,
   } = useControlState();
 
   const [cpuVendor, setCpuVendor] = useState(null);
@@ -59,6 +60,16 @@ export default function ControlPanel() {
   function toggleAcc(key) {
     setAccState(prev => ({ ...prev, [key]: !prev[key] }));
   }
+
+  const handleProfileReset = async (id) => {
+    try {
+      await resetProfile(id);
+      if (currentProfile?.id === id || settings.mode === id) {
+        await resetToFactoryDefaults(settings.mode);
+        await refreshOverrides();
+      }
+    } catch (e) { console.error('profile reset failed:', e); }
+  };
 
   const panelProps = { settings, setSettings, uxtuParams, setUxtuParams, overrides, saveOverride, clearOverride, switching };
 
@@ -160,6 +171,7 @@ export default function ControlPanel() {
         setCurrentProfile={setCurrentProfile}
         switchProfile={switchProfile}
         afterProfileDeleted={afterProfileDeleted}
+        onResetProfile={handleProfileReset}
       />
     </section>
   );
