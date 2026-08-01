@@ -1,0 +1,29 @@
+{
+  "cpu": {
+    "freqLimitMhz": 4500,
+    "turboEnabled": false,
+    "coreLimitPercent": 50
+  },
+  "gpu": {
+    "coreFreqMhz": 2750,
+    "freqLocked": null,
+    "memFreqLevel": null
+  },
+  "nvapi": {
+    "ocCoreOffsetMhz": 0,
+    "ocMemOffsetMhz": 0,
+    "powerLimitW": null,
+    "thermalLimitC": 87
+  },
+  "smu": {
+    "stapmLimitW": null,
+    "shortPowerLimitW": 70,
+    "tempLimitC": null,
+    "coAll": 0
+  },
+  "fan": {
+    "largeRpm": null,
+    "smallRpm": null
+  },
+  "powerPlan": 0
+}
