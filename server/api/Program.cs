@@ -1882,7 +1882,20 @@ var backupCategories = new Dictionary<string, string[]>
     ["autostart"] = new[] { "auto-start-opts.json" },
 };
 
-app.MapPost("/api/backup/export", async (HttpContext ctx) =>
+HardwareSignatureDto CurrentHardwareSignature(HardwareDetector detector, HardwareAbstractionLayer hal)
+{
+    var info = detector.Detect();
+    return new HardwareSignatureDto(
+        info.Oem.ToString(),
+        info.Vendor,
+        info.Model,
+        hal.GpuDiscreteName ?? "",
+        HardwareAbstractionLayer.FanLargeMax,
+        HardwareAbstractionLayer.FanSmallMax
+    );
+}
+
+app.MapPost("/api/backup/export", async (HttpContext ctx, HardwareDetector detector, HardwareAbstractionLayer hal) =>
 {
     try
     {
@@ -1912,7 +1925,13 @@ app.MapPost("/api/backup/export", async (HttpContext ctx) =>
             }
             if (catData.Count > 0) result[cat] = catData;
         }
-        var payload = JsonSerializer.Serialize(new { version = 1, exportedAt = DateTime.Now, categories = result }, new JsonSerializerOptions { WriteIndented = true });
+        var payload = JsonSerializer.Serialize(new
+        {
+            version = 2,
+            exportedAt = DateTime.Now,
+            hardwareSignature = CurrentHardwareSignature(detector, hal),
+            categories = result
+        }, new JsonSerializerOptions { WriteIndented = true });
         var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
         var ts = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         return Results.File(bytes, "application/json", $"douzhanzhe-backup-{ts}.json");
@@ -1920,7 +1939,7 @@ app.MapPost("/api/backup/export", async (HttpContext ctx) =>
     catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
 });
 
-app.MapPost("/api/backup/import", async (HttpContext ctx) =>
+app.MapPost("/api/backup/import", async (HttpContext ctx, HardwareDetector detector, HardwareAbstractionLayer hal) =>
 {
     try
     {
@@ -1929,6 +1948,30 @@ app.MapPost("/api/backup/import", async (HttpContext ctx) =>
         var req = JsonSerializer.Deserialize<BackupImportRequest>(await reader.ReadToEndAsync(), opts);
         if (req?.Data.ValueKind != JsonValueKind.Object || !req.Data.TryGetProperty("categories", out var cats))
             return Results.Json(new { ok = false, error = "无效备份文件" });
+
+        // 硬件签名校验：同机备份/恢复，签名不一致整份拒绝
+        var current = CurrentHardwareSignature(detector, hal);
+        if (req.Data.TryGetProperty("hardwareSignature", out var sig) && sig.ValueKind == JsonValueKind.Object)
+        {
+            var imported = sig.Deserialize<HardwareSignatureDto>(
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (imported == null ||
+                !string.Equals(imported.Oem ?? "", current.Oem, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(imported.CpuVendor ?? "", current.CpuVendor, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(imported.CpuModel ?? "", current.CpuModel, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(imported.GpuName ?? "", current.GpuName, StringComparison.OrdinalIgnoreCase) ||
+                imported.FanMaxLarge != current.FanMaxLarge ||
+                imported.FanMaxSmall != current.FanMaxSmall)
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "硬件签名不匹配，备份与当前机器不一致，已整份拒绝导入",
+                    signatureMismatch = true
+                });
+            }
+        }
+
         int restored = 0;
         foreach (var cat in req.Categories ?? Array.Empty<string>())
         {
@@ -2918,3 +2961,11 @@ public static class NativeMethods
 
 public record BackupRequest(string[]? Categories);
 public record BackupImportRequest(JsonElement Data, string[]? Categories);
+public record HardwareSignatureDto(
+    [property: JsonPropertyName("oem")] string Oem,
+    [property: JsonPropertyName("cpuVendor")] string CpuVendor,
+    [property: JsonPropertyName("cpuModel")] string CpuModel,
+    [property: JsonPropertyName("gpuName")] string GpuName,
+    [property: JsonPropertyName("fanMaxLarge")] int FanMaxLarge,
+    [property: JsonPropertyName("fanMaxSmall")] int FanMaxSmall
+);
