@@ -76,7 +76,11 @@ function Get-ShortName($path) {
     if ($p -eq 'package-lock.json') { return 'package-lock' }
     if ($p -eq 'agents.md') { return 'AGENTS' }
 
-    return [System.IO.Path]::GetFileNameWithoutExtension($path)
+    try {
+        return [System.IO.Path]::GetFileNameWithoutExtension($path)
+    } catch {
+        return "unknown"
+    }
 }
 
 function Get-Description($files) {
@@ -178,7 +182,7 @@ function Sync-PrivateDir($dirName, $branch) {
 Write-Log "开始同步..."
 $mainCommitted = Sync-MainRepo
 Sync-PrivateDir 'docs' 'docs'
-Sync-PrivateDir 'canvas-workspace' 'canvas'
+Sync-PrivateDir 'docs/v2.0/canvas-workspace' 'canvas'
 
 if (-not $mainCommitted) {
     Write-Log "主仓库无变更"
