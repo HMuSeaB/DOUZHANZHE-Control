@@ -553,7 +553,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
       <div className="card set-card reveal enter" style={{ animationDelay: ".17s" }}>
         <div className="set-head">
           <span className="ic">{ICONS.backup}</span>
-          <span><b>配置备份</b><small>按分类导出 / 导入，跨机型时自动忽略不支持的 mode 字段</small></span>
+          <span><b>配置备份</b><small>按分类导出 / 导入，导出写入硬件签名，签名不一致整份拒绝</small></span>
         </div>
         <div className="set-body">
           <div className="bak-grid">
