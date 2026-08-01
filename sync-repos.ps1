@@ -181,8 +181,7 @@ function Sync-PrivateDir($dirName, $branch) {
 # 入口
 Write-Log "开始同步..."
 $mainCommitted = Sync-MainRepo
-Sync-PrivateDir 'docs' 'docs'
-Sync-PrivateDir 'docs/v2.0/canvas-workspace' 'canvas'
+Sync-PrivateDir 'docs' 'main'
 
 if (-not $mainCommitted) {
     Write-Log "主仓库无变更"
