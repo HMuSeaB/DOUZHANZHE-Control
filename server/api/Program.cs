@@ -2665,6 +2665,12 @@ app.MapPost("/api/profiles/{id}/copy", (string id, ProfileService svc) =>
     var created = svc.Copy(id);
     if (created == null)
         return Results.BadRequest(new { error = "复制失败" });
+    // 内置配置的实际参数在 overrides-{id}.json，复制后同步写入新配置
+    if (new[] { "silent", "office", "gaming", "beast" }.Contains(id))
+    {
+        var srcOverrides = JsonRead<PerformanceOverrides>($"overrides-{id}.json", new PerformanceOverrides());
+        svc.SaveOverrides(created.Id, srcOverrides);
+    }
     return Results.Json(created);
 });
 
