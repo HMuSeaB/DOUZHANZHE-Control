@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { createProfile } from '../../services/uxtuAdapter';
+import { createProfile, fetchOverrides, saveProfile } from '../../services/uxtuAdapter';
 
 const MODE_LABELS = { silent: '安静', office: '均衡', gaming: '斗战', beast: '野兽' };
 
@@ -32,6 +32,10 @@ export default function ConfigBar({
     if (!newName.trim()) return;
     try {
       const entry = await createProfile(newName.trim(), settings.mode);
+      try {
+        const { overrides } = await fetchOverrides();
+        if (overrides) await saveProfile(entry.id, overrides);
+      } catch (e) { console.error('copy overrides to new profile failed:', e); }
       afterProfileCreated(entry);
       setCreating(false);
       setNewName('');
