@@ -134,7 +134,7 @@ export function useControlState() {
   }, []);
 
   // 从后端加载 UI 状态
-  useEffect(() => { (async () => { try { var st = await fetchUiState(); if (st.theme) setTheme(st.theme); } catch {} })(); }, []);
+  useEffect(() => { (async () => { try { var st = await fetchUiState(); if (st.theme) setTheme(st.theme); if (st.accentColor) document.documentElement.style.setProperty("--seed-primary", st.accentColor); } catch {} })(); }, []);
 
   // 持久化 settings
   useEffect(() => { saveToLS(LS_SETTINGS, settings); }, [settings]);

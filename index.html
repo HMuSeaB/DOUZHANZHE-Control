@@ -19,6 +19,9 @@
             if (raw === "auto") {
               effective = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
             }
+            if (st && st.accentColor) {
+              html.style.setProperty("--seed-primary", st.accentColor);
+            }
             html.setAttribute("data-theme-mode", raw);
             html.setAttribute("data-theme", effective);
           }
