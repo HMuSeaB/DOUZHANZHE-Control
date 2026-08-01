@@ -54,6 +54,10 @@ if ($Version) {
     $PkgText = [regex]::Replace($PkgText, '("version":\s*")\d+\.\d+(\.\d+)?(")', "`${1}$Version`${3}")
     [System.IO.File]::WriteAllText($PkgJson, $PkgText, $utf8NoBom)
 
+    # server/api/version.txt (后端固定版本文件)
+    $ApiVersionFile = Join-Path $AbsRoot "server\api\version.txt"
+    [System.IO.File]::WriteAllText($ApiVersionFile, $Version, $utf8NoBom)
+
     Write-Host "  版本号已同步至 $Version (SettingsPanel 由 vite define 读取, iss 由 ISCC /d 参数覆盖)" -ForegroundColor Green
 }
 
@@ -137,6 +141,13 @@ $SysInfoPs1 = Join-Path $Root "server\api\sysinfo-ext.ps1"
 if (Test-Path $SysInfoPs1) {
     Copy-Item $SysInfoPs1 $ApiDir -Force
     Write-Host "  已复制: sysinfo-ext.ps1" -ForegroundColor Green
+}
+
+# 复制固定版本文件
+$ApiVersionFile = Join-Path $Root "server\api\version.txt"
+if (Test-Path $ApiVersionFile) {
+    Copy-Item $ApiVersionFile $ApiDir -Force
+    Write-Host "  已复制: version.txt" -ForegroundColor Green
 }
 
 # 清理不需要的目录

@@ -9,6 +9,7 @@
 - SettingsPanel.jsx (<p>Douzhanzhe Console vX.X.X</p>)
 - douzhanzhe-setup.iss (注释行 + #define MyAppVersion)
 - package.json ("version" 字段)
+- server/api/version.txt (后端固定版本文件)
 """
 import re
 import sys
@@ -59,6 +60,11 @@ def sync_version(version: str, root: Path):
         text = re.sub(r'("version":\s*")\d+\.\d+\.\d+(")', rf'\g<1>{version}\g<2>', text)
         pkg.write_text(text, encoding="utf-8")
         print(f"  ✓ package.json")
+    # server/api/version.txt
+    api_version = root / "server" / "api" / "version.txt"
+    if api_version.exists():
+        api_version.write_text(version + "\n", encoding="utf-8")
+        print(f"  ✓ server/api/version.txt")
     
     print(f"  版本号已同步至 {version}")
 

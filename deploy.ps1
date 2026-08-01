@@ -31,6 +31,11 @@ $Targets = @(
     (Join-Path $Root "server\api\bin\run\wwwroot"),
     (Join-Path $Root "server\api\bin\build\wwwroot")
 )
+$TargetBases = @(
+    (Join-Path $Root "server\api"),
+    (Join-Path $Root "server\api\bin\run"),
+    (Join-Path $Root "server\api\bin\build")
+)
 
 # ── 3. 同步到每个 wwwroot ──
 Write-Host "[2/4] Syncing to wwwroot directories..." -ForegroundColor Cyan
@@ -62,6 +67,16 @@ foreach ($Target in $Targets) {
     }
 
     Write-Host "  OK: $Target" -ForegroundColor Green
+}
+
+# 写入固定版本文件，供后端 /api/update/check 读取
+$Pkg = Get-Content (Join-Path $Root "package.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$AppVersion = [string]$Pkg.version
+foreach ($Base in $TargetBases) {
+    if (-not (Test-Path $Base)) { continue }
+    $VersionFile = Join-Path $Base "version.txt"
+    [System.IO.File]::WriteAllText($VersionFile, $AppVersion, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "  version.txt -> $Base" -ForegroundColor Green
 }
 
 # ── 4. 结果与仓库同步 ──
