@@ -29,18 +29,18 @@
       "createdAt": null
     },
     {
-      "id": "\u5B89\u9759-\u526F\u672C",
-      "name": "\u5B89\u9759 (\u526F\u672C)",
-      "builtIn": false,
-      "thermalMode": "silent",
-      "createdAt": "2026-08-01T22:16:40"
-    },
-    {
       "id": "\u5B89\u9759\u6027\u80FD",
       "name": "\u5B89\u9759\u6027\u80FD",
       "builtIn": false,
       "thermalMode": "silent",
       "createdAt": "2026-08-01T22:17:01"
+    },
+    {
+      "id": "\u5B89\u9759-\u526F\u672C",
+      "name": "\u5B89\u9759 (\u526F\u672C)",
+      "builtIn": false,
+      "thermalMode": "silent",
+      "createdAt": "2026-08-01T22:21:20"
     }
   ]
 }

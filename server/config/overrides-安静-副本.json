@@ -1,8 +1,8 @@
 {
   "cpu": {
-    "freqLimitMhz": null,
-    "turboEnabled": null,
-    "coreLimitPercent": null
+    "freqLimitMhz": 4500,
+    "turboEnabled": false,
+    "coreLimitPercent": 50
   },
   "gpu": {
     "coreFreqMhz": null,
@@ -17,13 +17,13 @@
   },
   "smu": {
     "stapmLimitW": null,
-    "shortPowerLimitW": null,
+    "shortPowerLimitW": 45,
     "tempLimitC": null,
-    "coAll": null
+    "coAll": -15
   },
   "fan": {
     "largeRpm": null,
     "smallRpm": null
   },
-  "powerPlan": null
+  "powerPlan": 0
 }
