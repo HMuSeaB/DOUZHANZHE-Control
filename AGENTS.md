@@ -62,6 +62,7 @@ CC-Switch 的协议转换层完整支持 Responses API 工具注册。
 - 部署：运行 `deploy.ps1`（自动构建 + 复制 dist/* → 各 wwwroot 目录 + 调用 sync-repos.ps1）
 - 开发启动：运行 `start-dev.ps1`（自动检测端口占用、杀正式版、构建、启动 API）
 - C# API 构建：`server/api/Douzhanzhe.API.csproj` 的 Build 目标也会触发 sync-repos.ps1
+- AI 完成代码/文档任务后，默认运行 `powershell -NoProfile -File sync-repos.ps1` 自动提交并 push；用户明确要求不提交时除外
 - **禁止手动复制文件**，统一走脚本流程
 
 ### 同步脚本（sync-repos.ps1）
