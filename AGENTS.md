@@ -40,7 +40,7 @@
 - Shell 标题栏主题同步：按钮 → API → 写入 server/config/ui-state.json → FileSystemWatcher → DWM
 - 自动提交: .csproj AfterTargets=Build 执行 sync-repos.ps1
 - 前端部署: deploy.ps1 末尾调用 sync-repos.ps1
-- 私有备份: KanzakiK/DOUZHANZHE-Control-private (docs/, canvas-workspace/)
+- 私有备份: KanzakiK/DOUZHANZHE-Control-private (docs/，canvas-workspace/ 已移入 docs/v2.0/ 随 docs 同步)
 
 ## 开发环境限制
 
@@ -72,7 +72,7 @@ CC-Switch 的协议转换层完整支持 Responses API 工具注册。
   - `chore:` — *.ps1、*.bat、*.csproj、package.json、package-lock.json 等
   - `docs:` — AGENTS.md、docs/*、README*
 - 主仓库提交后自动 push 到当前分支的 origin
-- docs/ 和 canvas-workspace/ 作为私有子仓库单独同步到对应分支
+- docs/ 作为私有子仓库同步到 main 分支；canvas-workspace/ 已移入 docs/v2.0/，随 docs 子仓库一起同步
 - 手动运行：`powershell -NoProfile -File sync-repos.ps1`
 
 ### UI 迁移进度（2026-08-01 更新）
