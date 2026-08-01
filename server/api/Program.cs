@@ -7,6 +7,7 @@ using System.IO;
 using System.Text.Json;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using Microsoft.Win32;
 using Microsoft.Win32.TaskScheduler;
 
@@ -59,7 +60,9 @@ else if (!Directory.Exists(configDir))
 builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
 builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+    p.WithOrigins("http://localhost:3100", "http://127.0.0.1:3100")
+     .AllowAnyMethod()
+     .AllowAnyHeader()));
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.IncludeFields = true);
 var app = builder.Build();
@@ -92,6 +95,13 @@ void Log(string msg)
 }
 Log($"API starting, BaseDir={AppContext.BaseDirectory}, ConfigDir={configDir}");
 
+// 观察所有未被消费的后台任务异常，避免异步异常静默丢失
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    Log($"[TaskScheduler] UnobservedTaskException: {e.Exception.Message}");
+    e.SetObserved();
+};
+
 // ---- PawnIO 驱动检测 + EC 初始化 ----
 PawnIoDetection.LogStatus();
 try
@@ -122,6 +132,7 @@ void SetCurrentMode(string mode)
 
 // 前端模式 ID → EC thermal_mode 数值
 var _modeToThermal = new Dictionary<string, byte> { ["silent"] = 2, ["office"] = 0, ["beast"] = 1, ["gaming"] = 3 };
+var _ecWriteWhitelist = new HashSet<byte> { 0x5A, 0x5E, 0xE4 };
 
 void ApplyThermalMode(string mode)
 {
@@ -759,9 +770,11 @@ app.MapGet("/api/health", (HardwareAbstractionLayer hal) =>
 });
 
 // ---- 硬件探测: 平台信息 + 能力集 ----
-app.MapGet("/api/platform/info", (HardwareDetector detector) =>
+app.MapGet("/api/platform/info", (HardwareDetector detector, HardwareAbstractionLayer hal) =>
 {
     var info = detector.Detect();
+    using var identity = WindowsIdentity.GetCurrent();
+    var isElevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     return Results.Json(new
     {
         vendor = info.Vendor,
@@ -769,6 +782,9 @@ app.MapGet("/api/platform/info", (HardwareDetector detector) =>
         oem = info.Oem.ToString(),
         oemBoard = info.OemBoard,
         capabilities = info.Capabilities,
+        isElevated,
+        ecCpuTemp = hal.CpuTemperature,
+        ecGpuTemp = hal.GpuTemperature,
     });
 });
 
@@ -860,6 +876,8 @@ app.MapPost("/api/control", (ControlRequest req, HardwareAbstractionLayer hal, W
                     if (parts_.Length >= 2 && parts_[1].StartsWith("0x"))
                     {
                         byte reg = Convert.ToByte(parts_[1], 16);
+                        if (!_ecWriteWhitelist.Contains(reg))
+                            return Results.Problem($"EC 寄存器 0x{reg:X2} 不在白名单", statusCode: 400);
                         hal.WriteEcPort(reg, (byte)req.Value);
                     }
                 }
@@ -1313,6 +1331,9 @@ app.MapGet("/api/fan-curve/route-info", (FanCurveService svc) =>
         lastWmiSmallOk = svc.LastWmiSmallOk,
         tickCount = svc.TickCount,
         consecutiveDeviation = svc.ConsecutiveDeviation,
+        deviationAlert = svc.DeviationAlert,
+        largeDeviationRpm = svc.LargeDeviationRpm,
+        smallDeviationRpm = svc.SmallDeviationRpm,
         cpuTemp = svc.LastCpuTemp,
         gpuTemp = svc.LastGpuTemp,
         hotspot = svc.LastHotspot,
@@ -1822,6 +1843,34 @@ app.MapPost("/api/ui-state", async (HttpContext ctx) =>
     catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
 });
 
+// ---- 通知写入（Shell FileSystemWatcher 监听 notify.json 展示系统通知）----
+app.MapPost("/api/notify", async (HttpContext ctx) =>
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var body = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(await reader.ReadToEndAsync()) ?? new();
+        var title = body.TryGetValue("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : "";
+        var message = body.TryGetValue("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : "";
+        var level = body.TryGetValue("level", out var l) && l.ValueKind == JsonValueKind.String ? l.GetString() : "info";
+        if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(message))
+            return Results.BadRequest(new { error = "title/message 不能为空" });
+
+        JsonWrite("notify.json", new
+        {
+            title,
+            message,
+            level,
+            createdAt = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+        });
+        return Results.Ok(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, error = ex.Message });
+    }
+});
+
 // ---- 配置备份/恢复 ----
 var backupCategories = new Dictionary<string, string[]>
 {
@@ -2152,9 +2201,14 @@ app.MapPost("/api/background", async (HttpContext ctx) =>
             catch { /* 忽略被占用的文件，写入时会被覆盖 */ }
         }
 
+        var bytes = Convert.FromBase64String(b64);
+        const int MaxBackgroundBytes = 8 * 1024 * 1024;
+        if (bytes.Length > MaxBackgroundBytes)
+            return Results.Json(new { ok = false, error = "图片超过 8MB 限制" });
+
         var filePath = Path.Combine(configDir, $"background.{ext}");
         var tmpPath = filePath + ".tmp";
-        await File.WriteAllBytesAsync(tmpPath, Convert.FromBase64String(b64));
+        await File.WriteAllBytesAsync(tmpPath, bytes);
         // 原子替换：先写临时文件，再重命名
         if (File.Exists(filePath)) File.Delete(filePath);
         File.Move(tmpPath, filePath);
@@ -2169,6 +2223,8 @@ app.MapGet("/api/background", async (HttpContext ctx) =>
     {
         var files = BgImageFiles();
         if (files.Length == 0) return Results.NotFound();
+
+        ctx.Response.Headers["Cache-Control"] = "no-store";
 
         var filePath = files[0];
         var ext = Path.GetExtension(filePath).ToLowerInvariant();
@@ -2224,29 +2280,16 @@ var _updateHttpClient = new HttpClient();
 _updateHttpClient.Timeout = TimeSpan.FromSeconds(8);
 _updateHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("DouzhanzheConsole-UpdateChecker/1.0");
 
-// 从前端 JS bundle 提取版本号（构建时 SettingsPanel.jsx 中的 "Douzhanzhe Console vX.Y.Z"）
-// 注意：覆盖安装时 wwwroot/assets 可能残留多个旧 bundle，必须遍历所有文件取最大版本号
+// 版本号读取固定 version.txt（deploy.ps1 / build-installer.ps1 从 package.json 写入）
 var _appVersion = "0.0.0";
 try
 {
-    var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot", "assets");
-    if (Directory.Exists(wwwroot))
+    var versionFile = Path.Combine(AppContext.BaseDirectory, "version.txt");
+    if (File.Exists(versionFile))
     {
-        var jsFiles = Directory.GetFiles(wwwroot, "index-*.js");
-        var maxVer = new Version(0, 0, 0);
-        foreach (var jsFile in jsFiles)
-        {
-            try
-            {
-                var jsContent = File.ReadAllText(jsFile);
-                var m = System.Text.RegularExpressions.Regex.Match(jsContent, @"Douzhanzhe Console v(\d+\.\d+\.\d+)");
-                if (m.Success && Version.TryParse(m.Groups[1].Value, out var v) && v > maxVer)
-                    maxVer = v;
-            }
-            catch { /* 单个文件读取失败不影响其他 */ }
-        }
-        if (maxVer > new Version(0, 0, 0))
-            _appVersion = maxVer.ToString();
+        var text = File.ReadAllText(versionFile).Trim().TrimStart('v');
+        if (Version.TryParse(text, out var v))
+            _appVersion = v.ToString();
     }
 }
 catch { /* 读取失败时使用默认值 */ }
@@ -2274,6 +2317,20 @@ app.MapGet("/api/update/check", async () =>
         var body = root.TryGetProperty("body", out var b) ? b.GetString() : null;
         var publishedAt = root.TryGetProperty("published_at", out var p) ? p.GetString() : null;
         var htmlUrl = root.TryGetProperty("html_url", out var u) ? u.GetString() : null;
+        string? downloadUrl = null;
+        if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var asset in assets.EnumerateArray())
+            {
+                if (asset.TryGetProperty("browser_download_url", out var du) &&
+                    du.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(du.GetString()))
+                {
+                    downloadUrl = du.GetString();
+                    break;
+                }
+            }
+        }
 
         var isNewer = false;
         if (Version.TryParse(latestVersion, out var latest) &&
@@ -2289,7 +2346,8 @@ app.MapGet("/api/update/check", async () =>
             latestVersion,
             body,
             publishedAt,
-            url = htmlUrl
+            url = htmlUrl,
+            downloadUrl
         });
     }
     catch (Exception ex)

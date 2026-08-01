@@ -46,6 +46,54 @@ public partial class Form1 : Form
         ("mode-gaming", "斗战模式", "ctrl,shift", "4",   "mode:gaming"),
     ];
 
+    // event.code → Win32 VK 映射（前端录制不再受 Shift 输出字符影响）
+    private static readonly Dictionary<string, uint> EventCodeVkMap = BuildEventCodeVkMap();
+
+    private static Dictionary<string, uint> BuildEventCodeVkMap()
+    {
+        var map = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Space"] = (uint)Keys.Space,
+            ["Enter"] = (uint)Keys.Enter,
+            ["NumpadEnter"] = (uint)Keys.Enter,
+            ["Tab"] = (uint)Keys.Tab,
+            ["Backspace"] = (uint)Keys.Back,
+            ["Delete"] = (uint)Keys.Delete,
+            ["Insert"] = (uint)Keys.Insert,
+            ["Home"] = (uint)Keys.Home,
+            ["End"] = (uint)Keys.End,
+            ["PageUp"] = (uint)Keys.PageUp,
+            ["PageDown"] = (uint)Keys.PageDown,
+            ["CapsLock"] = (uint)Keys.CapsLock,
+            ["ArrowUp"] = (uint)Keys.Up,
+            ["ArrowDown"] = (uint)Keys.Down,
+            ["ArrowLeft"] = (uint)Keys.Left,
+            ["ArrowRight"] = (uint)Keys.Right,
+            ["Backquote"] = (uint)Keys.Oemtilde,
+            ["Minus"] = (uint)Keys.OemMinus,
+            ["Equal"] = (uint)Keys.Oemplus,
+            ["BracketLeft"] = (uint)Keys.OemOpenBrackets,
+            ["BracketRight"] = (uint)Keys.OemCloseBrackets,
+            ["Backslash"] = (uint)Keys.OemPipe,
+            ["Semicolon"] = (uint)Keys.OemSemicolon,
+            ["Quote"] = (uint)Keys.OemQuotes,
+            ["Comma"] = (uint)Keys.Oemcomma,
+            ["Period"] = (uint)Keys.OemPeriod,
+            ["Slash"] = (uint)Keys.OemQuestion,
+            ["IntlBackslash"] = (uint)Keys.Oem102,
+            ["NumpadMultiply"] = (uint)Keys.Multiply,
+            ["NumpadAdd"] = (uint)Keys.Add,
+            ["NumpadSubtract"] = (uint)Keys.Subtract,
+            ["NumpadDecimal"] = (uint)Keys.Decimal,
+            ["NumpadDivide"] = (uint)Keys.Divide,
+        };
+        for (char c = 'A'; c <= 'Z'; c++) map["Key" + c] = (uint)c;
+        for (char c = '0'; c <= '9'; c++) map["Digit" + c] = (uint)c;
+        for (int i = 0; i <= 9; i++) map["Numpad" + i] = (uint)(Keys.NumPad0 + i);
+        for (int i = 1; i <= 24; i++) map["F" + i] = (uint)(Keys.F1 + i - 1);
+        return map;
+    }
+
     // 运行时热键映射: winHotkeyId → configId
     private readonly Dictionary<int, string> _hotkeyIdToAction = new();
     private readonly HashSet<int> _registeredWinIds = new();
@@ -84,6 +132,7 @@ public partial class Form1 : Form
         Text = "斗战者控制台";
         Width = 1500;
         Height = 1200;
+        MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(13, 17, 23); // 深色背景防白闪
         Icon = LoadAppIcon();
@@ -871,14 +920,19 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         }
 
         uint vk = 0;
-        if (keyStr.Length == 1 && char.IsLetter(keyStr[0]))
+        if (EventCodeVkMap.TryGetValue(keyStr, out var mappedVk))
+            vk = mappedVk;
+        else if (keyStr.Length == 1 && char.IsLetter(keyStr[0]))
             vk = (uint)char.ToUpperInvariant(keyStr[0]);
         else if (keyStr.Length == 1 && char.IsDigit(keyStr[0]))
             vk = (uint)keyStr[0];
         else if (Enum.TryParse<Keys>(keyStr, true, out var parsedKey))
             vk = (uint)parsedKey;
         else
-            vk = (uint)Keys.Q; // fallback
+        {
+            ShellLog($"[Hotkey] 无法解析按键: {keyStr}，跳过注册（不再 fallback Q）");
+            return false;
+        }
 
         return RegisterHotKey(Handle, id, fsModifiers, vk);
     }

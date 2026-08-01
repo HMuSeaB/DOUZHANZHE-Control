@@ -1,7 +1,7 @@
 {
   "enabled": true,
-  "opacity": 100,
-  "blur": 45,
+  "opacity": 52,
+  "blur": 7,
   "maskColor": "black",
   "source": "local",
   "interval": "1h",

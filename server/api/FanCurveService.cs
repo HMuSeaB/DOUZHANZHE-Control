@@ -39,7 +39,9 @@ public sealed class FanCurveService : IDisposable
     private byte _itsmCurveMode;              // 曲线目标对应的 ITSM 模式（RouteMode 计算，仅目标变化时更新）
     private int _itsmDeviationCount;          // 统计：ITSM 读回 ≠ 目标模式 的累计次数
 
-    // ── 偏离检测 (仅日志告警，不主动恢复) ──
+    // ── 偏离检测（页面告警 + 分级自动恢复）──
+    private const int DeviationRpmThreshold = 500;
+    private const int DeviationAlertThreshold = 3;
     private int _consecutiveDeviation;        // 连续偏离 tick 计数
 
     public bool Active => _active;
@@ -55,6 +57,10 @@ public sealed class FanCurveService : IDisposable
         _lastHotspot = null;      // 重置 ShouldWrite 状态 → 下一个 Tick 必定写入
         _lastLargeTarget = 0;
         _lastSmallTarget = 0;
+        _consecutiveDeviation = 0;
+        DeviationAlert = false;
+        LargeDeviationRpm = 0;
+        SmallDeviationRpm = 0;
         // 立即写一次 ITSM，不依赖 Tick 的 targetChanged 判断
         _hal.WriteEcPort(0xE4, _itsmCurveMode);
         _log.LogInformation("[FanCurve] 睡眠恢复: 已强制重发 ITSM={Mode}, 重置 ShouldWrite 状态", _itsmCurveMode);
@@ -78,6 +84,9 @@ public sealed class FanCurveService : IDisposable
     public bool LastWmiSmallOk { get; private set; }     // 最近一次 WMI 小扇写入返回
     public int TickCount { get; private set; }           // Tick 执行总次数
     public int ConsecutiveDeviation => _consecutiveDeviation; // 连续偏离 tick 计数
+    public bool DeviationAlert { get; private set; }     // 连续偏离达到告警阈值
+    public int LargeDeviationRpm { get; private set; }   // 大风扇 |实际 - 目标| RPM
+    public int SmallDeviationRpm { get; private set; }   // 小风扇 |实际 - 目标| RPM
     public int LastCpuTemp { get; private set; }          // 最近一次 Tick 的 CPU 温度
     public int LastGpuTemp { get; private set; }          // 最近一次 Tick 的 GPU 温度
     public int LastHotspot { get; private set; }          // 最近一次 Tick 的 hotspot (max)
@@ -169,6 +178,9 @@ public sealed class FanCurveService : IDisposable
         _savedThermalMode = _hal.ReadEcPort(0xE4);
         _itsmDeviationCount = 0;
         _consecutiveDeviation = 0;
+        DeviationAlert = false;
+        LargeDeviationRpm = 0;
+        SmallDeviationRpm = 0;
         TickCount = 0;
 
         // 启动时先算一次曲线目标 → RouteMode 确定 ITSM 模式
@@ -194,6 +206,10 @@ public sealed class FanCurveService : IDisposable
         _timer?.Dispose();
         _timer = null;
         _lastHotspot = null;
+        _consecutiveDeviation = 0;
+        DeviationAlert = false;
+        LargeDeviationRpm = 0;
+        SmallDeviationRpm = 0;
 
         // 通过 WMI 正常切换回保存的模式（触发完整 DPTB/GPUD 链），恢复固件控制
         try
@@ -363,29 +379,33 @@ public sealed class FanCurveService : IDisposable
             }
             catch { }
 
-            // 7. 偏离检测：分级自动恢复
+            // 7. 偏离检测：大小风扇都读回 EC 对比目标，连续偏离进入页面告警状态
             {
-                bool fanDeviated = ActualCpuFanRpm > 0 &&
-                    Math.Abs(ActualCpuFanRpm - largeTarget * 100) > 500;
+                int largeDiff = ActualCpuFanRpm > 0 ? Math.Abs(ActualCpuFanRpm - largeTarget * 100) : 0;
+                int smallDiff = ActualGpuFanRpm > 0 ? Math.Abs(ActualGpuFanRpm - smallTarget * 100) : 0;
+                LargeDeviationRpm = largeDiff;
+                SmallDeviationRpm = smallDiff;
+                bool fanDeviated = largeDiff > DeviationRpmThreshold || smallDiff > DeviationRpmThreshold;
 
                 if (fanDeviated)
                 {
                     _consecutiveDeviation++;
+                    DeviationAlert = _consecutiveDeviation >= DeviationAlertThreshold;
 
                     if (_consecutiveDeviation % 10 == 1 && _consecutiveDeviation < 12)
                     {
                         // 每 10 个 tick 记一次日志（未达恢复阈值时）
                         _log.LogWarning(
-                            "[FanCurve] 偏离告警 #{N}: 目标={Target} 实际={Actual} (差值={Diff})",
-                            _consecutiveDeviation, largeTarget * 100, ActualCpuFanRpm,
-                            Math.Abs(ActualCpuFanRpm - largeTarget * 100));
+                            "[FanCurve] 偏离告警 #{N}: 大风扇目标={LargeTarget} 实际={LargeActual} (差值={LargeDiff}), 小风扇目标={SmallTarget} 实际={SmallActual} (差值={SmallDiff})",
+                            _consecutiveDeviation, largeTarget * 100, ActualCpuFanRpm, largeDiff,
+                            smallTarget * 100, ActualGpuFanRpm, smallDiff);
                     }
 
                     // 一级恢复: 连续 12 tick (= 60s) → 重写 SetFanManual + SetFanSpeed
                     if (_consecutiveDeviation == 12)
                     {
                         _log.LogWarning("[FanCurve] 偏离 60s, 一级恢复: 重写 Manual+Speed");
-                        AppLog.Write("FanCurve", $"一级恢复: 偏差={Math.Abs(ActualCpuFanRpm - largeTarget * 100)} RPM");
+                        AppLog.Write("FanCurve", $"一级恢复: 大风扇偏差={largeDiff} RPM, 小风扇偏差={smallDiff} RPM");
                         _wmi.SetFanManual(0, true);
                         _wmi.SetFanSpeed(0, (byte)largeTarget);
                         _wmi.SetFanManual(1, true);
@@ -396,7 +416,7 @@ public sealed class FanCurveService : IDisposable
                     if (_consecutiveDeviation >= 24)
                     {
                         _log.LogWarning("[FanCurve] 偏离 120s, 二级恢复: 重写 ITSM={Mode} + 完整风扇参数", _itsmCurveMode);
-                        AppLog.Write("FanCurve", $"二级恢复: ITSM={_itsmCurveMode}, 偏差={Math.Abs(ActualCpuFanRpm - largeTarget * 100)} RPM");
+                        AppLog.Write("FanCurve", $"二级恢复: ITSM={_itsmCurveMode}, 大风扇偏差={largeDiff} RPM, 小风扇偏差={smallDiff} RPM");
                         _hal.WriteEcPort(0xE4, _itsmCurveMode);
                         _wmi.SetFanManual(0, true);
                         _wmi.SetFanSpeed(0, (byte)largeTarget);
@@ -408,6 +428,9 @@ public sealed class FanCurveService : IDisposable
                 else
                 {
                     _consecutiveDeviation = 0;
+                    DeviationAlert = false;
+                    LargeDeviationRpm = 0;
+                    SmallDeviationRpm = 0;
                 }
             }
 
