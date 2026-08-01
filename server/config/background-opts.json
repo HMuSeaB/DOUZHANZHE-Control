@@ -1,1 +1,9 @@
-{"enabled":true,"opacity":100,"maskColor":"black"}
+{
+  "enabled": true,
+  "opacity": 100,
+  "blur": 45,
+  "maskColor": "black",
+  "source": "local",
+  "interval": "1h",
+  "apiUrl": ""
+}

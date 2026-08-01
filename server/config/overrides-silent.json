@@ -17,9 +17,9 @@
   },
   "smu": {
     "stapmLimitW": null,
-    "shortPowerLimitW": null,
+    "shortPowerLimitW": 45,
     "tempLimitC": null,
-    "coAll": null
+    "coAll": -15
   },
   "fan": {
     "largeRpm": null,
