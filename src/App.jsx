@@ -7,6 +7,8 @@ import PlatformControl from "./pages/PlatformControl";
 import Games from "./pages/Games";
 import SysInfo from "./pages/SysInfo";
 import Settings from "./pages/Settings";
+import SwitchingOverlay from "./components/ui/SwitchingOverlay";
+import UpdateDialog from "./components/ui/UpdateDialog";
 
 const PAGES = [
   { key: "dashboard", label: "仪表盘", icon: "M3 12l9-8 9 8M5 10v10h14V10" },
@@ -19,7 +21,7 @@ const PAGES = [
 ];
 
 export default function App() {
-  const { theme, setTheme, backendOnline, platformInfo, platformInfoReady } = useControlState();
+  const { theme, setTheme, backendOnline, platformInfo, platformInfoReady, switching } = useControlState();
 
   const [activePage, setActivePage] = useState(() => {
     try { return localStorage.getItem("dz_page") || "dashboard"; } catch { return "dashboard"; }
@@ -77,6 +79,8 @@ export default function App() {
         {resolvedPage === "sysinfo" && <SysInfo />}
         {resolvedPage === "settings" && <Settings />}
       </main>
+      <SwitchingOverlay active={switching} />
+      <UpdateDialog />
     </div>
   );
 }
