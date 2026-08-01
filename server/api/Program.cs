@@ -2326,8 +2326,13 @@ app.MapGet("/api/update/check", async () =>
                     du.ValueKind == JsonValueKind.String &&
                     !string.IsNullOrWhiteSpace(du.GetString()))
                 {
-                    downloadUrl = du.GetString();
-                    break;
+                    var candidate = du.GetString();
+                    downloadUrl = candidate;
+                    if (Uri.TryCreate(candidate, UriKind.Absolute, out var assetUri) &&
+                        Path.GetExtension(assetUri.AbsolutePath).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -2354,6 +2359,107 @@ app.MapGet("/api/update/check", async () =>
     {
         return Results.Json(new { available = false, currentVersion = _appVersion,
             error = ex.Message });
+    }
+});
+
+// ---- 更新安装包下载与启动安装 ----
+var updateDownloadDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "Douzhanzhe Console", "updates");
+Directory.CreateDirectory(updateDownloadDir);
+
+bool IsTrustedUpdateHost(Uri uri)
+{
+    if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+        return false;
+    var host = uri.Host.ToLowerInvariant();
+    return host == "github.com" || host == "api.github.com" ||
+           host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
+}
+
+app.MapPost("/api/update/download", async (HttpContext ctx) =>
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var raw = await reader.ReadToEndAsync();
+        using var doc = JsonDocument.Parse(raw);
+        var urlText = doc.RootElement.TryGetProperty("url", out var urlEl) &&
+                      urlEl.ValueKind == JsonValueKind.String
+            ? urlEl.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(urlText) ||
+            !Uri.TryCreate(urlText, UriKind.Absolute, out var url) ||
+            !IsTrustedUpdateHost(url))
+        {
+            return Results.Json(new { ok = false, error = "无效的安装包下载地址" });
+        }
+
+        var ext = Path.GetExtension(url.AbsolutePath);
+        if (!ext.Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            return Results.Json(new { ok = false, error = "仅支持 .exe 安装包下载" });
+
+        var fileName = Path.GetFileName(url.AbsolutePath);
+        var targetPath = Path.Combine(updateDownloadDir, fileName);
+        using var resp = await _updateHttpClient.GetAsync(url);
+        if (!resp.IsSuccessStatusCode)
+            return Results.Json(new { ok = false, error = $"下载失败: HTTP {(int)resp.StatusCode}" });
+
+        var total = resp.Content.Headers.ContentLength ?? 0;
+        if (total > 1L * 1024 * 1024 * 1024)
+            return Results.Json(new { ok = false, error = "安装包过大，已中止下载" });
+
+        var tmpPath = targetPath + ".part";
+        await using (var fs = File.Create(tmpPath))
+        {
+            await resp.Content.CopyToAsync(fs);
+        }
+        File.Move(tmpPath, targetPath, overwrite: true);
+        return Results.Json(new
+        {
+            ok = true,
+            path = targetPath,
+            fileName,
+            size = new FileInfo(targetPath).Length
+        });
+    }
+    catch (Exception ex)
+    {
+        Log($"Update download error: {ex.Message}");
+        return Results.Json(new { ok = false, error = ex.Message });
+    }
+});
+
+app.MapPost("/api/update/install", async (HttpContext ctx) =>
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var raw = await reader.ReadToEndAsync();
+        using var doc = JsonDocument.Parse(raw);
+        var pathText = doc.RootElement.TryGetProperty("path", out var pathEl) &&
+                       pathEl.ValueKind == JsonValueKind.String
+            ? pathEl.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(pathText))
+            return Results.Json(new { ok = false, error = "缺少安装包路径" });
+
+        var fullPath = Path.GetFullPath(pathText);
+        var updateRoot = Path.GetFullPath(updateDownloadDir).TrimEnd(Path.DirectorySeparatorChar) +
+                         Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(updateRoot, StringComparison.OrdinalIgnoreCase) ||
+            !File.Exists(fullPath))
+        {
+            return Results.Json(new { ok = false, error = "安装包不存在或路径非法" });
+        }
+
+        Process.Start(new ProcessStartInfo(fullPath) { UseShellExecute = true });
+        return Results.Json(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        Log($"Update install error: {ex.Message}");
+        return Results.Json(new { ok = false, error = ex.Message });
     }
 });
 

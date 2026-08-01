@@ -35,6 +35,6 @@
   </ItemGroup>
 
   <Target Name="AutoCommitAfterBuild" AfterTargets="Build">
-    <Exec Command="powershell -NoProfile -File &quot;$(ProjectDir)..\..\sync-repos.ps1&quot; -Quiet" ContinueOnError="WarnAndContinue" />
+    <Exec Condition="'$(AutoSync)' != 'false'" Command="powershell -NoProfile -File &quot;$(ProjectDir)..\..\sync-repos.ps1&quot; -Quiet" ContinueOnError="WarnAndContinue" />
   </Target>
 </Project>
