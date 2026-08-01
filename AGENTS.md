@@ -75,7 +75,7 @@ CC-Switch 的协议转换层完整支持 Responses API 工具注册。
 - docs/ 和 canvas-workspace/ 作为私有子仓库单独同步到对应分支
 - 手动运行：`powershell -NoProfile -File sync-repos.ps1`
 
-### UI 迁移进度（2026-07-30）
+### UI 迁移进度（2026-08-01 更新）
 
 #### 已完成
 - 仪表盘（Dashboard）— 原型样式重写
@@ -88,7 +88,4 @@ CC-Switch 的协议转换层完整支持 Responses API 工具注册。
  - 设置（Settings / SettingsPanel）— 主题/配色、自启、背景、快捷键、备份、关于
 
 #### 待完成
-- 游戏（Games / GameProfilesPanel）
-- 系统信息（SysInfo / SystemInfoPanel）
-- 设置（Settings / SettingsPanel）
- - 无
+- 全部页面已完成；剩余 v2.0 缺口与实施清单见 docs/v2.0/gap-audit.md
