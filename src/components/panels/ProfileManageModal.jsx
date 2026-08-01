@@ -32,7 +32,7 @@ export default function ProfileManageModal({
       await deleteProfile(id);
       afterProfileDeleted(id);
       setConfirmDelete(null);
-    } catch (e) { console.error('delete failed:', e); }
+    } catch (e) { console.error('delete failed:', e); alert(e.message || '删除失败'); }
   }
 
   async function handleCopy(id) {

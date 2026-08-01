@@ -751,7 +751,10 @@ export async function deleteProfile(id) {
   const res = await fetch("/api/profiles/" + encodeURIComponent(id), {
     method: "DELETE",
   });
-  if (!res.ok) throw new Error("profile delete failed");
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `profile delete failed (${res.status})`);
+  }
   return res.json();
 }
 
