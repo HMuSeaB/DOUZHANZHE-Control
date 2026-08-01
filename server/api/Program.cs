@@ -769,12 +769,54 @@ app.MapGet("/api/health", (HardwareAbstractionLayer hal) =>
     });
 });
 
+bool IsCurrentProcessElevated()
+{
+    using var identity = WindowsIdentity.GetCurrent();
+    return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+}
+
+bool? ShellReportedElevation()
+{
+    try
+    {
+        var filePath = Path.Combine(configDir, "permission.json");
+        if (!File.Exists(filePath)) return null;
+        using var doc = JsonDocument.Parse(File.ReadAllText(filePath));
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("isElevated", out var el) ||
+            (el.ValueKind != JsonValueKind.True && el.ValueKind != JsonValueKind.False))
+        {
+            return null;
+        }
+        var pid = root.TryGetProperty("pid", out var pidEl) && pidEl.ValueKind == JsonValueKind.Number
+            ? pidEl.GetInt32()
+            : 0;
+        if (pid > 0)
+        {
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                if (!proc.ProcessName.Contains("Douzhanzhe.Shell", StringComparison.OrdinalIgnoreCase))
+                    return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return el.GetBoolean();
+    }
+    catch
+    {
+        return null;
+    }
+}
+
 // ---- 硬件探测: 平台信息 + 能力集 ----
 app.MapGet("/api/platform/info", (HardwareDetector detector, HardwareAbstractionLayer hal) =>
 {
     var info = detector.Detect();
-    using var identity = WindowsIdentity.GetCurrent();
-    var isElevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    var isElevated = ShellReportedElevation() ?? IsCurrentProcessElevated();
     return Results.Json(new
     {
         vendor = info.Vendor,

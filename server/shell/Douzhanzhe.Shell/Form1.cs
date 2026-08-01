@@ -2,6 +2,7 @@
 using Microsoft.Web.WebView2.Core;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text.Json;
 
 namespace Douzhanzhe.Shell;
@@ -196,6 +197,9 @@ public partial class Form1 : Form
             WindowState = FormWindowState.Minimized;
             Hide();
         }
+
+        // 上报权限状态，API 端 /api/platform/info 优先读取该文件
+        ReportElevationStatus();
 
         // 启动后端 API（如果尚未运行）
         StartApiIfNotRunning();
@@ -561,6 +565,40 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         }
         catch { }
         return false;
+    }
+
+    private string SharedConfigDir()
+    {
+        var local = Path.Combine(AppContext.BaseDirectory, "config");
+        var devShared = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "server", "config"));
+        if (Directory.Exists(devShared))
+            return devShared;
+        Directory.CreateDirectory(local);
+        return local;
+    }
+
+    private void ReportElevationStatus()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var isElevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+            var path = Path.Combine(SharedConfigDir(), "permission.json");
+            var tmpPath = path + ".tmp";
+            File.WriteAllText(tmpPath, JsonSerializer.Serialize(new
+            {
+                isElevated,
+                source = "shell",
+                pid = Environment.ProcessId,
+                reportedAt = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")
+            }));
+            File.Move(tmpPath, path, overwrite: true);
+            ShellLog($"[Permission] isElevated={isElevated}, reported to {path}");
+        }
+        catch
+        {
+            // 权限上报失败不影响启动
+        }
     }
 
     private void StartApiIfNotRunning()
