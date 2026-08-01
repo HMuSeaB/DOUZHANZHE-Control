@@ -2637,6 +2637,9 @@ app.MapPost("/api/profiles/{id}/reset", (string id, ProfileService svc) =>
 {
     if (!svc.ResetToDefaults(id))
         return Results.BadRequest(new { error = "重置失败" });
+    // 内置配置的实际生效源是 overrides-{id}.json，必须同步清空，否则重置不生效
+    if (new[] { "silent", "office", "gaming", "beast" }.Contains(id))
+        JsonWrite($"overrides-{id}.json", new PerformanceOverrides());
     return Results.Ok(new { ok = true });
 });
 

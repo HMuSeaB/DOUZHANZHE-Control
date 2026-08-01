@@ -42,11 +42,9 @@ public class TelemetryBackgroundService : BackgroundService
     {
         if (_gpuModeConfigDir != null) return _gpuModeConfigDir;
         var dir = Path.Combine(AppContext.BaseDirectory, "config");
-        if (!Directory.Exists(dir))
-        {
-            var devDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "config"));
-            if (Directory.Exists(devDir)) dir = devDir;
-        }
+        var sharedDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "config"));
+        if (Directory.Exists(sharedDir)) dir = sharedDir;
+        else if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
         _gpuModeConfigDir = dir;
         return dir;
     }
