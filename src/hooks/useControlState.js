@@ -89,6 +89,7 @@ export function useControlState() {
       try {
         const pi = await fetchPlatformInfo();
         setPlatformInfo({ oem: pi.oem || 'Unknown', vendor: pi.vendor || '', model: pi.model || '' });
+        setPlatformInfoReady(true);
       } catch { /* ignore */ }
       // 加载配置列表
       let profileList = [];
@@ -189,6 +190,7 @@ export function useControlState() {
   const [profiles, setProfiles] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [platformInfo, setPlatformInfo] = useState({ oem: 'Unknown', vendor: '', model: '' });
+  const [platformInfoReady, setPlatformInfoReady] = useState(false);
   useEffect(() => {
     let disposed = false;
     let ws;
@@ -328,6 +330,7 @@ export function useControlState() {
     profiles, setProfiles,
     currentProfile, setCurrentProfile,
     platformInfo,
+    platformInfoReady,
     switchProfile,
     afterProfileDeleted,
     afterProfileCreated,

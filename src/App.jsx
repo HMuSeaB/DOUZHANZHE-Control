@@ -19,7 +19,7 @@ const PAGES = [
 ];
 
 export default function App() {
-  const { theme, setTheme, backendOnline } = useControlState();
+  const { theme, setTheme, backendOnline, platformInfo, platformInfoReady } = useControlState();
 
   const [activePage, setActivePage] = useState(() => {
     try { return localStorage.getItem("dz_page") || "dashboard"; } catch { return "dashboard"; }
@@ -27,6 +27,13 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("dz_page", activePage); } catch {}
   }, [activePage]);
+
+  const isBellator = !platformInfoReady || platformInfo.oem === "Bellator";
+  const visiblePages = isBellator ? PAGES : PAGES.filter(p => p.key !== "fan" && p.key !== "platform");
+  const resolvedPage = !visiblePages.some(p => p.key === activePage) ? "dashboard" : activePage;
+  useEffect(() => {
+    if (resolvedPage !== activePage) setActivePage(resolvedPage);
+  }, [resolvedPage, activePage]);
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
   useEffect(() => { const h = (e) => { document.querySelectorAll('.reveal').forEach((el) => { const r = el.getBoundingClientRect(); el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%'); el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%'); }); }; window.addEventListener('mousemove', h); return () => window.removeEventListener('mousemove', h); }, []);
@@ -42,8 +49,8 @@ export default function App() {
       <div className="wallpaper" aria-hidden="true"></div>
       {/* 窄边栏 */}
       <nav className="sidebar">
-        {PAGES.map(p => (
-          <button key={p.key} className={`nav-item${activePage === p.key ? ' active' : ''}`}
+        {visiblePages.map(p => (
+          <button key={p.key} className={`nav-item${resolvedPage === p.key ? ' active' : ''}`}
             onClick={() => setActivePage(p.key)}>
             <Svg d={p.icon} />
             <span>{p.label}</span>
@@ -62,13 +69,13 @@ export default function App() {
 
       {/* 内容区 */}
       <main className="content">
-        {activePage === "dashboard" && <Dashboard onNavigate={setActivePage} />}
-        {activePage === "control" && <ControlPanel />}
-        {activePage === "fan" && <FanControl />}
-        {activePage === "platform" && <PlatformControl />}
-        {activePage === "games" && <Games />}
-        {activePage === "sysinfo" && <SysInfo />}
-        {activePage === "settings" && <Settings />}
+        {resolvedPage === "dashboard" && <Dashboard onNavigate={setActivePage} />}
+        {resolvedPage === "control" && <ControlPanel />}
+        {resolvedPage === "fan" && <FanControl />}
+        {resolvedPage === "platform" && <PlatformControl />}
+        {resolvedPage === "games" && <Games />}
+        {resolvedPage === "sysinfo" && <SysInfo />}
+        {resolvedPage === "settings" && <Settings />}
       </main>
     </div>
   );
