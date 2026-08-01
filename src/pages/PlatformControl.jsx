@@ -1,19 +1,25 @@
-﻿import { useState, useEffect } from "react";
 import { useControlState } from "../hooks/useControlState";
+import { applyHardwareControl, log } from "../services/uxtuAdapter";
 
 export default function PlatformControl() {
-  const { settings, setSettings, telemetry } = useControlState();
-  const [kbLevel, setKbLevel] = useState(0);
+  const { telemetry } = useControlState();
 
-  useEffect(() => {
-    fetch("/api/platform/info").then(r => r.json()).then(d => { if (d.kbBrightnessLevel != null) setKbLevel(d.kbBrightnessLevel); }).catch(() => {});
-  }, []);
+  const asBool = (value) => value === true || value === 1 || value === "1";
+  const kbLevel = telemetry?.kbBrightness != null ? Number(telemetry.kbBrightness) : 0;
+  const gpuMode = telemetry?.savedGpuMode != null
+    ? Number(telemetry.savedGpuMode)
+    : telemetry?.gpuMode != null
+      ? Number(telemetry.gpuMode)
+      : null;
 
-  const setKb = (v) => { setKbLevel(v); fetch("/api/platform/kb-brightness", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ level: v }) }).catch(() => {}); };
+  const setKb = (v) => {
+    applyHardwareControl("kb_light", Number(v))
+      .catch(err => log("PlatformControl", `kb_light 设置失败: ${err.message}`));
+  };
 
-  const setSwitch = (key, val, endpoint) => {
-    setSettings(prev => ({ ...prev, [key]: val }));
-    fetch("/api/platform/" + endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: val }) }).catch(() => {});
+  const setSwitch = (target, val) => {
+    applyHardwareControl(target, val ? 1 : 0)
+      .catch(err => log("PlatformControl", `${target} 设置失败: ${err.message}`));
   };
 
   const gpuModes = [
@@ -51,8 +57,9 @@ export default function PlatformControl() {
             <span className="g-ctrl">
               <div className="segmented">
                 {gpuModes.map(m => (
-                  <button key={m.id} className={telemetry?.gpuMode === m.id ? "active" : ""}
-                    onClick={() => fetch("/api/platform/gpu-mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: m.id }) }).catch(() => {})}>
+                  <button key={m.id} className={gpuMode === m.id ? "active" : ""}
+                    onClick={() => applyHardwareControl("gpu_mode", m.id)
+                      .catch(err => log("PlatformControl", `gpu_mode 设置失败: ${err.message}`))}>
                     {m.label}
                   </button>
                 ))}
@@ -68,25 +75,25 @@ export default function PlatformControl() {
           <div className="g-cell">
             <span className="rk"><b>FN 锁</b><small>锁定 Fn 键行为 · F1–F12 与多媒体键互换</small></span>
             <span className="g-ctrl">
-              <label className="switch"><input type="checkbox" checked={settings.fnLock ?? false} onChange={e => setSwitch("fnLock", e.target.checked, "fnlock")} /><span className="track"></span></label>
+              <label className="switch"><input type="checkbox" checked={asBool(telemetry?.fnLock)} onChange={e => setSwitch("fn_lock", e.target.checked)} /><span className="track"></span></label>
             </span>
           </div>
           <div className="g-cell">
             <span className="rk"><b>大写锁定</b><small>锁定 Caps Lock 键 · 防游戏中误触</small></span>
             <span className="g-ctrl">
-              <label className="switch"><input type="checkbox" checked={settings.capsLock ?? false} onChange={e => setSwitch("capsLock", e.target.checked, "capslock")} /><span className="track"></span></label>
+              <label className="switch"><input type="checkbox" checked={asBool(telemetry?.capsLock)} onChange={e => setSwitch("caps_lock", e.target.checked)} /><span className="track"></span></label>
             </span>
           </div>
           <div className="g-cell">
             <span className="rk"><b>数字小键盘锁</b><small>锁定数字小键盘 · 防误触或切换为方向键功能</small></span>
             <span className="g-ctrl">
-              <label className="switch"><input type="checkbox" checked={settings.numLock ?? true} onChange={e => setSwitch("numLock", e.target.checked, "numlock")} /><span className="track"></span></label>
+              <label className="switch"><input type="checkbox" checked={asBool(telemetry?.numLock)} onChange={e => setSwitch("num_lock", e.target.checked)} /><span className="track"></span></label>
             </span>
           </div>
           <div className="g-cell">
             <span className="rk"><b>触控板锁</b><small>禁用触控板 · 外接鼠标时防误触</small></span>
             <span className="g-ctrl">
-              <label className="switch"><input type="checkbox" checked={settings.touchpadLock ?? false} onChange={e => setSwitch("touchpadLock", e.target.checked, "touchpad")} /><span className="track"></span></label>
+              <label className="switch"><input type="checkbox" checked={asBool(telemetry?.touchpadLock)} onChange={e => setSwitch("touchpad_lock", e.target.checked)} /><span className="track"></span></label>
             </span>
           </div>
         </div>
