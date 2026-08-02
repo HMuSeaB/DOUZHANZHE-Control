@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
+using Windows.UI.Notifications;
 
 namespace Douzhanzhe.Shell;
 
@@ -103,6 +104,10 @@ public partial class Form1 : Form
     private System.Windows.Forms.Timer? _hotkeyPollTimer;
     private DateTime _lastHotkeyConfigWrite = DateTime.MinValue;
     private FileSystemWatcher? _configWatcher;
+    private FileSystemWatcher? _notifyWatcher;
+    private System.Threading.Timer? _notifyDebounceTimer;
+    private string? _lastNotifyKey;
+    private DateTime _lastNotifyWriteUtc = DateTime.MinValue;
 
     // ---- 后端进程守护 ----
     private System.Windows.Forms.Timer? _healthTimer;
@@ -122,6 +127,7 @@ public partial class Form1 : Form
         base.OnHandleCreated(e);
         ApplyDwmAttributes();
         StartConfigWatcher();
+        StartNotifyWatcher();
     }
 
     public Form1()
@@ -806,6 +812,8 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             _healthTimer?.Dispose();
             _hotkeyPollTimer?.Dispose();
             _hotkeyWatcher?.Dispose();
+            _notifyDebounceTimer?.Dispose();
+            _notifyWatcher?.Dispose();
             _trayIcon?.Dispose();
             _trayMenu?.Dispose();
             _webView?.Dispose();
@@ -842,6 +850,113 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         }
         catch { }
     }
+
+    private void StartNotifyWatcher()
+    {
+        try
+        {
+            var sharedDir = SharedConfigDir();
+            if (!Directory.Exists(sharedDir)) Directory.CreateDirectory(sharedDir);
+            _notifyWatcher = new FileSystemWatcher(sharedDir, "notify.json")
+            {
+                EnableRaisingEvents = true,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
+            };
+            _notifyDebounceTimer = new System.Threading.Timer(_ =>
+            {
+                try { BeginInvoke(HandleNotifyFileChanged); }
+                catch { }
+            }, null, Timeout.Infinite, Timeout.Infinite);
+            void OnNotifyChanged()
+            {
+                ShellLog("[Notify] file change event");
+                _notifyDebounceTimer?.Change(300, Timeout.Infinite);
+            }
+            _notifyWatcher.Changed += (s, e) => OnNotifyChanged();
+            _notifyWatcher.Created += (s, e) => OnNotifyChanged();
+            _notifyWatcher.Renamed += (s, e) => OnNotifyChanged();
+            ShellLog("[Notify] watcher started");
+        }
+        catch (Exception ex)
+        {
+            ShellLog($"[Notify] watcher start failed: {ex.Message}");
+        }
+    }
+
+    private void HandleNotifyFileChanged()
+    {
+        try
+        {
+            ShellLog("[Notify] handle start");
+            var path = Path.Combine(SharedConfigDir(), "notify.json");
+            var fi = new FileInfo(path);
+            if (!fi.Exists || fi.Length == 0) return;
+            if (_lastNotifyWriteUtc != DateTime.MinValue && fi.LastWriteTimeUtc <= _lastNotifyWriteUtc)
+                return;
+            _lastNotifyWriteUtc = fi.LastWriteTimeUtc;
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            var title = root.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "" : "";
+            var message = root.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() ?? "" : "";
+            var level = root.TryGetProperty("level", out var l) && l.ValueKind == JsonValueKind.String ? l.GetString() ?? "info" : "info";
+            var createdAt = root.TryGetProperty("createdAt", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() ?? "" : "";
+
+            var key = $"{createdAt}|{title}|{message}";
+            if (key == _lastNotifyKey) return;
+            _lastNotifyKey = key;
+
+            if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(message)) return;
+
+            if (!ShowWindowsToast(title, message, level))
+                ShowTrayBalloon(title, message, level);
+        }
+        catch (Exception ex)
+        {
+            ShellLog($"[Notify] handle failed: {ex.Message}");
+        }
+    }
+
+    private bool ShowWindowsToast(string title, string message, string level)
+    {
+        try
+        {
+            var xml = ToastNotificationManager.GetTemplateContent(ToastTemplateType.ToastText02);
+            var texts = xml.GetElementsByTagName("text");
+            texts[0].AppendChild(xml.CreateTextNode(title));
+            texts[1].AppendChild(xml.CreateTextNode(message));
+
+            var notifier = ToastNotificationManager.CreateToastNotifier("KanzakiK.DouzhanzheConsole");
+            notifier.Show(new ToastNotification(xml));
+            ShellLog($"[Notify] toast shown: {title}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShellLog($"[Notify] toast failed, fallback balloon: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ShowTrayBalloon(string title, string message, string level)
+    {
+        try
+        {
+            var icon = level.ToLowerInvariant() switch
+            {
+                "warning" => ToolTipIcon.Warning,
+                "error" => ToolTipIcon.Error,
+                _ => ToolTipIcon.Info
+            };
+            _trayIcon?.ShowBalloonTip(4000, title, message, icon);
+            ShellLog($"[Notify] balloon shown: {title}");
+        }
+        catch (Exception ex)
+        {
+            ShellLog($"[Notify] balloon failed: {ex.Message}");
+        }
+    }
+
     private string ResolveConfigDir()
     {
         var configDir = Path.Combine(AppContext.BaseDirectory, "config");
