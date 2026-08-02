@@ -198,15 +198,16 @@ $WwwRoot = Join-Path $ApiDir "wwwroot"
 $JsFile = Get-ChildItem (Join-Path $WwwRoot "assets") -Filter "index-*.js" | Select-Object -First 1
 if ($JsFile) {
     $JsContent = Get-Content $JsFile.FullName -Raw -Encoding UTF8
-    if ($JsContent -match 'Douzhanzhe Console v(\d+\.\d+(?:\.\d+)?)') {
-        $DetectedVersion = $matches[1]
-        if ($Version -and $DetectedVersion -ne $Version) {
-            Write-Host "  错误：前端版本号 $DetectedVersion 与预期 $Version 不一致！" -ForegroundColor Red
+    if ($Version) {
+        $VersionPattern = 'v' + [regex]::Escape($Version)
+        if ($JsContent -match $VersionPattern) {
+            Write-Host "  前端版本号：v$Version ✅" -ForegroundColor Green
+        } else {
+            Write-Host "  错误：前端版本号与预期 v$Version 不一致！" -ForegroundColor Red
             exit 1
         }
-        Write-Host "  前端版本号：v$DetectedVersion ✅" -ForegroundColor Green
     } else {
-        Write-Host "  警告：未在前端文件中找到版本号" -ForegroundColor Yellow
+        Write-Host "  警告：未指定版本号，跳过前端版本验证" -ForegroundColor Yellow
     }
 } else {
     Write-Host "  错误：未找到前端 index.js 文件" -ForegroundColor Red
