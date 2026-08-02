@@ -44,6 +44,8 @@ const ICONS = {
 
 export default function SettingsPanel({ theme, setTheme }) {
   const toast = useToast();
+  const showBackground = true;
+  const showHotkey = true;
 
   const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
 
@@ -351,9 +353,6 @@ export default function SettingsPanel({ theme, setTheme }) {
       toast?.("操作失败", "error");
     }
   };
-
-  const showBackground = true;
-  const showHotkey = true;
 
   return (
     <div className="set-wrap">
