@@ -17,6 +17,7 @@ dist-ssr
 
 # Generated build info (commit hash label)
 /build-info.json
+server/api/build-info.json
 
 # C# build artifacts (all projects)
 **/bin/

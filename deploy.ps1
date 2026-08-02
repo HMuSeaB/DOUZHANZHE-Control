@@ -84,10 +84,13 @@ foreach ($Base in $TargetBases) {
     $VersionFile = Join-Path $Base "version.txt"
     [System.IO.File]::WriteAllText($VersionFile, $AppVersion, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "  version.txt -> $Base" -ForegroundColor Green
-    $BuildInfoFile = Join-Path $Root "build-info.json"
-    if (Test-Path $BuildInfoFile) {
-        Copy-Item $BuildInfoFile (Join-Path $Base "build-info.json") -Force
-        Write-Host "  build-info.json -> $Base" -ForegroundColor Green
+    # build-info.json 只在运行时目录（bin/*）生成，避免把生成文件混入源码目录
+    if ($Base -like "*\bin\*") {
+        $BuildInfoFile = Join-Path $Root "build-info.json"
+        if (Test-Path $BuildInfoFile) {
+            Copy-Item $BuildInfoFile (Join-Path $Base "build-info.json") -Force
+            Write-Host "  build-info.json -> $Base" -ForegroundColor Green
+        }
     }
 }
 
