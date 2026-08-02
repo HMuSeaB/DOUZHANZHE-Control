@@ -2380,6 +2380,24 @@ try
 catch { /* 读取失败时使用默认值 */ }
 Log($"Version: {_appVersion}");
 
+// build-info.json 由打包脚本生成：数字版本保持不变，commit 仅作展示/追溯
+var _buildLabel = "";
+try
+{
+    var buildFile = Path.Combine(AppContext.BaseDirectory, "build-info.json");
+    if (File.Exists(buildFile))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(buildFile));
+        if (doc.RootElement.TryGetProperty("full", out var full) && full.ValueKind == JsonValueKind.String)
+            _buildLabel = full.GetString() ?? "";
+        else if (doc.RootElement.TryGetProperty("commit", out var commit) && commit.ValueKind == JsonValueKind.String)
+            _buildLabel = commit.GetString() ?? "";
+    }
+}
+catch { /* build-info 缺失时仅打印数字版本 */ }
+if (!string.IsNullOrWhiteSpace(_buildLabel))
+    Log($"Build: {_buildLabel}");
+
 app.MapGet("/api/update/check", async () =>
 {
     try
