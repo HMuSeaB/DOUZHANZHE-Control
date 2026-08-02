@@ -76,6 +76,19 @@ server/config/wmi-scan-result.json
 body_clean.json
 *.nodebak
 
+# Runtime user config (not shipped, should not be committed)
+server/config/auto-start-opts.json
+server/config/background.json
+server/config/background.png
+server/config/background-opts.json
+server/config/gpu-mode.json
+server/config/hotkey-status.json
+server/config/last-mode.json
+server/config/window-state.json
+server/config/profiles/
+server/config/overrides-安静-副本.json
+server/config/overrides-安静性能.json
+
 # Test artifacts
 _test_*/
 _test_ec/
