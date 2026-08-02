@@ -177,6 +177,28 @@ foreach ($f in $OldDrivers) {
     if (Test-Path $fp) { Remove-Item $fp -Force; Write-Host "  已清理旧驱动: $f" -ForegroundColor Gray }
 }
 
+# 剔除未使用的 WebView2 WPF 组件与 XML 文档（Shell 仅使用 WinForms）
+$UnusedFiles = @(
+    "Microsoft.Web.WebView2.Wpf.dll",
+    "Microsoft.Web.WebView2.Wpf.xml",
+    "Microsoft.Web.WebView2.Core.xml",
+    "Microsoft.Web.WebView2.WinForms.xml"
+)
+foreach ($f in $UnusedFiles) {
+    $fp = Join-Path $ApiDir $f
+    if (Test-Path $fp) {
+        Remove-Item $fp -Force
+        Write-Host "  已清理未使用文件: $f" -ForegroundColor Gray
+    }
+}
+
+# 保留根目录 WebView2Loader.dll，清理 runtimes 目录里的重复副本
+$RuntimesDir = Join-Path $ApiDir "runtimes"
+if ((Test-Path (Join-Path $ApiDir "WebView2Loader.dll")) -and (Test-Path $RuntimesDir)) {
+    Remove-Item -Recurse -Force $RuntimesDir
+    Write-Host "  已清理重复的 runtimes/WebView2Loader.dll" -ForegroundColor Gray
+}
+
 # 清理开发环境残留配置（dev 值不应打包进安装器）
 # 这些文件虽然 .gitignore 排除了，但物理存在于项目目录，dotnet publish 会复制它们。
 # 用户的配置文件由 API 在运行时按需创建（带安全默认值），不需要安装器预设。
