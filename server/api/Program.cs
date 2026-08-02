@@ -174,23 +174,35 @@ void SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
 }
 
 // ---- 风扇转速写入辅助方法 (WMI + EC 寄存器直写) ----
-void ApplyFanSpeed(WmiInterface wmi, HardwareAbstractionLayer hal, int? largeRpm, int? smallRpm)
+(int LargeMin, int LargeMax, int SmallMin, int SmallMax) FanRpmRange(string? mode) => mode switch
 {
+    "silent" => (1900, 2900, 1700, 6400),
+    "office" => (2600, 3500, 5900, 6900),
+    "gaming" => (4000, 4400, 7500, 8200),
+    "beast" => (3200, 3800, 6400, 7200),
+    _ => (0, 4400, 0, 8200)
+};
+
+void ApplyFanSpeed(WmiInterface wmi, HardwareAbstractionLayer hal, int? largeRpm, int? smallRpm, string? mode = null)
+{
+    var range = FanRpmRange(mode);
     if (largeRpm.HasValue)
     {
-        var speed = (byte)Math.Clamp(largeRpm.Value / 100, 0, 44);
+        var rpm = Math.Clamp(largeRpm.Value, range.LargeMin, range.LargeMax);
+        var speed = (byte)Math.Clamp(rpm / 100, 0, 44);
         wmi.SetFanManual(0, true);
         wmi.SetFanSpeed(0, speed);
         hal.WriteEcPort(0x5E, speed);
-        AppLog.Write("FanEC", $"EC直写 0x5E={speed} (大风扇 {largeRpm.Value}RPM)");
+        AppLog.Write("FanEC", $"EC直写 0x5E={speed} (大风扇 {rpm}RPM, mode={mode ?? "?"})");
     }
     if (smallRpm.HasValue)
     {
-        var speed = (byte)Math.Clamp(smallRpm.Value / 100, 0, 82);
+        var rpm = Math.Clamp(smallRpm.Value, range.SmallMin, range.SmallMax);
+        var speed = (byte)Math.Clamp(rpm / 100, 0, 82);
         wmi.SetFanManual(1, true);
         wmi.SetFanSpeed(1, speed);
         hal.WriteEcPort(0x5A, speed);
-        AppLog.Write("FanEC", $"EC直写 0x5A={speed} (小风扇 {smallRpm.Value}RPM)");
+        AppLog.Write("FanEC", $"EC直写 0x5A={speed} (小风扇 {rpm}RPM, mode={mode ?? "?"})");
     }
 }
 
@@ -1194,7 +1206,7 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi, Hardwar
     try
     {
         Log($"[fan/set-target] ← large={req.LargeRpm} small={req.SmallRpm}");
-        ApplyFanSpeed(wmi, hal, req.LargeRpm, req.SmallRpm);
+        ApplyFanSpeed(wmi, hal, req.LargeRpm, req.SmallRpm, mode);
         // 持久化固定风扇转速，供睡眠恢复 + 启动恢复使用
         SavePerfOverrides(o =>
         {
