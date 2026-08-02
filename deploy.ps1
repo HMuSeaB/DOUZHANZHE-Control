@@ -36,12 +36,16 @@ $Dist = Join-Path $Root "dist"
 $Targets = @(
     (Join-Path $Root "server\api\wwwroot"),
     (Join-Path $Root "server\api\bin\run\wwwroot"),
-    (Join-Path $Root "server\api\bin\build\wwwroot")
+    (Join-Path $Root "server\api\bin\build\wwwroot"),
+    (Join-Path $Root "server\shell\Douzhanzhe.Shell\bin\Debug\net8.0-windows\wwwroot"),
+    (Join-Path $Root "server\shell\Douzhanzhe.Shell\bin\Release\net8.0-windows\wwwroot")
 )
 $TargetBases = @(
     (Join-Path $Root "server\api"),
     (Join-Path $Root "server\api\bin\run"),
-    (Join-Path $Root "server\api\bin\build")
+    (Join-Path $Root "server\api\bin\build"),
+    (Join-Path $Root "server\shell\Douzhanzhe.Shell\bin\Debug\net8.0-windows"),
+    (Join-Path $Root "server\shell\Douzhanzhe.Shell\bin\Release\net8.0-windows")
 )
 
 # ── 3. 同步到每个 wwwroot ──
