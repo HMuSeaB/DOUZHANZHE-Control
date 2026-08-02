@@ -19,14 +19,14 @@ namespace Douzhanzhe.API;
 
 public sealed class GameProfileService
 {
-    private static readonly string ConfigPath = Path.Combine(
-        AppDomain.CurrentDomain.BaseDirectory, "config", "game-profiles.json");
+    private readonly string _configPath;
 
     private readonly object _lock = new();
     private GameProfilesData _data = new();
 
-    public GameProfileService()
+    public GameProfileService(string configDir)
     {
+        _configPath = Path.Combine(configDir, "game-profiles.json");
         Load();
     }
 
@@ -151,9 +151,9 @@ public sealed class GameProfileService
     {
         try
         {
-            if (File.Exists(ConfigPath))
+            if (File.Exists(_configPath))
             {
-                var json = File.ReadAllText(ConfigPath);
+                var json = File.ReadAllText(_configPath);
                 _data = JsonSerializer.Deserialize<GameProfilesData>(json) ?? new GameProfilesData();
                 AppLog.Write("GameProfile", $"Loaded {_data.Profiles.Count} profiles");
             }
@@ -175,12 +175,14 @@ public sealed class GameProfileService
     {
         try
         {
-            var dir = Path.GetDirectoryName(ConfigPath);
+            var dir = Path.GetDirectoryName(_configPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
             var json = JsonSerializer.Serialize(_data, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ConfigPath, json);
+            var tmp = _configPath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, _configPath, overwrite: true);
         }
         catch (Exception ex)
         {

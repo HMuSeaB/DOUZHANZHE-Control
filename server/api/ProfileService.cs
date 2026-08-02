@@ -258,8 +258,7 @@ public sealed class ProfileService
         var json = JsonSerializer.Serialize(_index, JsonOpts);
         var tmp = _indexPath + ".tmp";
         File.WriteAllText(tmp, json);
-        if (File.Exists(_indexPath)) File.Delete(_indexPath);
-        File.Move(tmp, _indexPath);
+        File.Move(tmp, _indexPath, overwrite: true);
     }
 
     private string ProfilePath(string id) => Path.Combine(_profilesDir, $"{id}.json");
@@ -282,8 +281,7 @@ public sealed class ProfileService
         var tmp = path + ".tmp";
         var json = JsonSerializer.Serialize(overrides, JsonOpts);
         File.WriteAllText(tmp, json);
-        if (File.Exists(path)) File.Delete(path);
-        File.Move(tmp, path);
+        File.Move(tmp, path, overwrite: true);
     }
 
     private static string SanitizeId(string name)

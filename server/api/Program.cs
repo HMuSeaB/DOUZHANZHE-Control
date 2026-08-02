@@ -45,7 +45,6 @@ builder.Services.AddSingleton<CpuPowerController>();
 builder.Services.AddSingleton<WmiInterface>();
 builder.Services.AddSingleton<FanCurveService>();
 builder.Services.AddSingleton<OsdService>();
-builder.Services.AddSingleton<GameProfileService>();
 builder.Services.AddSingleton<ProcessMonitorService>();
 builder.Services.AddHostedService<TelemetryBackgroundService>();
 // ---- Config directory (shared with Node.js) ----
@@ -58,6 +57,7 @@ if (Directory.Exists(sharedConfig))
 else if (!Directory.Exists(configDir))
     Directory.CreateDirectory(configDir);
 builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
+builder.Services.AddSingleton<GameProfileService>(sp => new GameProfileService(configDir));
 builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins(
