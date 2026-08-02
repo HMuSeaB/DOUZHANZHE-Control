@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useControlState } from "../hooks/useControlState";
 import FanCurvePanel from "../components/panels/FanCurvePanel";
-import { fetchFanCurveStatus, fetchRouteInfo } from "../services/uxtuAdapter";
+import { fetchFanCurveStatus, fetchRouteInfo, FULL_FAN_RANGE } from "../services/uxtuAdapter";
 
 export default function FanControl() {
   const { telemetry } = useControlState();
@@ -32,10 +32,13 @@ export default function FanControl() {
 
   const setFanTarget = async (fanIdx, pct) => {
     try {
+      const max = fanIdx === 0 ? FULL_FAN_RANGE.largeMax : FULL_FAN_RANGE.smallMax;
+      const rpm = Math.round((pct / 100) * max);
+      const body = fanIdx === 0 ? { largeRpm: rpm } : { smallRpm: rpm };
       await fetch("/api/fan/set-target", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fan: fanIdx, target: pct }),
+        body: JSON.stringify(body),
       });
     } catch {}
   };
