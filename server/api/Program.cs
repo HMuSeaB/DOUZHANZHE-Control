@@ -60,7 +60,9 @@ else if (!Directory.Exists(configDir))
 builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
 builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.WithOrigins("http://localhost:3100", "http://127.0.0.1:3100")
+    p.WithOrigins(
+        "http://localhost:3100", "http://127.0.0.1:3100",
+        "http://localhost:3101", "http://127.0.0.1:3101")
      .AllowAnyMethod()
      .AllowAnyHeader()));
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -2922,7 +2924,7 @@ app.MapFallbackToFile("index.html");
 // ---- Start server ----
 try
 {
-    Log("Starting server on http://127.0.0.1:3100");
+    Log("Starting server");
     app.Run();
 }
 catch (Exception ex)
