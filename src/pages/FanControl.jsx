@@ -1,19 +1,27 @@
 ﻿import { useState, useEffect } from "react";
 import { useControlState } from "../hooks/useControlState";
 import FanCurvePanel from "../components/panels/FanCurvePanel";
-import { fetchFanCurveStatus, fetchRouteInfo, FULL_FAN_RANGE } from "../services/uxtuAdapter";
+import { fetchFanCurveStatus, fetchRouteInfo, getFanRange, MODE_FAN_DEFAULTS } from "../services/uxtuAdapter";
 
 export default function FanControl() {
-  const { telemetry } = useControlState();
+  const { telemetry, settings } = useControlState();
   const [curveActive, setCurveActive] = useState(false);
-  const [fan1Pct, setFan1Pct] = useState(80);
-  const [fan2Pct, setFan2Pct] = useState(60);
+  const mode = settings.mode;
+  const fanRange = getFanRange(mode);
+  const [fan1TargetRpm, setFan1TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent).fanLargeRpmTarget);
+  const [fan2TargetRpm, setFan2TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent).fanSmallRpmTarget);
   const [routeInfo, setRouteInfo] = useState(null);
 
   const fan1Rpm = telemetry?.fan?.rpm?.[0] ?? 0;
   const fan2Rpm = telemetry?.fan?.rpm?.[1] ?? 0;
   const fan1TelePct = telemetry?.fan?.pct?.[0] ?? 0;
   const fan2TelePct = telemetry?.fan?.pct?.[1] ?? 0;
+
+  useEffect(() => {
+    const def = MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent;
+    setFan1TargetRpm(def.fanLargeRpmTarget);
+    setFan2TargetRpm(def.fanSmallRpmTarget);
+  }, [mode]);
 
   useEffect(() => {
     let disposed = false;
@@ -30,12 +38,10 @@ export default function FanControl() {
     return () => { disposed = true; clearInterval(timer); };
   }, []);
 
-  const setFanTarget = async (fanIdx, pct) => {
+  const setFanTarget = async (fanIdx, rpm) => {
     try {
-      const max = fanIdx === 0 ? FULL_FAN_RANGE.largeMax : FULL_FAN_RANGE.smallMax;
-      const rpm = Math.round((pct / 100) * max);
       const body = fanIdx === 0 ? { largeRpm: rpm } : { smallRpm: rpm };
-      await fetch("/api/fan/set-target", {
+      await fetch(`/api/fan/set-target?mode=${encodeURIComponent(mode)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -81,20 +87,20 @@ export default function FanControl() {
       <div className="section-title">手动调速<span className={"tag" + (curveActive ? "" : " hidden")} id="manualTag" style={curveActive ? {} : {display:"none"}}>曲线运行时禁用</span><span className="line"></span></div>
       <div className="card reveal enter" style={{ padding: "6px 20px 12px", animationDelay: ".06s" }}>
         <div className="param">
-          <span className="pk"><b>大风扇目标</b><small>固定转速百分比</small></span>
-          <input type="range" className="slider fan-manual" min="0" max="100" value={fan1Pct} disabled={curveActive}
-            onChange={e => { const v = Number(e.target.value); setFan1Pct(v); setFanTarget(0, v); }} />
-          <span className="pv">{fan1Pct} <small>%</small></span>
+          <span className="pk"><b>大风扇目标</b><small>固定转速 · 当前模式 {fanRange.largeMin}–{fanRange.largeMax} RPM</small></span>
+          <input type="range" className="slider fan-manual" min={fanRange.largeMin} max={fanRange.largeMax} step="100" value={fan1TargetRpm} disabled={curveActive}
+            onChange={e => { const v = Number(e.target.value); setFan1TargetRpm(v); setFanTarget(0, v); }} />
+          <span className="pv">{fan1TargetRpm} <small>RPM</small></span>
         </div>
         <div className="param">
-          <span className="pk"><b>小风扇目标</b><small>固定转速百分比</small></span>
-          <input type="range" className="slider fan-manual" min="0" max="100" value={fan2Pct} disabled={curveActive}
-            onChange={e => { const v = Number(e.target.value); setFan2Pct(v); setFanTarget(1, v); }} />
-          <span className="pv">{fan2Pct} <small>%</small></span>
+          <span className="pk"><b>小风扇目标</b><small>固定转速 · 当前模式 {fanRange.smallMin}–{fanRange.smallMax} RPM</small></span>
+          <input type="range" className="slider fan-manual" min={fanRange.smallMin} max={fanRange.smallMax} step="100" value={fan2TargetRpm} disabled={curveActive}
+            onChange={e => { const v = Number(e.target.value); setFan2TargetRpm(v); setFanTarget(1, v); }} />
+          <span className="pv">{fan2TargetRpm} <small>RPM</small></span>
         </div>
         <div className="hint">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
-          手动调速与自定义曲线互斥：启用曲线后手动滑块自动灰化，停止曲线后恢复。
+          手动调速与自定义曲线互斥；可调范围随散热模式变化（安静 1900–2900，均衡 2600–3500，野兽 3200–3800，斗战 4000–4400）。
         </div>
       </div>
 
