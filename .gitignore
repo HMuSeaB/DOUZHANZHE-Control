@@ -85,6 +85,7 @@ server/config/gpu-mode.json
 server/config/hotkey-status.json
 server/config/last-mode.json
 server/config/window-state.json
+server/config/permission.json
 server/config/profiles/
 server/config/overrides-*.json
 
