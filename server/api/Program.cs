@@ -1157,9 +1157,9 @@ app.MapPost("/api/smu/set", (SmuSetRequest req, HardwareDetector detector, strin
         var modeVal = req.ValueM;
         switch (req.Parameter)
         {
-            case "power_limit": SavePerfOverrides(o => o.Smu.StapmLimitW = modeVal, mode); break;
+            case "stapm_limit" or "power_limit": SavePerfOverrides(o => o.Smu.StapmLimitW = modeVal, mode); break;
             case "short_power_limit": SavePerfOverrides(o => o.Smu.ShortPowerLimitW = modeVal, mode); break;
-            case "temp_limit": SavePerfOverrides(o => o.Smu.TempLimitC = modeVal, mode); break;
+            case "tctl_temp" or "temp_limit": SavePerfOverrides(o => o.Smu.TempLimitC = modeVal, mode); break;
             case "co_all": SavePerfOverrides(o => o.Smu.CoAll = modeVal, mode); break;
         }
 
@@ -1214,8 +1214,9 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi, Hardwar
         // 持久化固定风扇转速，供睡眠恢复 + 启动恢复使用
         SavePerfOverrides(o =>
         {
-            if (req.LargeRpm.HasValue) o.Fan.LargeRpm = req.LargeRpm.Value;
-            if (req.SmallRpm.HasValue) o.Fan.SmallRpm = req.SmallRpm.Value;
+            var range = FanRpmRange(mode);
+            if (req.LargeRpm.HasValue) o.Fan.LargeRpm = Math.Clamp(req.LargeRpm.Value, range.LargeMin, range.LargeMax);
+            if (req.SmallRpm.HasValue) o.Fan.SmallRpm = Math.Clamp(req.SmallRpm.Value, range.SmallMin, range.SmallMax);
         }, mode);
         return Results.Json(new { ok = true });
     }
