@@ -576,9 +576,13 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     private string SharedConfigDir()
     {
         var local = Path.Combine(AppContext.BaseDirectory, "config");
-        var devShared = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "server", "config"));
-        if (Directory.Exists(devShared))
-            return devShared;
+        // 开发环境：向上找到仓库根目录（存在 AGENTS.md + server/config）后使用共享 config
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+        {
+            var candidate = Path.Combine(d.FullName, "server", "config");
+            if (Directory.Exists(candidate) && File.Exists(Path.Combine(d.FullName, "AGENTS.md")))
+                return Path.GetFullPath(candidate);
+        }
         Directory.CreateDirectory(local);
         return local;
     }
@@ -831,7 +835,7 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
     {
         try
         {
-            var sharedDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "server", "config"));
+            var sharedDir = SharedConfigDir();
             if (!Directory.Exists(sharedDir)) Directory.CreateDirectory(sharedDir);
             _configWatcher = new FileSystemWatcher(sharedDir, "ui-state.json")
             {
