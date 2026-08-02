@@ -56,8 +56,9 @@ export async function fetchTelemetry() {
   return res.json();
 }
 export function createTelemetrySocket(onData, onError) {
-  // 绕过 Vite 代理直连 C# HAL WebSocket
-  const ws = new WebSocket(`ws://127.0.0.1:3100/ws`);
+  // WebSocket 跟随当前页面地址（开发 3101 / 安装版 3100）
+  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${wsProto}//${location.host}/ws`);
   ws.onmessage = (e) => {
     try {
       onData(JSON.parse(e.data));
