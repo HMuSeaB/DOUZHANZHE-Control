@@ -5,7 +5,7 @@ const THERMAL_LABELS = { silent: '安静', office: '均衡', gaming: '斗战', b
 
 export default function ProfileManageModal({
   open, onClose, profiles, setProfiles, currentProfile, setCurrentProfile,
-  switchProfile, afterProfileDeleted, onResetProfile,
+  afterProfileDeleted, onResetProfile,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');

@@ -38,6 +38,9 @@
   --radius-sm:calc(var(--seed-radius) - 4px);
   --sp:16px;
   --dur:.22s;
+
+/* 隐藏原生 input 载体（颜色/文件选择器等），统一由自定义按钮触发 */
+.hidden{display:none !important}
   --ease:cubic-bezier(.2,.7,.2,1);
 }
 html[data-theme="light"]{

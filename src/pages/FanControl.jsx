@@ -49,7 +49,7 @@ export default function FanControl() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-    } catch {}
+    } catch { /* 调速失败保持当前滑块值 */ }
   };
 
   return (
@@ -110,7 +110,7 @@ export default function FanControl() {
       {/* 自定义风扇曲线 */}
       <div className="section-title">自定义风扇曲线<span className="line"></span></div>
       <div className="card reveal enter" style={{ animationDelay: ".1s" }}>
-        <FanCurvePanel telemetry={telemetry} mode={mode} overrides={overrides} onCurveActiveChange={setCurveActive} />
+        <FanCurvePanel mode={mode} overrides={overrides} onCurveActiveChange={setCurveActive} />
       </div>
     </section>
   );

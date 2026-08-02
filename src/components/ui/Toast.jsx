@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- Toast 上下文与 Provider 同文件，属既有模式 */
 import { createContext, useCallback, useContext, useState } from "react";
 
 const ToastContext = createContext(null);

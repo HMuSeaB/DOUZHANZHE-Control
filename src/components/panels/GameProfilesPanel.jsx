@@ -188,10 +188,16 @@ export default function GameProfilesPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "保存自动切换配置失败");
+        return;
+      }
       const data = await res.json();
       setConfig({ enabled: data.enabled, defaultMode: data.defaultMode });
     } catch (err) {
       console.error("Failed to update config:", err);
+      alert("保存自动切换配置失败");
     }
   };
 
@@ -199,14 +205,20 @@ export default function GameProfilesPanel() {
     const p = profiles.find(x => x.id === id);
     if (!p) return;
     try {
-      await fetch(`/api/game-profiles/${id}`, {
+      const res = await fetch(`/api/game-profiles/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...p, enabled }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "更新规则失败");
+        return;
+      }
       fetchData();
     } catch (err) {
       console.error("Failed to toggle profile:", err);
+      alert("更新规则失败");
     }
   };
 
@@ -255,16 +267,27 @@ export default function GameProfilesPanel() {
   const deleteProfile = async (id) => {
     if (!confirm("确定删除此规则？")) return;
     try {
-      await fetch(`/api/game-profiles/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/game-profiles/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "删除规则失败");
+        return;
+      }
       fetchData();
     } catch (err) {
       console.error("Failed to delete profile:", err);
+      alert("删除规则失败");
     }
   };
 
   const pickFile = async (setter) => {
     try {
       const res = await fetch("/api/game-profiles/file-pick");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "选择文件失败");
+        return;
+      }
       const data = await res.json();
       if (data.selected) {
         setter(prev => ({
@@ -275,6 +298,7 @@ export default function GameProfilesPanel() {
       }
     } catch (err) {
       console.error("Failed to pick file:", err);
+      alert("选择文件失败");
     }
   };
 
@@ -282,6 +306,11 @@ export default function GameProfilesPanel() {
     setScanning(true);
     try {
       const res = await fetch("/api/game-profiles/scan");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "扫描失败，请稍后重试");
+        return;
+      }
       const data = await res.json();
       setScanResults(data || []);
       setSelectedGames(new Set());
@@ -337,6 +366,11 @@ export default function GameProfilesPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ games }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "批量添加失败");
+        return;
+      }
       const data = await res.json();
       setShowScan(false);
       setSelectedGames(new Set());

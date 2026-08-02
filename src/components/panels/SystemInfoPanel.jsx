@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Skeleton, OfflineCard, EmptyState } from "../ui/PageState";
 
 const LS_SYS_INFO = "douzhanzhe_sys_info";
@@ -54,6 +54,9 @@ function SysInfoSkeleton() {
 }
 
 export default function SystemInfoPanel({ trigger, onRefreshDone }) {
+  const onRefreshDoneRef = useRef(onRefreshDone);
+  useEffect(() => { onRefreshDoneRef.current = onRefreshDone; });
+
   const [info, setInfo] = useState(() => {
     try { const r = localStorage.getItem(LS_SYS_INFO); return r ? JSON.parse(r) : null; } catch { return null; }
   });
@@ -63,7 +66,7 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
   const [loading, setLoading] = useState(!info || !ext);
   const [offline, setOffline] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [r1, r2] = await Promise.all([
@@ -75,15 +78,15 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
       setOffline(!r1 && !r2);
     } finally {
       setLoading(false);
-      onRefreshDone?.();
+      onRefreshDoneRef.current?.();
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => {
     if (trigger === 0) return;
     fetchData();
-  }, [trigger]);
+  }, [trigger, fetchData]);
 
   const i = info || {};
   const e = ext || {};

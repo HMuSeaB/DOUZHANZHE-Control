@@ -32,7 +32,7 @@ export default function App() {
     try { return localStorage.getItem("dz_page") || "dashboard"; } catch { return "dashboard"; }
   });
   useEffect(() => {
-    try { localStorage.setItem("dz_page", activePage); } catch {}
+    try { localStorage.setItem("dz_page", activePage); } catch { /* 隐私模式等场景忽略 */ }
   }, [activePage]);
 
   const isBellator = !platformInfoReady || platformInfo.oem === "Bellator";

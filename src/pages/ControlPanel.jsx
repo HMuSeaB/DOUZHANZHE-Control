@@ -54,7 +54,7 @@ export default function ControlPanel() {
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem(ACC_STATE_KEY, JSON.stringify(accState)); } catch {}
+    try { localStorage.setItem(ACC_STATE_KEY, JSON.stringify(accState)); } catch { /* 配额不足时忽略 */ }
   }, [accState]);
 
   function toggleAcc(key) {
@@ -169,7 +169,6 @@ export default function ControlPanel() {
         setProfiles={setProfiles}
         currentProfile={currentProfile}
         setCurrentProfile={setCurrentProfile}
-        switchProfile={switchProfile}
         afterProfileDeleted={afterProfileDeleted}
         onResetProfile={handleProfileReset}
       />

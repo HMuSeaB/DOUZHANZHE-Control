@@ -2,13 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchHotkeyConfig, setHotkeyConfig, monitorOff, applyWallpaperCss } from "../../services/uxtuAdapter";
 import { useToast } from "../ui/Toast";
 
-const MODES = [
-  { id: "silent", label: "安静" },
-  { id: "office", label: "均衡" },
-  { id: "beast", label: "野兽" },
-  { id: "gaming", label: "斗战" },
-];
-
 const THEMES = [
   { id: "light", label: "浅色" },
   { id: "dark", label: "深色" },
@@ -49,7 +42,7 @@ const ICONS = {
   close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>,
 };
 
-export default function SettingsPanel({ settings, setSettings, theme, setTheme }) {
+export default function SettingsPanel({ theme, setTheme }) {
   const toast = useToast();
 
   const [bg, setBg] = useState({ enabled: false, opacity: 60, blur: 45, maskColor: "black", hasImage: false, url: null });
@@ -76,7 +69,6 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
   const bgBlur = bg.blur;
   const bgMask = bg.maskColor;
   const bgHasImage = bg.hasImage;
-  const bgPreview = bg.url;
 
   const syncWallpaperCss = (next) => {
     applyWallpaperCss(next);
@@ -129,14 +121,14 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
         if (d.apiUrl != null) setBgApiUrl(d.apiUrl);
       })
       .catch(() => {});
-  }, []);
+  }, [showBackground]);
 
   const updateBg = (patch) => {
     setBg(prev => typeof patch === "function" ? patch(prev) : { ...prev, ...patch });
   };
 
   const handleExport = async () => {
-    const cats = Object.entries(selectedCats).filter(([_, v]) => v).map(([k]) => k);
+    const cats = Object.entries(selectedCats).filter(([, v]) => v).map(([k]) => k);
     if (cats.length === 0) { toast?.("请至少选择一个分类", "info"); return; }
     try {
       const res = await fetch("/api/backup/export", {
@@ -168,7 +160,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const cats = Object.entries(selectedCats).filter(([_, v]) => v).map(([k]) => k);
+      const cats = Object.entries(selectedCats).filter(([, v]) => v).map(([k]) => k);
       if (cats.length === 0) { toast?.("请至少选择一个分类", "info"); return; }
       const res = await fetch("/api/backup/import", {
         method: "POST",
@@ -363,14 +355,6 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
     }
   };
 
-  const toggleSetting = (key, value) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const showSwitches = true;
-  const showKeyboard = true;
-  const showAbout = true;
-  const showAutoStart = true;
   const showBackground = true;
   const showHotkey = true;
 

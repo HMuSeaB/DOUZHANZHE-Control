@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { applySmuSet, applyHardwareControl, powerPlanHALMap, applyGpuControl, applyNvapiOverclock, applyNvapiThermalLimit, setCpuFreqLimit, setCpuTurbo, setCpuCoreLimitPercent, coreToPercent } from "../../services/uxtuAdapter";
-import { useToast } from "../ui/Toast";
 import OverrideSlider from "../ui/OverrideSlider";
 
 const POWER_PLANS = [
@@ -30,11 +29,10 @@ function Switch({ label, checked, disabled, onChange }) {
   );
 }
 export default function PerformancePanel({
-  settings, setSettings, uxtuParams, setUxtuParams,
-  showCpu = true, showGpu = true, showPower = true, editMode = false,
+  settings, uxtuParams, setUxtuParams,
+  showCpu = true, showGpu = true, showPower = true,
   overrides, saveOverride, clearOverride, gpuMode, switching,
 }) {
-  const toast = useToast();
   const gpuClockDisabled = gpuMode === 0 || gpuMode === 2;
   const gpuAllDisabled = gpuMode === 2;
   const paramsLocked = !!switching;
