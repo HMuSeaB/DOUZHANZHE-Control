@@ -1,6 +1,6 @@
 ﻿; ============================================================
 ; 斗战者控制台 (Douzhanzhe Console) — Inno Setup 安装脚本
-; 版本: 1.3.2
+; 版本: 2.0.0
 ; 许可证: GPL-3.0-only
 ;
 ; 依赖: Inno Setup 6.1+ (https://jrsoftware.org/isdl.php)
@@ -13,7 +13,7 @@
 #define MyAppName "斗战者控制台"
 #define MyAppNameEn "Douzhanzhe Console"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.3.2"
+  #define MyAppVersion "2.0.0"
 #endif
 #define MyAppPublisher "Douzhanzhe"
 #define MyAppExeName "Douzhanzhe.Shell.exe"
@@ -292,7 +292,7 @@ begin
       DelTree(ExpandConstant('{app}\wwwroot\assets'), True, True, True);
 
     // 清理 WebView2 浏览器缓存（覆盖安装时旧 JS bundle 会被缓存，导致版本号不更新）
-    // 仅清除 HTTP/GPU/ServiceWorker 缓存，保留 Local Storage / IndexedDB（前端 overrides 持久化依赖 localStorage）
+    // 仅清除 HTTP/GPU/ServiceWorker 缓存，保留 Local Storage / IndexedDB（配置以后端为唯一权威源）
     // index.html 已由后端设置 Cache-Control: no-cache，新 bundle 不会被 HTTP 缓存
     WebView2Dir := ExpandConstant('{localappdata}\Douzhanzhe Console\WebView2');
     if DirExists(WebView2Dir) then
