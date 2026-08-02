@@ -285,11 +285,6 @@ export default function FanCurvePanel({ telemetry, onCurveActiveChange }) {
           偏离计数：<b>{routeInfo?.itsmDeviationCount ?? 0}</b>
         </div>
 
-        <div className="curve-actions">
-          <button className="btn primary" onClick={handleApply} disabled={curveActive}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M20 6 9 17l-5-5"/></svg>应用并启动</button>
-          <button className="btn" onClick={handleStop} disabled={!curveActive}>停止</button>
-          <button className="btn ghost" onClick={handleResetDefaults} disabled={curveActive}>重置默认</button>
-        </div>
       </div>
 
       <div className="curve-footer">
@@ -309,6 +304,10 @@ export default function FanCurvePanel({ telemetry, onCurveActiveChange }) {
         </div>
         <div className="curve-point-actions">
           <button className="btn" onClick={handleAddPoint} disabled={curveActive}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 5v14M5 12h14"/></svg>添加控制点</button>
+          <span className="sp"></span>
+          <button className="btn primary" onClick={handleApply} disabled={curveActive}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M20 6 9 17l-5-5"/></svg>应用并启动</button>
+          <button className="btn" onClick={handleStop} disabled={!curveActive}>停止</button>
+          <button className="btn ghost" onClick={handleResetDefaults} disabled={curveActive}>重置默认</button>
         </div>
       </div>
     </div>

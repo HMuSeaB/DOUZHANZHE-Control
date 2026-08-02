@@ -12,15 +12,18 @@ export default function FanControl() {
   const [fan2TargetRpm, setFan2TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent).fanSmallRpmTarget);
   const [routeInfo, setRouteInfo] = useState(null);
 
-  const fan1Rpm = telemetry?.fan?.rpm?.[0] ?? 0;
-  const fan2Rpm = telemetry?.fan?.rpm?.[1] ?? 0;
-  const fan1TelePct = telemetry?.fan?.pct?.[0] ?? 0;
-  const fan2TelePct = telemetry?.fan?.pct?.[1] ?? 0;
+  const fan1Rpm = telemetry?.fanLargeRpm ?? 0;
+  const fan2Rpm = telemetry?.fanSmallRpm ?? 0;
+  const fan1Pct = telemetry?.fanLargeMax ? Math.min(100, (fan1Rpm / telemetry.fanLargeMax) * 100) : 0;
+  const fan2Pct = telemetry?.fanSmallMax ? Math.min(100, (fan2Rpm / telemetry.fanSmallMax) * 100) : 0;
 
   useEffect(() => {
     const def = MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent;
-    setFan1TargetRpm(def.fanLargeRpmTarget);
-    setFan2TargetRpm(def.fanSmallRpmTarget);
+    const timer = setTimeout(() => {
+      setFan1TargetRpm(def.fanLargeRpmTarget);
+      setFan2TargetRpm(def.fanSmallRpmTarget);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [mode]);
 
   useEffect(() => {
@@ -73,13 +76,13 @@ export default function FanControl() {
       <div className="card reveal enter" style={{ padding: "6px 20px", animationDelay: ".02s" }}>
         <div className="fan-row">
           <span className="fname"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1.5-5 4-5 1.5 2-.5 5-4 5Zm2.1 3.3c2.6 1.5 3.4 3.7 2.2 5.9-2.4.4-4-2.4-2.2-5.9Zm-6.3.1c-2.6 1.5-4.8.7-5.9-1.6 1.6-1.9 4.7-1 6 1.6Z"/></svg>大风扇</span>
-          <div className="bar"><i style={{ width: fan1TelePct + "%" }}></i></div>
-          <span className="rpm"><b>{fan1Rpm}</b> RPM<small>目标 {fan1TelePct}%</small></span>
+          <div className="bar"><i style={{ width: fan1Pct + "%" }}></i></div>
+          <span className="rpm"><b>{fan1Rpm}</b> RPM<small>实时 {Math.round(fan1Pct)}%</small></span>
         </div>
         <div className="fan-row">
           <span className="fname"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1.5-5 4-5 1.5 2-.5 5-4 5Zm2.1 3.3c2.6 1.5 3.4 3.7 2.2 5.9-2.4.4-4-2.4-2.2-5.9Zm-6.3.1c-2.6 1.5-4.8.7-5.9-1.6 1.6-1.9 4.7-1 6 1.6Z"/></svg>小风扇</span>
-          <div className="bar"><i style={{ width: fan2TelePct + "%" }}></i></div>
-          <span className="rpm"><b>{fan2Rpm}</b> RPM<small>目标 {fan2TelePct}%</small></span>
+          <div className="bar"><i style={{ width: fan2Pct + "%" }}></i></div>
+          <span className="rpm"><b>{fan2Rpm}</b> RPM<small>实时 {Math.round(fan2Pct)}%</small></span>
         </div>
       </div>
 
