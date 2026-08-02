@@ -43,7 +43,6 @@ builder.Services.AddSingleton<GpuController>();
 builder.Services.AddSingleton<NvapiGpuController>();
 builder.Services.AddSingleton<CpuPowerController>();
 builder.Services.AddSingleton<WmiInterface>();
-builder.Services.AddSingleton<FanCurveService>();
 builder.Services.AddSingleton<OsdService>();
 builder.Services.AddSingleton<ProcessMonitorService>();
 builder.Services.AddHostedService<TelemetryBackgroundService>();
@@ -58,6 +57,11 @@ else if (!Directory.Exists(configDir))
     Directory.CreateDirectory(configDir);
 builder.Services.AddSingleton<ProfileService>(sp => new ProfileService(configDir));
 builder.Services.AddSingleton<GameProfileService>(sp => new GameProfileService(configDir));
+builder.Services.AddSingleton<FanCurveService>(sp => new FanCurveService(
+    sp.GetRequiredService<HardwareAbstractionLayer>(),
+    sp.GetRequiredService<WmiInterface>(),
+    sp.GetRequiredService<ILogger<FanCurveService>>(),
+    configDir));
 builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins(
@@ -1937,7 +1941,7 @@ var backupCategories = new Dictionary<string, string[]>
     ["games"] = new[] { "game-profiles.json" },
     ["hotkeys"] = new[] { "hotkey-config.json", "hotkey-status.json" },
     ["appearance"] = new[] { "ui-state.json" },
-    ["background"] = new[] { "background.json" },
+    ["background"] = new[] { "background-opts.json" },
     ["autostart"] = new[] { "auto-start-opts.json" },
 };
 
@@ -2041,7 +2045,9 @@ app.MapPost("/api/backup/import", async (HttpContext ctx, HardwareDetector detec
                 if (!catFiles.TryGetProperty(f, out var content)) continue;
                 var filePath = Path.Combine(configDir, f);
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? configDir);
-                await File.WriteAllTextAsync(filePath, JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true }));
+                var tmpPath = filePath + ".tmp";
+                await File.WriteAllTextAsync(tmpPath, JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true }));
+                File.Move(tmpPath, filePath, overwrite: true);
                 restored++;
             }
         }
@@ -2296,24 +2302,23 @@ app.MapPost("/api/background", async (HttpContext ctx) =>
         if (meta.Contains("jpeg") || meta.Contains("jpg")) ext = "jpg";
         else if (meta.Contains("webp")) ext = "webp";
 
-        // 清理旧的背景图片（只删图片文件，不碰 JSON 配置）
+        var bytes = Convert.FromBase64String(b64);
+        const int MaxBackgroundBytes = 8 * 1024 * 1024;
+        if (bytes.Length > MaxBackgroundBytes)
+            return Results.Json(new { ok = false, error = "图片超过 8MB 限制" });
+
+        // 先校验后清理，避免超限/解码失败把现有背景删丢
         foreach (var old in BgImageFiles())
         {
             try { File.Delete(old); }
             catch { /* 忽略被占用的文件，写入时会被覆盖 */ }
         }
 
-        var bytes = Convert.FromBase64String(b64);
-        const int MaxBackgroundBytes = 8 * 1024 * 1024;
-        if (bytes.Length > MaxBackgroundBytes)
-            return Results.Json(new { ok = false, error = "图片超过 8MB 限制" });
-
         var filePath = Path.Combine(configDir, $"background.{ext}");
         var tmpPath = filePath + ".tmp";
         await File.WriteAllBytesAsync(tmpPath, bytes);
         // 原子替换：先写临时文件，再重命名
-        if (File.Exists(filePath)) File.Delete(filePath);
-        File.Move(tmpPath, filePath);
+        File.Move(tmpPath, filePath, overwrite: true);
         return Results.Json(new { ok = true, ext });
     }
     catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }

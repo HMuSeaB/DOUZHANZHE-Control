@@ -127,20 +127,15 @@ public sealed class FanCurveService : IDisposable
     public FanCurveService(
         HardwareAbstractionLayer hal,
         WmiInterface wmi,
-        ILogger<FanCurveService> log)
+        ILogger<FanCurveService> log,
+        string configDir)
     {
         _hal = hal;
         _wmi = wmi;
         _log = log;
 
-        // 定位 config 目录（与 Program.cs 逻辑一致）
-        _configDir = Path.Combine(AppContext.BaseDirectory, "config");
-        if (!Directory.Exists(_configDir))
-        {
-            var devConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "config"));
-            if (Directory.Exists(devConfig))
-                _configDir = devConfig;
-        }
+        // 与 Program.cs 共享同一 configDir（开发环境统一 server/config）
+        _configDir = configDir;
         Directory.CreateDirectory(_configDir);
 
         // 启动时清理残留状态：如果上次进程被强杀（重启/崩溃），EC 可能残留手动模式
