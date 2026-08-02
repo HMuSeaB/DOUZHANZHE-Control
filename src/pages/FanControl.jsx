@@ -4,7 +4,7 @@ import FanCurvePanel from "../components/panels/FanCurvePanel";
 import { fetchFanCurveStatus, fetchRouteInfo, getFanRange, MODE_FAN_DEFAULTS } from "../services/uxtuAdapter";
 
 export default function FanControl() {
-  const { telemetry, settings } = useControlState();
+  const { telemetry, settings, overrides } = useControlState();
   const [curveActive, setCurveActive] = useState(false);
   const mode = settings.mode;
   const fanRange = getFanRange(mode);
@@ -87,7 +87,7 @@ export default function FanControl() {
       </div>
 
       {/* 手动调速 */}
-      <div className="section-title">手动调速<span className={"tag" + (curveActive ? "" : " hidden")} id="manualTag" style={curveActive ? {} : {display:"none"}}>曲线运行时禁用</span><span className="line"></span></div>
+      <div className="section-title">手动调速<span className={"tag" + (curveActive ? "" : " hidden")}>曲线运行时禁用</span><span className="line"></span></div>
       <div className="card reveal enter" style={{ padding: "6px 20px 12px", animationDelay: ".06s" }}>
         <div className="param">
           <span className="pk"><b>大风扇目标</b><small>固定转速 · 当前模式 {fanRange.largeMin}–{fanRange.largeMax} RPM</small></span>
@@ -110,7 +110,7 @@ export default function FanControl() {
       {/* 自定义风扇曲线 */}
       <div className="section-title">自定义风扇曲线<span className="line"></span></div>
       <div className="card reveal enter" style={{ animationDelay: ".1s" }}>
-        <FanCurvePanel telemetry={telemetry} onCurveActiveChange={setCurveActive} />
+        <FanCurvePanel telemetry={telemetry} mode={mode} overrides={overrides} onCurveActiveChange={setCurveActive} />
       </div>
     </section>
   );

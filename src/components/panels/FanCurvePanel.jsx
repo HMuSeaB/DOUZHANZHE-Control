@@ -71,7 +71,7 @@ const Y_TICKS = [0, 2100, 4200, 6300, 8400];
 const X_TICKS = [40, 55, 70, 85, 100];
 const X_TP = X_TICKS.map(tX);
 
-export default function FanCurvePanel({ telemetry, onCurveActiveChange }) {
+export default function FanCurvePanel({ telemetry, mode, overrides, onCurveActiveChange }) {
   const [points, setPoints] = useState(DEFAULT_POINTS);
   const [curveActive, setCurveActive] = useState(false);
   const [activeFan, setActiveFan] = useState("big");
@@ -161,10 +161,11 @@ export default function FanCurvePanel({ telemetry, onCurveActiveChange }) {
     if (res?.ok) {
       setCurveActive(false);
       if (onCurveActiveChange) onCurveActiveChange(false);
-      try { await reapplyOverrides(); } catch {}
+      // 停止曲线后仅重发当前模式的用户自定义参数，避免误清空全部 overrides
+      try { if (mode) await reapplyOverrides(mode, overrides); } catch {}
       refreshRoute();
     }
-  }, [onCurveActiveChange, refreshRoute]);
+  }, [mode, overrides, onCurveActiveChange, refreshRoute]);
 
   const handleVsInput = useCallback((idx, key, val) => {
     const [rMin, rMax] = key === "largeRpm" ? [1900, 4400] : [1700, 8200];

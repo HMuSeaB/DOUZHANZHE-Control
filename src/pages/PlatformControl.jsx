@@ -63,7 +63,7 @@ function PlatformSkeleton() {
 }
 
 export default function PlatformControl() {
-  const { telemetry, backendOnline } = useControlState();
+  const { telemetry, backendOnline, platformInfo } = useControlState();
 
   const asBool = (value) => value === true || value === 1 || value === "1";
   const kbLevel = telemetry?.kbBrightness != null ? Number(telemetry.kbBrightness) : 0;
@@ -144,7 +144,7 @@ export default function PlatformControl() {
       <div className={isOffline ? "is-offline" : ""}>
       <div className="hint" style={{ margin: "0 0 18px" }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-        本页内容随笔记本型号变化：后端返回什么控制项，前端就渲染什么。
+        本页控制项为当前机型已验证的固定能力；EC 信息只读展示 CPU / GPU 传感器原始值。
       </div>
 
       <div className="section-title">控制项<span className="line"></span></div>
@@ -206,10 +206,8 @@ export default function PlatformControl() {
 
       <div className="section-title">EC 信息<span className="tag">只读</span><span className="line"></span></div>
       <div className="card reveal enter" style={{ padding: 0, animationDelay: ".06s" }}>
-        <div className="row-line"><span className="rk"><b>EC 固件版本</b><small>嵌入式控制器固件</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
-        <div className="row-line"><span className="rk"><b>CPU 传感器原始值</b><small>EC 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
-        <div className="row-line"><span className="rk"><b>GPU 传感器原始值</b><small>EC 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
-        <div className="row-line"><span className="rk"><b>主板温度</b><small>EC 直读</small></span><span className="pv" style={{ width: "auto" }}>—</span></div>
+        <div className="row-line"><span className="rk"><b>CPU 传感器原始值</b><small>EC 0x1C 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>{platformInfo.ecCpuTemp != null ? platformInfo.ecCpuTemp : "—"}</span></div>
+        <div className="row-line"><span className="rk"><b>GPU 传感器原始值</b><small>EC 0xE0 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>{platformInfo.ecGpuTemp != null ? platformInfo.ecGpuTemp : "—"}</span></div>
       </div>
       </div>
     </section>
