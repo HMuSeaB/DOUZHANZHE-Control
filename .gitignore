@@ -86,8 +86,7 @@ server/config/hotkey-status.json
 server/config/last-mode.json
 server/config/window-state.json
 server/config/profiles/
-server/config/overrides-安静-副本.json
-server/config/overrides-安静性能.json
+server/config/overrides-*.json
 
 # Test artifacts
 _test_*/

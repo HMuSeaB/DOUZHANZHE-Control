@@ -1,9 +1,0 @@
-{
-  "enabled": true,
-  "opacity": 20,
-  "blur": 7,
-  "maskColor": "black",
-  "source": "local",
-  "interval": "1h",
-  "apiUrl": ""
-}
