@@ -3,6 +3,7 @@ using Microsoft.Web.WebView2.Core;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using Windows.UI.Notifications;
 
@@ -47,6 +48,10 @@ public partial class Form1 : Form
         ("mode-silent", "安静模式", "ctrl,shift", "3",   "mode:silent"),
         ("mode-gaming", "斗战模式", "ctrl,shift", "4",   "mode:gaming"),
     ];
+
+    // config id → 实际动作（mode:xxx 或 monitor-off），注册与 WndProc 共用
+    private static readonly Dictionary<string, string> DefaultHotkeyActions =
+        DefaultHotkeys.ToDictionary(d => d.id, d => d.action, StringComparer.OrdinalIgnoreCase);
 
     // event.code → Win32 VK 映射（前端录制不再受 Shift 输出字符影响）
     private static readonly Dictionary<string, uint> EventCodeVkMap = BuildEventCodeVkMap();
@@ -780,15 +785,8 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                     var mode = action[5..];
                     Task.Run(async () =>
                     {
-                        try
-                        {
-                            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                            var content = new StringContent(
-                                $"{{\"mode\":\"{mode}\"}}",
-                                System.Text.Encoding.UTF8, "application/json");
-                            await http.PostAsync("http://127.0.0.1:3100/api/overrides/switch", content);
-                        }
-                        catch (Exception ex) { ShellLog($"模式切换失败: {ex.Message}"); }
+                        var ok = await PostApiAsync("/api/overrides/switch", $"{{\"mode\":\"{mode}\"}}");
+                        if (!ok) ShellLog($"[Hotkey] 模式切换请求失败: {mode}");
                     });
                 }
             }
@@ -801,6 +799,23 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                 BeginInvoke(ApplyDwmAttributes);
         }
         base.WndProc(ref m);
+    }
+
+    // 依次尝试 3100（安装版）/ 3101（开发版），任一 API 响应成功即返回
+    private static async Task<bool> PostApiAsync(string path, string json)
+    {
+        foreach (var baseUrl in new[] { "http://127.0.0.1:3100", "http://127.0.0.1:3101" })
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var resp = await http.PostAsync(baseUrl + path, content);
+                if (resp.IsSuccessStatusCode) return true;
+            }
+            catch { /* try next */ }
+        }
+        return false;
     }
 
     protected override void Dispose(bool disposing)
@@ -1047,7 +1062,8 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             ShellLog($"[Hotkey] RegisterHotKey({id}, {mods}+{key}, winId={winId}) = {ok}");
             if (ok)
             {
-                _hotkeyIdToAction[winId] = id;
+                // 映射到实际动作：mode-office → mode:office；monitor-off 原样保留
+                _hotkeyIdToAction[winId] = DefaultHotkeyActions.TryGetValue(id, out var action) ? action : id;
                 _registeredWinIds.Add(winId);
             }
             else
