@@ -299,7 +299,7 @@ export default function SettingsPanel({ theme, setTheme }) {
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast?.("图片不能超过 10MB", "error"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast?.("图片不能超过 8MB", "error"); return; }
 
     const previewUrl = URL.createObjectURL(file);
     updateBg({ hasImage: true, url: previewUrl, enabled: true });
