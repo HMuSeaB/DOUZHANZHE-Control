@@ -61,6 +61,13 @@ if ($Version) {
     Write-Host "  版本号已同步至 $Version (SettingsPanel 由 vite define 读取, iss 由 ISCC /d 参数覆盖)" -ForegroundColor Green
 }
 
+# ── 0.5. 生成 build-info.json（数字版本 + 当前提交短号，仅作展示/追溯）──
+& (Join-Path $Root "tools\gen-build-info.ps1")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "错误: 生成 build-info.json 失败" -ForegroundColor Red
+    exit 1
+}
+
 # ── 1. 环境检查 ──
 Write-Host "[1/6] 检查环境..." -ForegroundColor Cyan
 if (-not (Test-Path $ISCC)) {
@@ -148,6 +155,13 @@ $ApiVersionFile = Join-Path $Root "server\api\version.txt"
 if (Test-Path $ApiVersionFile) {
     Copy-Item $ApiVersionFile $ApiDir -Force
     Write-Host "  已复制: version.txt" -ForegroundColor Green
+}
+
+# 复制 build-info.json（About 页与日志展示 Build 标识用）
+$BuildInfoFile = Join-Path $Root "build-info.json"
+if (Test-Path $BuildInfoFile) {
+    Copy-Item $BuildInfoFile $ApiDir -Force
+    Write-Host "  已复制: build-info.json" -ForegroundColor Green
 }
 
 # 清理不需要的目录

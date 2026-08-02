@@ -15,6 +15,9 @@ dist
 dist-ssr
 *.local
 
+# Generated build info (commit hash label)
+/build-info.json
+
 # C# build artifacts (all projects)
 **/bin/
 **/obj/

@@ -11,6 +11,13 @@ $Root = $PSScriptRoot
 
 # ── 1. 构建 ──
 if (-not $SkipBuild) {
+    Write-Host "Generating build-info.json..." -ForegroundColor Cyan
+    & (Join-Path $Root "tools\gen-build-info.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "build-info generation failed!" -ForegroundColor Red
+        Pop-Location
+        exit 1
+    }
     Write-Host "[1/4] Vite build..." -ForegroundColor Cyan
     Push-Location $Root
     npx vite build
@@ -77,6 +84,11 @@ foreach ($Base in $TargetBases) {
     $VersionFile = Join-Path $Base "version.txt"
     [System.IO.File]::WriteAllText($VersionFile, $AppVersion, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "  version.txt -> $Base" -ForegroundColor Green
+    $BuildInfoFile = Join-Path $Root "build-info.json"
+    if (Test-Path $BuildInfoFile) {
+        Copy-Item $BuildInfoFile (Join-Path $Base "build-info.json") -Force
+        Write-Host "  build-info.json -> $Base" -ForegroundColor Green
+    }
 }
 
 # ── 4. 结果与仓库同步 ──
