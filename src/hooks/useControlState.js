@@ -6,6 +6,7 @@ import {
   fetchTelemetry, fetchUiState, saveUiState,
   fetchProfiles, fetchProfile, fetchPlatformInfo,
   clearOverrides,
+  setMaxCoresForPercent,
 } from "../services/uxtuAdapter";
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
@@ -83,12 +84,20 @@ export function useControlState() {
       try {
         const plat = await (await fetch("/api/platform/info")).json();
         if (plat?.vendor === "Intel") maxCores = 18;
+        setMaxCoresForPercent(maxCores);
       } catch { /* 后端不可用时默认 16 */ }
       _maxCores = maxCores;
       // 加载机型信息
       try {
         const pi = await fetchPlatformInfo();
-        setPlatformInfo({ oem: pi.oem || 'Unknown', vendor: pi.vendor || '', model: pi.model || '', isElevated: pi.isElevated ?? null });
+        setPlatformInfo({
+          oem: pi.oem || 'Unknown',
+          vendor: pi.vendor || '',
+          model: pi.model || '',
+          isElevated: pi.isElevated ?? null,
+          ecCpuTemp: pi.ecCpuTemp ?? null,
+          ecGpuTemp: pi.ecGpuTemp ?? null,
+        });
         setPlatformInfoReady(true);
       } catch { /* ignore */ }
       // 加载配置列表
@@ -244,27 +253,39 @@ export function useControlState() {
       lastTickRef.current = now;
 
       setTelemetry(prev => {
-        const fanLargeRpm = Math.round(prev.fanLargeRpm + (uxtuParams.fanLargeRpmTarget - prev.fanLargeRpm) * 0.1 * dt);
-        const fanSmallRpm = Math.round(prev.fanSmallRpm + (uxtuParams.fanSmallRpmTarget - prev.fanSmallRpm) * 0.1 * dt);
-        const fanLargePct = prev.fanLargeMax > 0 ? fanLargeRpm / prev.fanLargeMax : 0;
-        const fanSmallPct = prev.fanSmallMax > 0 ? fanSmallRpm / prev.fanSmallMax : 0;
+        // 首次进入 mock 时用默认值兜底，避免 undefined 参与运算产生 NaN
+        const base = {
+          cpuUsage: 20, cpuFreq: 2.4, cpuTemp: 45, cpuCores: 16,
+          gpuUsage: 15, gpuFreq: 1.2, gpuTemp: 45, gpuVramUsed: 2,
+          gpuPowerDrawW: 20, gpuMode: null,
+          memoryUsage: 30, memoryTotalGB: 32, memoryFreq: 3200,
+          diskUsage: 40, diskTotalGB: 952, diskFreeGB: 400,
+          fanLargeRpm: 2200, fanSmallRpm: 2000,
+          fanLargeMax: 4400, fanSmallMax: 8200,
+          thermalMode: 0, powerPlan: 0, kbBrightness: 0,
+          ...prev,
+        };
+        const fanLargeRpm = Math.round(base.fanLargeRpm + ((uxtuParams.fanLargeRpmTarget ?? 2900) - base.fanLargeRpm) * 0.1 * dt);
+        const fanSmallRpm = Math.round(base.fanSmallRpm + ((uxtuParams.fanSmallRpmTarget ?? 5200) - base.fanSmallRpm) * 0.1 * dt);
+        const fanLargePct = base.fanLargeMax > 0 ? fanLargeRpm / base.fanLargeMax : 0;
+        const fanSmallPct = base.fanSmallMax > 0 ? fanSmallRpm / base.fanSmallMax : 0;
         const cooling = 0.4 * fanLargePct + 0.25 * fanSmallPct;
         const modeBias = settings.mode === "silent" ? -0.12 : settings.mode === "office" ? -0.05 : settings.mode === "gaming" ? 0.05 : settings.mode === "beast" ? 0.14 : 0;
         const cpuTargetUsage = Math.max(5, Math.min(95, 25 + (uxtuParams.cpuLongPptW / 120) * 55 + modeBias * 100));
         const gpuTargetUsage = Math.max(2, Math.min(95, 15 + (uxtuParams.gpuPptLimitW / 180) * 55 + modeBias * 80));
         const drift = (target, current, strength) => current + (target - current) * strength * dt + (Math.random() - 0.5) * 1.5;
-        const nextCpuUsage = drift(cpuTargetUsage, prev.cpuUsage, 0.18);
-        const nextGpuUsage = drift(gpuTargetUsage, prev.gpuUsage, 0.16);
+        const nextCpuUsage = drift(cpuTargetUsage, base.cpuUsage, 0.18);
+        const nextGpuUsage = drift(gpuTargetUsage, base.gpuUsage, 0.16);
         return {
-          ...prev,
+          ...base,
           cpuUsage: Math.round(nextCpuUsage),
-          cpuFreq: Number(Math.max(0.6, prev.cpuFreq + (nextCpuUsage - prev.cpuUsage) * 0.02).toFixed(2)),
-          cpuTemp: Math.round(drift(uxtuParams.cpuTempLimitC - cooling * 12, prev.cpuTemp, 0.10)),
+          cpuFreq: Number(Math.max(0.6, base.cpuFreq + (nextCpuUsage - base.cpuUsage) * 0.02).toFixed(2)),
+          cpuTemp: Math.round(drift(uxtuParams.cpuTempLimitC - cooling * 12, base.cpuTemp, 0.10)),
           gpuUsage: Math.round(nextGpuUsage),
-          gpuFreq: Number(Math.max(0.4, prev.gpuFreq + (nextGpuUsage - prev.gpuUsage) * 0.03).toFixed(2)),
-          gpuTemp: Math.round(drift(uxtuParams.gpuTempLimitC - cooling * 10, prev.gpuTemp, 0.09)),
-          memoryUsage: Math.round(Math.max(1, Math.min(99, prev.memoryUsage + (Math.random() - 0.5) * 0.8))),
-          diskUsage: Math.round(Math.max(1, Math.min(99, prev.diskUsage + (Math.random() - 0.5) * 0.6))),
+          gpuFreq: Number(Math.max(0.4, base.gpuFreq + (nextGpuUsage - base.gpuUsage) * 0.03).toFixed(2)),
+          gpuTemp: Math.round(drift(uxtuParams.gpuTempLimitC - cooling * 10, base.gpuTemp, 0.09)),
+          memoryUsage: Math.round(Math.max(1, Math.min(99, base.memoryUsage + (Math.random() - 0.5) * 0.8))),
+          diskUsage: Math.round(Math.max(1, Math.min(99, base.diskUsage + (Math.random() - 0.5) * 0.6))),
           fanLargeRpm, fanSmallRpm,
         };
       });

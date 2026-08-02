@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { applySmuSet, applyHardwareControl, powerPlanHALMap, applyGpuControl, applyNvapiOverclock, applyNvapiThermalLimit, setCpuFreqLimit, setCpuTurbo, setCpuCoreLimitPercent } from "../../services/uxtuAdapter";
+import { applySmuSet, applyHardwareControl, powerPlanHALMap, applyGpuControl, applyNvapiOverclock, applyNvapiThermalLimit, setCpuFreqLimit, setCpuTurbo, setCpuCoreLimitPercent, coreToPercent } from "../../services/uxtuAdapter";
 import { useToast } from "../ui/Toast";
 import OverrideSlider from "../ui/OverrideSlider";
 
@@ -98,10 +98,21 @@ export default function PerformancePanel({
   function queueCpuFreq(mhz) { clearTimeout(cpuFreqTimer.current); cpuFreqTimer.current = setTimeout(async () => { try { await setCpuFreqLimit(mhz, latestModeRef.current); } catch (err) { console.error('CPU freq limit failed:', err); } }, 600); }
   function queueSmu(parameter, valueM) { clearTimeout(smuTimer.current); smuTimer.current = setTimeout(async () => { try { await applySmuSet(parameter, valueM, latestModeRef.current); } catch (err) { console.error('SMU set failed:', err); } }, 600); }
   function queueTurbo(disabled) { clearTimeout(turboTimer.current); turboTimer.current = setTimeout(async () => { try { await setCpuTurbo(!disabled, latestModeRef.current); } catch (err) { update('cpuTurboDisabled')(!disabled); console.error('Turbo switch failed:', err); } }, 600); }
-  function queueOc() { clearTimeout(ocTimer.current); ocTimer.current = setTimeout(async () => { try { const p = latestParamsRef.current; await applyNvapiOverclock(p.ocCoreOffsetMhz ?? 0, p.ocVoltOffsetMv ?? 0, latestModeRef.current); } catch (err) { console.error('OC failed:', err); } }, 600); }
-  function queueGpuMem(level) { clearTimeout(gpuMemTimer.current); gpuMemTimer.current = setTimeout(async () => { try { await applyNvapiOverclock(undefined, undefined, latestModeRef.current, level); } catch (err) { console.error('GPU mem failed:', err); } }, 600); }
+  function queueOc() { clearTimeout(ocTimer.current); ocTimer.current = setTimeout(async () => { try { const p = latestParamsRef.current; await applyNvapiOverclock(p.ocCoreOffsetMhz ?? 0, p.ocMemOffsetMhz ?? 0, latestModeRef.current); } catch (err) { console.error('OC failed:', err); } }, 600); }
+  function queueGpuMem(level) {
+    clearTimeout(gpuMemTimer.current);
+    const memMap = [0, 9001, 11001, 12001];
+    const target = memMap[level] ?? 0;
+    gpuMemTimer.current = setTimeout(async () => {
+      const mode = latestModeRef.current;
+      try {
+        await applyGpuControl('reset-memory-clocks', undefined, undefined, undefined, mode).catch(() => {});
+        if (target > 0) await applyGpuControl('limit-memory', target, undefined, undefined, mode);
+      } catch (err) { console.error('GPU mem failed:', err); }
+    }, 600);
+  }
   function queueThermal(limit) { clearTimeout(thermalTimer.current); thermalTimer.current = setTimeout(async () => { try { await applyNvapiThermalLimit(limit, latestModeRef.current); } catch (err) { console.error('Thermal limit failed:', err); } }, 600); }
-  function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { const percent = coreCount > 0 ? Math.round(coreCount / 16 * 100) : 100; await setCpuCoreLimitPercent(percent, latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }
+  function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { await setCpuCoreLimitPercent(coreToPercent(coreCount), latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }
   return (<>
     {showCpu && <>
       <Switch label="频率限制" checked={uxtuParams.cpuFreqLimitEnabled} disabled={paramsLocked} onChange={on => { update("cpuFreqLimitEnabled")(on); queueCpuFreq(on ? uxtuParams.cpuFreqLimitMhz : 0); }} />

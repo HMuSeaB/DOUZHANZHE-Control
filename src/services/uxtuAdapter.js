@@ -1,5 +1,16 @@
 const BACKEND = "";
 
+// 核心数 → 百分比换算基数（Intel 251HX=18，其余默认 16），启动时由平台信息校准
+let _maxCoresForPercent = 16;
+
+export function setMaxCoresForPercent(n) {
+  if (Number.isFinite(n) && n > 0) _maxCoresForPercent = n;
+}
+
+export function coreToPercent(coreCount) {
+  return coreCount > 0 ? Math.round(coreCount / _maxCoresForPercent * 100) : 100;
+}
+
 // 统一日志: 同时写入后端 AppLog (tag=UI) 和浏览器 console
 export function log(tag, msg) {
   console.log(`[${tag}]`, msg);
@@ -596,7 +607,7 @@ export async function reapplyOverrides(mode, overrides) {
     );
   }
   if ("cpuCoreLimit" in overrides) {
-    const pct = overrides.cpuCoreLimit > 0 ? Math.round(overrides.cpuCoreLimit / 18 * 100) : 100;
+    const pct = coreToPercent(overrides.cpuCoreLimit);
     setCpuCoreLimitPercent(pct, mode).catch(
       e => console.warn("[CPU] core-limit:", e)
     );

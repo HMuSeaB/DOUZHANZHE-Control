@@ -1,5 +1,5 @@
 import { useCallback, useRef, useEffect } from "react";
-import { applyHardwareControl, powerPlanHALMap, setCpuFreqLimit, setCpuTurbo, setCpuCoreLimitPercent } from "../../services/uxtuAdapter";
+import { applyHardwareControl, powerPlanHALMap, setCpuFreqLimit, setCpuTurbo, setCpuCoreLimitPercent, coreToPercent } from "../../services/uxtuAdapter";
 
 const POWER_PLANS = [
   { id: "efficiency", label: "最高能效", halValue: powerPlanHALMap.efficiency },
@@ -28,7 +28,7 @@ export default function IntelCpuPanel({ settings, uxtuParams, setUxtuParams, ove
     }, 600);
   }
 
-  function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { const percent = coreCount > 0 ? Math.round(coreCount / 16 * 100) : 100; await setCpuCoreLimitPercent(percent, latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }
+  function queueCoreLimit(coreCount) { clearTimeout(coreTimer.current); coreTimer.current = setTimeout(async () => { try { await setCpuCoreLimitPercent(coreToPercent(coreCount), latestModeRef.current); } catch (err) { console.error('Core limit failed:', err); } }, 600); }
 
   return (
     <>
