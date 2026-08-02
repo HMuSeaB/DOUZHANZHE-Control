@@ -588,7 +588,7 @@ export default function SettingsPanel({ settings, setSettings, theme, setTheme }
         <div className="about">
           <span className="logo">{ICONS.about}</span>
           <span className="meta">
-            <b>斗战者控制台</b><span className="ver">{`v${__APP_VERSION__}`}</span>
+            <b>斗战者控制台</b><span className="ver">{`v${__APP_VERSION__}${__APP_BUILD__ ? ` · Build ${__APP_BUILD__}` : ''}`}</span>
             <small>DOUZHANZHE Control Center · 构建 {new Date().toISOString().slice(0, 10).replace(/-/g, ".")}<br />© 2025-2026 斗战者科技 · 保留所有权利</small>
           </span>
           <span className="acts">
