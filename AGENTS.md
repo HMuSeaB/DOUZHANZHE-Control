@@ -5,14 +5,14 @@
 ### 1. Vite dev server / HMR 热更新
 废弃原因：npm run build 仅 ~200ms，无需 dev server 的额外复杂度。
 - vite.config.js 仅保留 build 配置，无 server.proxy
-- 前端请求直连 C# API (localhost:3100)
+- 前端请求直连 C# API（开发 3101 / 安装版 3100）
 - 构建后复制 dist/* → server/api/bin/run/wwwroot/
 - 对应提交: abac20d, 49bbb69
 
 ### 2. Node.js 后端 (uxtu-backend)
 废弃原因：所有端点已迁移到 C# API (Douzhanzhe.API)。
 - 旧端口 3099 已彻底停用
-- C# API 运行在 3100
+- C# API 端口：安装版 3100，开发 3101
 - 对应提交: 61a48a1
 
 ### 3. localStorage 做配置持久化
