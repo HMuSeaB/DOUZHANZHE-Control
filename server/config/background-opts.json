@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "opacity": 52,
+  "opacity": 20,
   "blur": 7,
   "maskColor": "black",
   "source": "local",
