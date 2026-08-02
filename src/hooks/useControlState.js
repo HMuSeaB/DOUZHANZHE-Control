@@ -11,23 +11,6 @@ import {
 
 let _maxCores = 16; // 模块级缓存，供模式切换使用
 
-const LS_SETTINGS = "douzhanzhe_settings";
-
-function loadFromLS(key, defaultValue) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : defaultValue;
-  } catch {
-    return defaultValue;
-  }
-}
-
-function saveToLS(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch { /* quota exceeded etc */ }
-}
-
 export function useControlState() {
 
   // ── Theme ──
@@ -52,11 +35,12 @@ export function useControlState() {
   }, [telemetry]);
 
   // ── Settings (含 mode) ──
-  const [settings, setSettings] = useState(() => loadFromLS(LS_SETTINGS, {
+  // 配置以 /api/overrides 与 /api/ui-state 为唯一权威源，不在 localStorage 持久化
+  const [settings, setSettings] = useState({
     mode: "office", dGpuDirect: true, fanBoost: false,
     numLock: true, capsLock: false, fnLock: false,
     touchpadLock: false, osdDisabled: false, kbBrightnessLevel: 0,
-  }));
+  });
 
   // ── uxtuParams: 唯一全量参数状态 (FULL_PARAMS 兆底 + overrides 覆盖) ──
   const [uxtuParams, setUxtuParams] = useState(() => {
@@ -145,8 +129,6 @@ export function useControlState() {
   // 从后端加载 UI 状态
   useEffect(() => { (async () => { try { var st = await fetchUiState(); if (st.theme) setTheme(st.theme); if (st.accentColor) document.documentElement.style.setProperty("--seed-primary", st.accentColor); } catch { /* 后端离线时保留默认 */ } })(); }, []);
 
-  // 持久化 settings
-  useEffect(() => { saveToLS(LS_SETTINGS, settings); }, [settings]);
   // theme 同步到后端
   useEffect(() => { (async () => { try { await saveUiState({ theme }); } catch { /* 后端离线时下次再同步 */ } })(); }, [theme]);
   // ── 模式切换: 立即发送后端请求，切换期间禁用 UI 防止竞争写入 ──

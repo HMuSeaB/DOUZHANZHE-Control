@@ -84,8 +84,6 @@ export default function SettingsPanel({ theme, setTheme }) {
         }
       })
       .catch(() => {});
-    const savedAccent = localStorage.getItem("dz_accent_color");
-    if (savedAccent) setAccent(savedAccent);
     fetch("/api/background-opts")
       .then(r => r.json())
       .then(d => {
@@ -196,7 +194,6 @@ export default function SettingsPanel({ theme, setTheme }) {
 
   const setAccentColor = (color) => {
     setAccent(color);
-    localStorage.setItem("dz_accent_color", color);
     saveUiState({ theme, accentColor: color });
     document.documentElement.style.setProperty("--seed-primary", color);
   };
