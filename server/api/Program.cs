@@ -74,8 +74,6 @@ var wmi = app.Services.GetRequiredService<WmiInterface>();
 app.UseCors();
 app.UseWebSockets();
 app.UseDefaultFiles();
-app.UseStaticFiles();
-app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
@@ -118,6 +116,7 @@ catch (Exception ex)
 
 // ---- 性能设置持久化 (按模式存储) ----
 var _perfLock = new object();
+var _jsonWriteLock = new object();
 var _lastModeFile = "last-mode.json";
 bool _pgSuppress = false; // ParameterGuard 睡眠期间暂停标志
 
@@ -287,16 +286,19 @@ T JsonRead<T>(string fileName, T fallback) where T : class
 }
 void JsonWrite<T>(string fileName, T data)
 {
-    var filePath = Path.Combine(configDir, fileName);
-    var tmpPath = filePath + ".tmp";
-    var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
+    lock (_jsonWriteLock)
     {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        IncludeFields = true
-    });
-    File.WriteAllText(tmpPath, json);
-    File.Move(tmpPath, filePath, overwrite: true);
+        var filePath = Path.Combine(configDir, fileName);
+        var tmpPath = filePath + ".tmp";
+        var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            IncludeFields = true
+        });
+        File.WriteAllText(tmpPath, json);
+        File.Move(tmpPath, filePath, overwrite: true);
+    }
 }
 
 // ---- 恢复计算类性能设置 (CPU + SMU + GPU + NVAPI, 不含风扇) ----
