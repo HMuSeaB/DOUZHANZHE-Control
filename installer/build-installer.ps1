@@ -44,9 +44,14 @@ if ($Version) {
     # CHANGELOG.md — 仅替换第一个版本标题（最新条目），不动历史版本
     $Changelog = Join-Path $AbsRoot "CHANGELOG.md"
     $ClText = [System.IO.File]::ReadAllText($Changelog, $utf8NoBom)
-    $ClRegex = [regex]::new('(## \[)\d+\.\d+(\.\d+)?(\] — \d{4}-\d{2}-\d{2})')
-    $ClText = $ClRegex.Replace($ClText, "`${1}$Version`${3}", 1)
-    [System.IO.File]::WriteAllText($Changelog, $ClText, $utf8NoBom)
+    $ClTop = [regex]::Match($ClText, '^## \[(\d+\.\d+(\.\d+)?(-[A-Za-z0-9.]+)?)\] — \d{4}-\d{2}-\d{2}')
+    if ($ClTop.Success -and $ClTop.Groups[1].Value -match '-' -and $Version -notmatch '-') {
+        Write-Host "  CHANGELOG 顶部是预发布版本（$($ClTop.Groups[1].Value)），稳定版本号不覆盖" -ForegroundColor Yellow
+    } else {
+        $ClRegex = [regex]::new('(## \[)\d+\.\d+(\.\d+)?(-[A-Za-z0-9.]+)?(\] — \d{4}-\d{2}-\d{2})')
+        $ClText = $ClRegex.Replace($ClText, "`${1}$Version`${3}", 1)
+        [System.IO.File]::WriteAllText($Changelog, $ClText, $utf8NoBom)
+    }
 
     # package.json
     $PkgJson = Join-Path $AbsRoot "package.json"
