@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
-## [2.0.0-pre.1
+## [2.0.0-pre.1] — 2026-08-06
 
 v2.0 预发布：PawnIO 内核驱动迁移 + Intel 平台支持 + v2.0 全新前端 + 全链路审计修复
 
