@@ -7,50 +7,46 @@
 
 ## [2.0.0-pre.1] — 2026-08-06
 
-v2.0 预发布：PawnIO 内核驱动迁移 + Intel 平台支持 + v2.0 全新前端 + 全链路审计修复
+v2.0 预发布：全新界面 + 性能控制全面升级
 
-> 本条目覆盖自 main 主线 v1.6.10 以来的全部更新（含 1.6.11 及 v2.0 分支 162 个提交），
-> 历史版本的详细条目保留在本文件下方。
+> 这是 v2.0 的首个预发布版本，包含自 1.6.10 以来的全部改进，欢迎下载体验。
+> ⚠️ 预发布版本可能存在不稳定，建议先在备用环境测试。
 
-### 重大变更
+### 🎉 全新体验
 
-- **PawnIO 替代 inpoutx64 + WinRing0**: 单一内核驱动替代此前三个独立驱动。EC IO 通过 LpcACPIEC.bin、AMD SMU 通过 RyzenSMU.bin、Intel MSR 通过 IntelMSR.bin。移除 ReadPhys/WritePhys/WriteBit 等所有物理内存直写操作
-- **RyzenAdj 移除**: SMU 控制从 ryzenadj.exe 子进程 + WinRing0 改为 PawnIO RyzenSMU.bin 原生 mailbox 协议，使用 AmdSmuController 替代旧 SmuController
-- **LibreHardwareMonitor 移除**: CPU 温度统一走 EC IO 0x1C，移除 LhmSensor 封装与传感器热插拔逻辑
-- **Intel 平台支持**: 新增 IntelPowerController（IntelMSR.bin PL1/PL2 控制）、IntelCpuPanel/IntelPowerPanel 前端组件，`/api/platform/info` 自动检测 vendor 分发 UI
-- **v2.0 全新前端**: 仪表盘 / 控制面板 / 风扇控制 / 平台控制 / 游戏 / 系统信息 / 设置 全部按 v2.0 产品原型重写（Fluent 风格、骨架屏、离线/空状态、OSD 与更新弹窗）
-- **后端唯一权威源**: 配置持久化统一收敛到后端 API，localStorage 仅保留页面路由与 UI 状态缓存
+- **全新界面**: 仪表盘、控制面板、风扇控制、平台控制、游戏、系统信息、设置全部重做，支持深浅色主题与自定义配色
+- **Intel 平台支持**: Intel 机型新增 CPU 功耗与温度控制（PL1/PL2）
+- **平台控制**: 键盘灯、GPU 模式、FN 锁、大写/数字小键盘锁、触控板锁与 EC 传感器信息
+- **系统信息**: 硬件配置卡片网格，支持手动刷新
 
-### 新增
+### 🎮 游戏与快捷键
 
-- **游戏自动切换**: WMI 进程事件检测 Steam/Epic 游戏启停，自动切换性能模式并在退出后恢复快照模式；支持多开按优先级取最高模式、3 秒延迟退出防误恢复
-- **Steam / Epic 游戏扫描**: 读取 `libraryfolders.vdf` / `appmanifest_*.acf` / Epic `Manifests/*.item`，智能定位主 exe，弹窗批量导入
-- **快捷键系统数据驱动**: `GET/POST /api/hotkey` + Shell 全局热键注册，支持录制自定义组合键与全局冲突检测；模式切换快捷键 Ctrl+Shift+1~4
-- **风扇曲线 ITSM 路由**: 全范围曲线（大扇 1900-4400 / 小扇 1700-8200）、RouteMode 自动路由散热模式、ITSM 偏离守护与分级恢复、`/api/fan-curve/route-info` 诊断
-- **配置备份/恢复**: 按分类导出/导入，写入硬件签名（OEM/CPU/GPU/风扇上限），签名不一致整份拒绝
-- **应用内更新**: `/api/update/check|download|install`，GitHub Releases 检查、下载地址白名单、安装包路径校验
-- **自定义背景**: 本地上传 + 网络轮换（JSON URL 列表、定时、失败保留当前图）、透明度/模糊/遮罩参数
-- **EC 信息展示**: 平台控制页显示 CPU 0x1C / GPU 0xE0 传感器原始值
-- **EAC 反作弊兼容**: 退出时自动停止旧内核驱动服务、反作弊进程监控与日志
+- **游戏自动切换**: 启动游戏自动切换到对应性能模式，退出后恢复原配置；多开时按最高优先级生效
+- **Steam / Epic 扫描**: 一键扫描已安装游戏并批量导入规则
+- **快捷键自定义**: 支持录制自定义组合键；模式切换快捷键 Ctrl+Shift+1~4，一键关屏
 
-### 修复（2026-08-02 全链路审计）
+### 🌀 风扇与散热
 
-- **前端**: mock 遥测 NaN、GPU 显存频率误调 NVAPI overclock、内存超频参数错传、核心数换算基数不一致、停止风扇曲线时误清空 overrides、平台控制 EC 原始值不显示、设置页 `showBackground` TDZ 崩溃、原生颜色/文件选择器因 `.hidden` 缺失可见、游戏页缺少 `res.ok` 错误提示
-- **后端**: `/api/smu/set` AMD `stapm_limit`/`tctl_temp` 不落盘、`GameProfileService`/`FanCurveService` 配置目录偏离共享 `server/config`、`ProfileService` 先删后移丢文件风险、备份 background 分类指向不存在的 `background.json`、背景上传先删旧图后校验会丢图、重复静态文件中间件、`JsonWrite` 缺全局原子写锁
-- **Shell**: `mode-*` 快捷键 action 映射丢失导致“注册了但不触发”，已修复并增加 3101 开发端口回退
-- **打包**: `deploy.ps1` 漏同步 Shell wwwroot（页面停留在旧构建）、`appsettings.json` Kestrel 硬编码 3100 导致开发端口 3101 失效、`build-installer.ps1` 硬编码根路径、Inno Setup 默认版本停留在 1.3.2
+- **自定义风扇曲线**: 全范围转速曲线、预设模板、拖动控制点、自动选择散热模式
+- **手动调速**: 按模式限制安全转速范围，与曲线互斥
+- **风扇偏离守护**: 转速偏离目标时自动检测与恢复
 
-### 重构 / 打包
+### 🛠 可靠性与数据
 
-- 前端 API 调用链 45 项逐条核对（URL/方法/字段/错误处理），`npm run lint` / `npm run build` / API+Shell `dotnet build` 全绿
-- 配置写入统一 tmp + `File.Move(overwrite)` 原子替换；共享配置目录统一到 `server/config`
-- 安装包由 `build-installer.ps1` 生成：前端构建 → API/Shell Release publish → 合并产物 → Inno Setup 编译，自动安装 PawnIO 驱动并清理旧驱动残留
-- 开发端口 3100（安装版）/ 3101（开发版）均可正常启动
+- **配置不丢失**: 各模式参数独立保存，重启或覆盖安装后自动恢复
+- **备份 / 恢复**: 按分类导出导入；跨机型导入会整份拒绝，防止错误配置
+- **应用内更新**: 自动检查更新、下载安装包并启动安装
+- **自定义背景**: 本地上传或网络轮换壁纸，支持透明度与模糊调节
+- **更稳定的底层驱动**: 升级硬件访问方案，降低游戏反作弊冲突与蓝屏风险
 
-### 已知限制
+### 🔧 修复
 
-- 一键降压与 multi-monitor/DPI 专项修复按 v2.0 范围延后
-- 快捷键触发级端到端自动化测试暂缓（注册与 action 映射已验证），`monitor-off` 属高风险操作不纳入自动用例
+- 修复设置页打开崩溃、平台控制传感器信息不显示、风扇曲线停止后参数被清空、快捷键注册后不触发、游戏规则操作缺少错误提示等一批问题
+
+### 📋 注意事项
+
+- 预发布仅供测试，正式版发布后会自动提示更新
+- 一键降压、多显示器 / DPI 专项优化仍在后续版本
 
 ## [1.6.11] — 2026-06-22
 
