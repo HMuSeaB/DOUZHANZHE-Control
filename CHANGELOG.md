@@ -5,47 +5,52 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
-## [2.0.0] — 2026-07-28
+## [2.0.0-pre.1] — 2026-08-06
 
-PawnIO 内核驱动迁移 + Intel 平台支持 + 架构重构
+v2.0 预发布：PawnIO 内核驱动迁移 + Intel 平台支持 + v2.0 全新前端 + 全链路审计修复
+
+> 本条目覆盖自 main 主线 v1.6.10 以来的全部更新（含 1.6.11 及 v2.0 分支 162 个提交），
+> 历史版本的详细条目保留在本文件下方。
 
 ### 重大变更
 
 - **PawnIO 替代 inpoutx64 + WinRing0**: 单一内核驱动替代此前三个独立驱动。EC IO 通过 LpcACPIEC.bin、AMD SMU 通过 RyzenSMU.bin、Intel MSR 通过 IntelMSR.bin。移除 ReadPhys/WritePhys/WriteBit 等所有物理内存直写操作
-- **RyzenAdj 移除**: SMU 控制从 ryzenadj.exe 子进程 + WinRing0 改为 PawnIO RyzenSMU.bin 原生 mailbox 协议，使用 AmdSmuController 替代旧 SmuController。移除 ~300 行子进程管理代码
-- **LibreHardwareMonitor 移除**: CPU 温度不再依赖 LHM SMN 总线，统一走 EC IO 0x1C。移除 LhmSensor 封装。移除所有传感器热插拔逻辑
-- **驱动初始化简化**: DriverBridge 从 ~400 行精简为 ~140 行（仅保留 EcRead/EcWrite/InitPawnIO 三个方法）。移除 RecoverAfterSleep/Reset/RetryInit/WaitEcReady 等容错重试
-- **Intel 平台支持**: 新增 IntelPowerController（IntelMSR.bin PL1/PL2 控制）、IntelCpuPanel/IntelPowerPanel 前端组件。/api/platform/info 自动检测 vendor 分发 UI
+- **RyzenAdj 移除**: SMU 控制从 ryzenadj.exe 子进程 + WinRing0 改为 PawnIO RyzenSMU.bin 原生 mailbox 协议，使用 AmdSmuController 替代旧 SmuController
+- **LibreHardwareMonitor 移除**: CPU 温度统一走 EC IO 0x1C，移除 LhmSensor 封装与传感器热插拔逻辑
+- **Intel 平台支持**: 新增 IntelPowerController（IntelMSR.bin PL1/PL2 控制）、IntelCpuPanel/IntelPowerPanel 前端组件，`/api/platform/info` 自动检测 vendor 分发 UI
+- **v2.0 全新前端**: 仪表盘 / 控制面板 / 风扇控制 / 平台控制 / 游戏 / 系统信息 / 设置 全部按 v2.0 产品原型重写（Fluent 风格、骨架屏、离线/空状态、OSD 与更新弹窗）
+- **后端唯一权威源**: 配置持久化统一收敛到后端 API，localStorage 仅保留页面路由与 UI 状态缓存
 
 ### 新增
 
-- **Intel 平台支持**: 新增 IntelPowerController（IntelMSR.bin PL1/PL2 控制）、IntelCpuPanel/IntelPowerPanel 前端组件。`/api/platform/info` 自动检测 vendor 分发 UI
-- **小风扇 RPM 寄存器回退扫描**: GpuFanRpm 自动尝试 `0x96/0x9B/0x93/0x98` 四组 EC 寄存器对，兼容 Intel/AMD 不同 EC 布局（修复 Intel 平台小风扇读数始终为 0）
+- **游戏自动切换**: WMI 进程事件检测 Steam/Epic 游戏启停，自动切换性能模式并在退出后恢复快照模式；支持多开按优先级取最高模式、3 秒延迟退出防误恢复
+- **Steam / Epic 游戏扫描**: 读取 `libraryfolders.vdf` / `appmanifest_*.acf` / Epic `Manifests/*.item`，智能定位主 exe，弹窗批量导入
+- **快捷键系统数据驱动**: `GET/POST /api/hotkey` + Shell 全局热键注册，支持录制自定义组合键与全局冲突检测；模式切换快捷键 Ctrl+Shift+1~4
+- **风扇曲线 ITSM 路由**: 全范围曲线（大扇 1900-4400 / 小扇 1700-8200）、RouteMode 自动路由散热模式、ITSM 偏离守护与分级恢复、`/api/fan-curve/route-info` 诊断
+- **配置备份/恢复**: 按分类导出/导入，写入硬件签名（OEM/CPU/GPU/风扇上限），签名不一致整份拒绝
+- **应用内更新**: `/api/update/check|download|install`，GitHub Releases 检查、下载地址白名单、安装包路径校验
+- **自定义背景**: 本地上传 + 网络轮换（JSON URL 列表、定时、失败保留当前图）、透明度/模糊/遮罩参数
+- **EC 信息展示**: 平台控制页显示 CPU 0x1C / GPU 0xE0 传感器原始值
+- **EAC 反作弊兼容**: 退出时自动停止旧内核驱动服务、反作弊进程监控与日志
 
-### 重构
+### 修复（2026-08-02 全链路审计）
 
-- **构建脚本**: installer/build-installer.ps1 只打包 PawnIO_setup.exe 和 dotnet publish 输出；Inno Setup 自动安装 PawnIO 驱动 + 清理旧驱动服务残留
-- **文档全面更新**: dev-architecture/backend/frontend/api/index/ec-map 全部按现状重写
-- **前端核心数基数**: 全局硬编码 16→按平台分流（AMD 默认 16，Intel 251HX 传 18）
+- **前端**: mock 遥测 NaN、GPU 显存频率误调 NVAPI overclock、内存超频参数错传、核心数换算基数不一致、停止风扇曲线时误清空 overrides、平台控制 EC 原始值不显示、设置页 `showBackground` TDZ 崩溃、原生颜色/文件选择器因 `.hidden` 缺失可见、游戏页缺少 `res.ok` 错误提示
+- **后端**: `/api/smu/set` AMD `stapm_limit`/`tctl_temp` 不落盘、`GameProfileService`/`FanCurveService` 配置目录偏离共享 `server/config`、`ProfileService` 先删后移丢文件风险、备份 background 分类指向不存在的 `background.json`、背景上传先删旧图后校验会丢图、重复静态文件中间件、`JsonWrite` 缺全局原子写锁
+- **Shell**: `mode-*` 快捷键 action 映射丢失导致“注册了但不触发”，已修复并增加 3101 开发端口回退
+- **打包**: `deploy.ps1` 漏同步 Shell wwwroot（页面停留在旧构建）、`appsettings.json` Kestrel 硬编码 3100 导致开发端口 3101 失效、`build-installer.ps1` 硬编码根路径、Inno Setup 默认版本停留在 1.3.2
 
-### 移除
+### 重构 / 打包
 
-- **inpoutx64 驱动**: EC IO、物理内存读写、IO 端口访问全部移除
-- **WinRing0 驱动**: SMU 物理地址直写不再需要
-- **ryzenadj.exe**: 子进程管理 + BatchApply + 崩溃抑制全部移除
-- **SmuController.cs**: 旧 ryzenadj 封装体
-- **LhmSensor.cs**: LibreHardwareMonitor 封装
-- **KaronOC.dll**: 已在 2.0 pre-release 中移除，NVAPI P/Invoke 直调完成
-- **AppBridge**: igpu_only 控制通道移除
-- **旧端点**: /api/uxtu/apply, /api/smu/probe, /api/smu/api-type, /api/ryzenadj/info, /api/custom-params 全部移除
-- **旧文档**: 16 个过时/归档文件移入 docs/archive/
+- 前端 API 调用链 45 项逐条核对（URL/方法/字段/错误处理），`npm run lint` / `npm run build` / API+Shell `dotnet build` 全绿
+- 配置写入统一 tmp + `File.Move(overwrite)` 原子替换；共享配置目录统一到 `server/config`
+- 安装包由 `build-installer.ps1` 生成：前端构建 → API/Shell Release publish → 合并产物 → Inno Setup 编译，自动安装 PawnIO 驱动并清理旧驱动残留
+- 开发端口 3100（安装版）/ 3101（开发版）均可正常启动
 
-# Changelog
+### 已知限制
 
-该项目所有重要变更均会记录在此文件中。
-
-格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
+- 一键降压与 multi-monitor/DPI 专项修复按 v2.0 范围延后
+- 快捷键触发级端到端自动化测试暂缓（注册与 action 映射已验证），`monitor-off` 属高风险操作不纳入自动用例
 
 ## [1.6.11] — 2026-06-22
 

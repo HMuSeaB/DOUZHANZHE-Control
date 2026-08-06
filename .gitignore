@@ -73,6 +73,7 @@ server/api/bin_temp/
 
 # Runtime generated data
 server/config/wmi-scan-result.json
+server/config/game-profiles.json
 body_clean.json
 *.nodebak
 
