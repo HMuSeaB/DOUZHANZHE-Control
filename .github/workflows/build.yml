@@ -2,15 +2,59 @@ name: 编译与打包发布 (Build & Release)
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch: # 支持在 GitHub 页面手动点击运行
 
 permissions:
   contents: write # 赋予 Actions 写入和发布 Release 的权限
 
 jobs:
+  # 快速校验：每次推送与 PR 都跑，几分钟内给出反馈。
+  # 不装 Inno Setup、不做发布，避免为一次普通提交付出完整打包的时间。
+  test:
+    name: 构建与测试
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码 (Checkout)
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 配置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # 按 package-lock.json 精确安装依赖，保证构建可复现
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建前端
+        run: npm run build
+
+      - name: 运行前端测试
+        run: npm test
+
+      - name: 构建后端
+        run: dotnet build server/api/Douzhanzhe.API.csproj --nologo
+
+      - name: 运行后端测试
+        run: dotnet test tests/Douzhanzhe.Api.Tests --nologo
+
+  # 打包发布：仅在推送 v* Tag 或手动触发时运行，且必须先通过上面的校验。
   build-and-release:
+    name: 打包与发布
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
 
     steps:
@@ -49,12 +93,6 @@ jobs:
       # 按 package-lock.json 精确安装依赖，保证构建可复现
       - name: 安装前端依赖
         run: npm ci
-
-      - name: 运行前端测试
-        run: npm test
-
-      - name: 运行后端测试
-        run: dotnet test tests/Douzhanzhe.Api.Tests --nologo
 
       - name: 适配配置并运行打包构建
         shell: pwsh
