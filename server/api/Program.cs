@@ -11,10 +11,12 @@ using Microsoft.Win32;
 using Microsoft.Win32.TaskScheduler;
 
 // ---- AppLog 统一日志初始化（所有服务注册之前）----
-var _logDir = Path.Combine(
+var _appDataDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "Douzhanzhe Console", "logs");
+    "Douzhanzhe Console");
+var _logDir = Path.Combine(_appDataDir, "logs");
 AppLog.Init(_logDir);
+LocalAccessGuard.InitToken(_appDataDir);
 
 // 提升进程与主线程优先级，确保在游戏满载时遥测采样与风扇控制仍能及时响应
 var proc = Process.GetCurrentProcess();
@@ -33,11 +35,28 @@ builder.Services.AddSingleton<OsdService>();
 builder.Services.AddSingleton<GameProfileService>();
 builder.Services.AddSingleton<ProcessMonitorService>();
 builder.Services.AddHostedService<TelemetryBackgroundService>();
-builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 var app = builder.Build();
 var osdService = app.Services.GetRequiredService<OsdService>();
-app.UseCors();
+
+// ---- 本机同源守卫 ----
+// 前端与 API 同源（都由本 Kestrel 提供），因此不需要任何 CORS 放行；
+// 而 /api 下存在裸硬件写入能力，必须拒绝一切跨站来源。
+var _devMode = app.Environment.IsDevelopment();
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path;
+    if (path.StartsWithSegments("/api") || path.StartsWithSegments("/ws"))
+    {
+        if (!LocalAccessGuard.IsAllowed(ctx, _devMode, out var denyReason))
+        {
+            AppLog.Write("Guard", $"拒绝 {ctx.Request.Method} {path} — {denyReason}");
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "请求来源不被信任" });
+            return;
+        }
+    }
+    await next();
+});
 app.UseWebSockets();
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
@@ -72,6 +91,7 @@ void Log(string msg)
     AppLog.Write("API", msg);
 }
 Log($"API starting, BaseDir={AppContext.BaseDirectory}, ConfigDir={configDir}");
+Log($"[Guard] 同源守卫已启用 (devMode={_devMode}, 裸硬件端点={(LocalAccessGuard.UnsafeToolsEnabled ? "已解锁" : "禁用")}), 会话令牌={LocalAccessGuard.TokenPath}");
 
 // ---- 性能设置持久化 ----
 var _perfLock = new object();
@@ -713,6 +733,7 @@ app.MapGet("/api/discover", (HardwareAbstractionLayer hal) =>
 });
 app.MapGet("/api/ec-scan", (HttpContext ctx, HardwareAbstractionLayer hal) =>
 {
+    if (LocalAccessGuard.BlockUnsafeTool("/api/ec-scan") is { } blocked) return blocked;
     var offsetStr = ctx.Request.Query["offset"].FirstOrDefault() ?? "0";
     var countStr = ctx.Request.Query["count"].FirstOrDefault() ?? "16";
     try
@@ -776,6 +797,7 @@ app.MapPost("/api/smu/set", (SmuController smu, SmuSetRequest req) =>
 });
 app.MapPost("/api/smu/raw", (SmuController smu, SmuRawRequest req) =>
 {
+    if (LocalAccessGuard.BlockUnsafeTool("/api/smu/raw") is { } blocked) return blocked;
     try
     {
         var resp = smu.SendRawSmuCommand(req.Cmd, req.Arg0);
@@ -800,6 +822,7 @@ app.MapGet("/api/smu/probe", (SmuController smu) =>
 });
 app.MapGet("/api/pci/probe", () =>
 {
+    if (LocalAccessGuard.BlockUnsafeTool("/api/pci/probe") is { } blocked) return blocked;
     try
     {
         var io = Douzhanzhe.HAL.DriverBridge.Instance;
@@ -829,6 +852,7 @@ app.MapGet("/api/smu/status", (SmuController smu) =>
 });
 app.MapGet("/api/smu/read-reg", (SmuController smu, HttpContext ctx) =>
 {
+    if (LocalAccessGuard.BlockUnsafeTool("/api/smu/read-reg") is { } blocked) return blocked;
     try
     {
         var addrStr = ctx.Request.Query["addr"].FirstOrDefault() ?? "0";
@@ -878,6 +902,7 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi) =>
 // ---- Fan write strategy test (compare manual flag behavior) ----
 app.MapPost("/api/fan/test-write", (FanTestWriteRequest req, WmiInterface wmi) =>
 {
+    if (LocalAccessGuard.BlockUnsafeTool("/api/fan/test-write") is { } blocked) return blocked;
     try
     {
         var strategy = req.Strategy ?? "manual-true";
@@ -1338,6 +1363,7 @@ app.MapGet("/api/ryzenadj/info", (SmuController smu) =>
 });
 app.MapPost("/api/wmi/cmd", (WmiInterface wmi, WmiCmdRequest req) =>
 {
+    if (LocalAccessGuard.BlockUnsafeTool("/api/wmi/cmd") is { } blocked) return blocked;
     try
     {
         byte? value = req.Value.HasValue ? (byte?)req.Value.Value : null;
