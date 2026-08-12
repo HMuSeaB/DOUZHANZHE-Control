@@ -47,8 +47,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path "server/api/wwwroot"
           New-Item -ItemType Directory -Force -Path "server/api/bin/build/wwwroot"
 
-          # 3. 安装依赖并启动编译
-          npm install
+          # 3. 按 package-lock.json 精确安装依赖（保证构建可复现）
+          npm ci
           
           # 4. 调用项目的打包安装脚本
           cd installer
