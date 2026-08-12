@@ -147,7 +147,7 @@ export const MODE_FAN_DEFAULTS = {
 };
 
 // 参数合法范围 — 用于写入硬件前钳位
-const PARAM_RANGES = {
+export const PARAM_RANGES = {
   cpuTempLimitC: { min: 60, max: 100 },
   cpuLongPptW: { min: 15, max: 120 },
   cpuShortPptW: { min: 15, max: 140 },
@@ -202,7 +202,7 @@ export async function fetchRouteInfo() {
   return res.json();
 }
 
-function clampParam(key, value) {
+export function clampParam(key, value) {
   const r = PARAM_RANGES[key];
   if (!r) return value;
   return Math.max(r.min, Math.min(r.max, value));
