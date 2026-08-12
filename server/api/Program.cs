@@ -565,7 +565,7 @@ app.MapGet("/api/system/info-ext", () =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { error = ex.Message });
+        return ApiProblem.From(ex, "/api/system/info-ext");
     }
 });
 
@@ -652,7 +652,7 @@ app.MapPost("/api/control", (ControlRequest req, HardwareAbstractionLayer hal, W
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 500);
+        return ApiProblem.From(ex, "/api/control");
     }
 });
 
@@ -754,7 +754,7 @@ app.MapGet("/api/ec-scan", (HttpContext ctx, HardwareAbstractionLayer hal) =>
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 400);
+        return ApiProblem.BadRequest(ex, "/api/ec-scan");
     }
 });
 app.MapPost("/api/smu/set", (SmuController smu, SmuSetRequest req) =>
@@ -792,7 +792,7 @@ app.MapPost("/api/smu/set", (SmuController smu, SmuSetRequest req) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/smu/set");
     }
 });
 app.MapPost("/api/smu/raw", (SmuController smu, SmuRawRequest req) =>
@@ -805,7 +805,7 @@ app.MapPost("/api/smu/raw", (SmuController smu, SmuRawRequest req) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/smu/raw");
     }
 });
 app.MapGet("/api/smu/probe", (SmuController smu) =>
@@ -817,7 +817,7 @@ app.MapGet("/api/smu/probe", (SmuController smu) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message, source = "ryzenadj" });
+        return ApiProblem.From(ex, "/api/smu/probe");
     }
 });
 app.MapGet("/api/pci/probe", () =>
@@ -834,7 +834,7 @@ app.MapGet("/api/pci/probe", () =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/pci/probe");
     }
 });
 app.MapGet("/api/smu/status", (SmuController smu) =>
@@ -847,7 +847,7 @@ app.MapGet("/api/smu/status", (SmuController smu) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message, source = "ryzenadj" });
+        return ApiProblem.From(ex, "/api/smu/status");
     }
 });
 app.MapGet("/api/smu/read-reg", (SmuController smu, HttpContext ctx) =>
@@ -865,7 +865,7 @@ app.MapGet("/api/smu/read-reg", (SmuController smu, HttpContext ctx) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/smu/read-reg");
     }
 });
 app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi) =>
@@ -896,7 +896,7 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi) =>
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 500);
+        return ApiProblem.From(ex, "/api/fan/set-target");
     }
 });
 // ---- Fan write strategy test (compare manual flag behavior) ----
@@ -949,7 +949,7 @@ app.MapPost("/api/fan/test-write", (FanTestWriteRequest req, WmiInterface wmi) =
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/fan/test-write");
     }
 });
 app.MapPost("/api/fan/restore", (WmiInterface wmi) =>
@@ -964,7 +964,7 @@ app.MapPost("/api/fan/restore", (WmiInterface wmi) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/fan/restore");
     }
 });
 // ---- Fan status read (WMI Bellator GET) ----
@@ -979,7 +979,7 @@ app.MapGet("/api/fan/status", (WmiInterface wmi) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/fan/status");
     }
 });
 
@@ -1010,7 +1010,7 @@ app.MapPost("/api/fan-curve/save", (FanCurveService svc, FanCurveSaveRequest req
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/fan-curve/save");
     }
 });
 
@@ -1023,7 +1023,7 @@ app.MapPost("/api/fan-curve/start", (FanCurveService svc, FanCurveStartRequest? 
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/fan-curve/start");
     }
 });
 
@@ -1036,7 +1036,7 @@ app.MapPost("/api/fan-curve/stop", (FanCurveService svc) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/fan-curve/stop");
     }
 });
 
@@ -1147,7 +1147,7 @@ app.MapPost("/api/gpu/set", (GpuController gpu, GpuSetRequest req) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/gpu/set");
     }
 });
 app.MapGet("/api/gpu/status", (GpuController gpu) =>
@@ -1161,7 +1161,7 @@ app.MapGet("/api/gpu/status", (GpuController gpu) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/gpu/status");
     }
 });
 
@@ -1226,7 +1226,7 @@ app.MapGet("/api/cpu/status", (CpuPowerController cpu) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/cpu/status");
     }
 });
 
@@ -1242,7 +1242,7 @@ app.MapPost("/api/cpu/freq-limit", async (CpuPowerController cpu, CpuFreqLimitRe
     catch (Exception ex)
     {
         Log($"[cpu/freq-limit] ✗ {ex.Message}");
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/cpu/freq-limit");
     }
 });
 
@@ -1258,7 +1258,7 @@ app.MapPost("/api/cpu/turbo", async (CpuPowerController cpu, CpuTurboRequest req
     catch (Exception ex)
     {
         Log($"[cpu/turbo] ✗ {ex.Message}");
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/cpu/turbo");
     }
 });
 
@@ -1274,7 +1274,7 @@ app.MapPost("/api/cpu/core-limit", async (CpuPowerController cpu, CpuCoreLimitRe
     catch (Exception ex)
     {
         Log($"[cpu/core-limit] ✗ {ex.Message}");
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/cpu/core-limit");
     }
 });
 
@@ -1288,7 +1288,7 @@ app.MapPost("/api/cpu/reset", async (CpuPowerController cpu) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/cpu/reset");
     }
 });
 
@@ -1350,7 +1350,7 @@ app.MapPost("/api/uxtu/apply", async (HttpContext ctx, SmuController smu) =>
         Log($"[uxtu/apply] ✓ saved ppt={cpuPpt} short={cpuShortPpt} temp={cpuTemp} co={cpuVoltage} freqLim={body.Params?.CpuFreqLimitMhz} turbo={cpuTurboOff} core={cpuCoreLimit} rc={rc}");
         return Results.Json(new { ok = rc == 0, message = rc == 0 ? "OK" : $"rc={rc}" });
     }
-    catch (Exception ex) { Log($"[uxtu/apply] ✗ {ex.Message}"); return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { Log($"[uxtu/apply] ✗ {ex.Message}"); return ApiProblem.From(ex, "/api/uxtu/apply"); }
 });
 app.MapGet("/api/ryzenadj/info", (SmuController smu) =>
 {
@@ -1359,7 +1359,7 @@ app.MapGet("/api/ryzenadj/info", (SmuController smu) =>
         var probeOk = smu.Probe();
         return Results.Json(new { ok = probeOk, data = new { probeResult = probeOk, type = "subprocess", source = "ryzenadj" } });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/ryzenadj/info"); }
 });
 app.MapPost("/api/wmi/cmd", (WmiInterface wmi, WmiCmdRequest req) =>
 {
@@ -1374,7 +1374,7 @@ app.MapPost("/api/wmi/cmd", (WmiInterface wmi, WmiCmdRequest req) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "/api/wmi/cmd");
     }
 });
 app.MapPost("/api/system/settings", async (HttpContext ctx) =>
@@ -1386,7 +1386,7 @@ app.MapPost("/api/system/settings", async (HttpContext ctx) =>
         AppLog.Write("API", $"[system] {body?.Key}={body?.Value} — Node.js 已废弃，此端点仅做兼容");
         return Results.Json(new { ok = false, error = "此端点已废弃，请使用 /api/control" });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/system/settings"); }
 });
 app.MapPost("/api/fan/full-speed", () =>
 {
@@ -1420,7 +1420,7 @@ app.MapPost("/api/ui-state", async (HttpContext ctx) =>
         JsonWrite("ui-state.json", body ?? new UiState());
         return Results.Json(new { ok = true });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/ui-state"); }
 });
 app.MapGet("/api/default-config", () =>
 {
@@ -1436,7 +1436,7 @@ app.MapPost("/api/default-config", async (HttpContext ctx) =>
         JsonWrite("dashboard-default.json", body ?? new DefaultConfig());
         return Results.Json(new { ok = true });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/default-config"); }
 });
 
 // ---- Auto-start options (minimized preference + enabled cache) ----
@@ -1485,7 +1485,7 @@ app.MapPost("/api/auto-start-opts", async (HttpContext ctx) =>
         WriteAutoStartOpts(enabled, minimized);
         return Results.Json(new { ok = true, minimized });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/auto-start-opts"); }
 });
 
 // ---- Auto-start (Windows Task Scheduler) ----
@@ -1571,7 +1571,7 @@ app.MapPost("/api/auto-start", async (HttpContext ctx) =>
 
         return Results.Json(new { ok = true, enabled });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/auto-start"); }
 });
 
 // ---- Custom background image ----
@@ -1633,7 +1633,7 @@ app.MapPost("/api/background-opts", async (HttpContext ctx) =>
         File.WriteAllText(bgOptsPath, JsonSerializer.Serialize(new { enabled, opacity, maskColor }));
         return Results.Json(new { ok = true, enabled, opacity, maskColor });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/background-opts"); }
 });
 
 app.MapPost("/api/background", async (HttpContext ctx) =>
@@ -1671,7 +1671,7 @@ app.MapPost("/api/background", async (HttpContext ctx) =>
         File.Move(tmpPath, filePath);
         return Results.Json(new { ok = true, ext });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/background"); }
 });
 
 app.MapGet("/api/background", async (HttpContext ctx) =>
@@ -1722,7 +1722,7 @@ app.MapDelete("/api/background", () =>
         File.WriteAllText(bgOptsPath, JsonSerializer.Serialize(new { enabled = false, opacity, maskColor }));
         return Results.Json(new { ok = true });
     }
-    catch (Exception ex) { return Results.Json(new { ok = false, error = ex.Message }); }
+    catch (Exception ex) { return ApiProblem.From(ex, "/api/background"); }
 });
 
 // ---- 检查更新 (GitHub Releases API) ----
@@ -1799,8 +1799,11 @@ app.MapGet("/api/update/check", async () =>
     }
     catch (Exception ex)
     {
+        // 保持 200 与原有字段：前端 UpdateDialog 依赖 available / currentVersion，
+        // 且"检查失败"属于可预期结果而非服务端故障。
+        AppLog.Write("API", $"[/api/update/check] 检查更新失败: {ex.GetType().Name}: {ex.Message}");
         return Results.Json(new { available = false, currentVersion = _appVersion,
-            error = ex.Message });
+            error = "检查更新失败，请稍后重试" });
     }
 });
 
@@ -1928,7 +1931,7 @@ app.MapPost("/api/game-profiles", (GameProfileRequest req, GameProfileService sv
     }
     catch (InvalidOperationException ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return ApiProblem.BadRequest(ex, "/api/game-profiles");
     }
 });
 
@@ -1954,7 +1957,7 @@ app.MapPut("/api/game-profiles/{id}", (string id, GameProfileRequest req, GamePr
     }
     catch (InvalidOperationException ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return ApiProblem.BadRequest(ex, "/api/game-profiles/{id}");
     }
 });
 
