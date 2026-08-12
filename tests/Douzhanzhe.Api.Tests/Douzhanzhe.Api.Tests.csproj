@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <!--
+    只编译被测源文件，不引用整个 API 项目：API 是可执行程序，其顶层语句会在启动时
+    抢占进程优先级、加载 inpoutx64 内核驱动并下发硬件设置，测试进程不应触发这些副作用。
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\server\api\LocalAccessGuard.cs" Link="Subjects\LocalAccessGuard.cs" />
+    <Compile Include="..\..\server\hal\AppLog.cs" Link="Subjects\AppLog.cs" />
+  </ItemGroup>
+
+</Project>
