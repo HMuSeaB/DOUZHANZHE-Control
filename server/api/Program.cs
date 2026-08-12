@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Microsoft.Win32.TaskScheduler;
+using Douzhanzhe.API.Endpoints;
 
 // ---- AppLog 统一日志初始化（所有服务注册之前）----
 var _appDataDir = Path.Combine(
@@ -35,6 +36,20 @@ builder.Services.AddSingleton<OsdService>();
 builder.Services.AddSingleton<GameProfileService>();
 builder.Services.AddSingleton<ProcessMonitorService>();
 builder.Services.AddHostedService<TelemetryBackgroundService>();
+
+// ---- Config directory ----
+// 安装环境: AppContext.BaseDirectory\config\
+// 开发环境: BaseDirectory\bin\build\ → 需要回退到项目根目录\config\
+var configDir = Path.Combine(AppContext.BaseDirectory, "config");
+if (!Directory.Exists(configDir))
+{
+    var devConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "config"));
+    if (Directory.Exists(devConfig))
+        configDir = devConfig;
+}
+var configStore = new ConfigStore(configDir);
+builder.Services.AddSingleton(configStore);
+
 var app = builder.Build();
 var osdService = app.Services.GetRequiredService<OsdService>();
 
@@ -73,17 +88,6 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 app.MapFallbackToFile("index.html");
-// ---- Config directory (shared with Node.js) ----
-// 安装环境: AppContext.BaseDirectory\config\
-// 开发环境: BaseDirectory\bin\build\ → 需要回退到项目根目录\config\
-var configDir = Path.Combine(AppContext.BaseDirectory, "config");
-if (!Directory.Exists(configDir))
-{
-    var devConfig = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "config"));
-    if (Directory.Exists(devConfig))
-        configDir = devConfig;
-}
-Directory.CreateDirectory(configDir);
 
 // ---- File logger (统一走 AppLog) ----
 void Log(string msg)
@@ -93,15 +97,10 @@ void Log(string msg)
 Log($"API starting, BaseDir={AppContext.BaseDirectory}, ConfigDir={configDir}");
 Log($"[Guard] 同源守卫已启用 (devMode={_devMode}, 裸硬件端点={(LocalAccessGuard.UnsafeToolsEnabled ? "已解锁" : "禁用")}), 会话令牌={LocalAccessGuard.TokenPath}");
 
-// ---- 性能设置持久化 ----
-var _perfLock = new object();
-var _perfFile = "performance-overrides.json";
+// ---- 性能设置持久化（实现见 ConfigStore）----
 bool _pgSuppress = false; // ParameterGuard 睡眠期间暂停标志
-PerformanceOverrides LoadPerfOverrides() => JsonRead(_perfFile, new PerformanceOverrides());
-void SavePerfOverrides(Action<PerformanceOverrides> mutate)
-{
-    lock (_perfLock) { var o = LoadPerfOverrides(); mutate(o); JsonWrite(_perfFile, o); }
-}
+PerformanceOverrides LoadPerfOverrides() => configStore.LoadPerfOverrides();
+void SavePerfOverrides(Action<PerformanceOverrides> mutate) => configStore.SavePerfOverrides(mutate);
 
 // ---- 睡眠/休眠恢复：重置底层驱动并重新初始化 ----
 SystemEvents.PowerModeChanged += (sender, e) =>
@@ -167,36 +166,9 @@ SystemEvents.PowerModeChanged += (sender, e) =>
         });
     }
 };
-// ---- JSON persistence helpers ----
-T JsonRead<T>(string fileName, T fallback) where T : class
-{
-    var filePath = Path.Combine(configDir, fileName);
-    if (!File.Exists(filePath)) return fallback;
-    try
-    {
-        var opts = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            IncludeFields = true
-        };
-        return JsonSerializer.Deserialize<T>(File.ReadAllText(filePath), opts) ?? fallback;
-    }
-    catch { return fallback; }
-}
-void JsonWrite<T>(string fileName, T data)
-{
-    var filePath = Path.Combine(configDir, fileName);
-    var tmpPath = filePath + ".tmp";
-    var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        IncludeFields = true
-    });
-    File.WriteAllText(tmpPath, json);
-    File.Move(tmpPath, filePath, overwrite: true);
-}
+// ---- JSON persistence helpers（实现见 ConfigStore）----
+T JsonRead<T>(string fileName, T fallback) where T : class => configStore.Read(fileName, fallback);
+void JsonWrite<T>(string fileName, T data) => configStore.Write(fileName, data);
 
 // ---- 恢复计算类性能设置 (CPU + SMU + GPU + NVAPI, 不含风扇) ----
 // 供启动、睡眠恢复、ParameterGuard 共用
@@ -868,429 +840,22 @@ app.MapGet("/api/smu/read-reg", (SmuController smu, HttpContext ctx) =>
         return ApiProblem.From(ex, "/api/smu/read-reg");
     }
 });
-app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi) =>
-{
-    try
-    {
-        Log($"[fan/set-target] ← large={req.LargeRpm} small={req.SmallRpm}");
-        // Bellator 协议: 交错式 — Switch(fan) → Speed(fan) 逐扇操作
-        if (req.LargeRpm.HasValue)
-        {
-            var speed = (byte)Math.Clamp(req.LargeRpm.Value / 100, 0, 44);
-            wmi.SetFanManual(0, true);
-            wmi.SetFanSpeed(0, speed); // FanType 0 = CPUGPUFan
-        }
-        if (req.SmallRpm.HasValue)
-        {
-            var speed = (byte)Math.Clamp(req.SmallRpm.Value / 100, 0, 82);
-            wmi.SetFanManual(1, true);
-            wmi.SetFanSpeed(1, speed); // FanType 1 = SYSFan
-        }
-        // 持久化固定风扇转速，供睡眠恢复 + 启动恢复使用
-        SavePerfOverrides(o =>
-        {
-            if (req.LargeRpm.HasValue) o.Fan.LargeRpm = req.LargeRpm.Value;
-            if (req.SmallRpm.HasValue) o.Fan.SmallRpm = req.SmallRpm.Value;
-        });
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan/set-target");
-    }
-});
-// ---- Fan write strategy test (compare manual flag behavior) ----
-app.MapPost("/api/fan/test-write", (FanTestWriteRequest req, WmiInterface wmi) =>
-{
-    if (LocalAccessGuard.BlockUnsafeTool("/api/fan/test-write") is { } blocked) return blocked;
-    try
-    {
-        var strategy = req.Strategy ?? "manual-true";
-        var largeSpeed = (byte)Math.Clamp((req.LargeRpm ?? 2900) / 100, 0, 44);
-        var smallSpeed = (byte)Math.Clamp((req.SmallRpm ?? 6900) / 100, 0, 82);
-
-        switch (strategy)
-        {
-            case "manual-true":
-                // Current approach: Manual(true) + Speed, interleaved
-                wmi.SetFanManual(0, true);
-                wmi.SetFanSpeed(0, largeSpeed);
-                wmi.SetFanManual(1, true);
-                wmi.SetFanSpeed(1, smallSpeed);
-                break;
-
-            case "speed-only":
-                // No manual flag change, just speed writes
-                wmi.SetFanSpeed(0, largeSpeed);
-                wmi.SetFanSpeed(1, smallSpeed);
-                break;
-
-            case "manual-false":
-                // Set manual to false first, then speed
-                wmi.SetFanManual(0, false);
-                wmi.SetFanSpeed(0, largeSpeed);
-                wmi.SetFanManual(1, false);
-                wmi.SetFanSpeed(1, smallSpeed);
-                break;
-
-            case "speed-then-manual":
-                // Speed first, then manual (reversed order)
-                wmi.SetFanSpeed(0, largeSpeed);
-                wmi.SetFanSpeed(1, smallSpeed);
-                wmi.SetFanManual(0, true);
-                wmi.SetFanManual(1, true);
-                break;
-
-            default:
-                return Results.Json(new { ok = false, error = "Unknown strategy: " + strategy });
-        }
-
-        return Results.Json(new { ok = true, strategy, largeSpeed, smallSpeed });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan/test-write");
-    }
-});
-app.MapPost("/api/fan/restore", (WmiInterface wmi) =>
-{
-    try
-    {
-        wmi.SetFanManual(0, false);
-        wmi.SetFanManual(1, false);
-        // 清除持久化的风扇转速
-        SavePerfOverrides(o => { o.Fan.LargeRpm = null; o.Fan.SmallRpm = null; });
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan/restore");
-    }
-});
-// ---- Fan status read (WMI Bellator GET) ----
-app.MapGet("/api/fan/status", (WmiInterface wmi) =>
-{
-    try
-    {
-        var manualEnabled = wmi.GetFanManualEnabled();
-        var largeTarget = wmi.GetFanSpeed(0) * 100;
-        var smallTarget = wmi.GetFanSpeed(1) * 100;
-        return Results.Json(new { ok = true, manualEnabled, largeRpmTarget = (int)largeTarget, smallRpmTarget = (int)smallTarget });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan/status");
-    }
-});
 
 // ---- Fan Curve (自定义散热曲线) ----
 var _fanCurveSvc = app.Services.GetRequiredService<FanCurveService>();
 _fanCurveSvc.LoadConfig(); // 启动时加载已保存的曲线
 
-app.MapGet("/api/fan-curve/status", (FanCurveService svc) =>
-{
-    return Results.Json(new
-    {
-        ok = true,
-        active = svc.Active,
-        points = svc.Points.Select(p => new { temp = p.Temp, largeRpm = p.LargeRpm, smallRpm = p.SmallRpm }),
-    });
-});
+app.MapFanEndpoints();
 
-app.MapPost("/api/fan-curve/save", (FanCurveService svc, FanCurveSaveRequest req) =>
-{
-    try
-    {
-        if (req.Points == null || req.Points.Count < 2)
-            return Results.Json(new { ok = false, error = "至少需要 2 个曲线点" });
-        var points = req.Points.Select(p => new FanCurvePoint(p.Temp, p.LargeRpm, p.SmallRpm)).ToList();
-        svc.SetPoints(points, req.IntervalMs, req.HysteresisC);
-        svc.SaveConfig();
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan-curve/save");
-    }
-});
-
-app.MapPost("/api/fan-curve/start", (FanCurveService svc, FanCurveStartRequest? req) =>
-{
-    try
-    {
-        svc.Start(req?.IntervalMs, req?.HysteresisC);
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan-curve/start");
-    }
-});
-
-app.MapPost("/api/fan-curve/stop", (FanCurveService svc) =>
-{
-    try
-    {
-        svc.Stop();
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/fan-curve/stop");
-    }
-});
-
-// ---- Fan Curve Route Info (路由状态查询) ----
-app.MapGet("/api/fan-curve/route-info", (FanCurveService svc) =>
-{
-    return Results.Json(new
-    {
-        ok = true,
-        active = svc.Active,
-        currentItsm = svc.CurrentItsm,
-        routedMode = svc.RoutedMode,
-        lastLargeTarget = svc.LastLargeTarget,
-        lastSmallTarget = svc.LastSmallTarget,
-        itsmDeviationCount = svc.ItsmDeviationCount,
-        // EC 读回诊断
-        actualCpuFanRpm = svc.ActualCpuFanRpm,
-        actualGpuFanRpm = svc.ActualGpuFanRpm,
-        ecFanTargetLarge = svc.EcFanTargetLarge,
-        ecFanTargetSmall = svc.EcFanTargetSmall,
-        ecFanShadowLarge = svc.EcFanShadowLarge,
-        ecFanShadowSmall = svc.EcFanShadowSmall,
-        lastWmiLargeOk = svc.LastWmiLargeOk,
-        lastWmiSmallOk = svc.LastWmiSmallOk,
-        tickCount = svc.TickCount,
-        consecutiveDeviation = svc.ConsecutiveDeviation,
-        cpuTemp = svc.LastCpuTemp,
-        gpuTemp = svc.LastGpuTemp,
-        hotspot = svc.LastHotspot,
-    });
-});
-
-// ---- GPU 控制 (nvidia-smi 子进程) ----
-app.MapPost("/api/gpu/set", (GpuController gpu, GpuSetRequest req) =>
-{
-    try
-    {
-        switch (req.Action)
-        {
-            // 上限限制: --lock-gpu-clocks=0,value (仅传 value 时自动补 min=0)
-            case "lock":
-            case "lock-clocks":
-                if (req.Min.HasValue || req.Max.HasValue)
-                    gpu.SetLockGpuClocks(req.Min ?? 0, req.Max ?? 0);
-                else
-                    gpu.SetMaxGpuClock(req.Value ?? 0);
-                break;
-            // 精确锁定: --lock-gpu-clocks=min,min (单值锁频)
-            case "lock-exact":
-                gpu.SetExactGpuClock(req.Value ?? 0);
-                break;
-            // 上限限制 (显式): --lock-gpu-clocks=0,max
-            case "limit":
-            case "limit-max":
-                gpu.SetMaxGpuClock(req.Value ?? req.Max ?? 0);
-                break;
-            // 重置核心频率
-            case "reset":
-            case "reset-clocks":
-                gpu.ResetGpuClocks();
-                break;
-            // 显存区间锁定
-            case "lock-memory":
-            case "lock-memory-clocks":
-                gpu.SetLockMemoryClocks(req.Min ?? 0, req.Max ?? 0);
-                break;
-            // 显存上限限制
-            case "limit-memory":
-                gpu.SetMaxMemoryClock(req.Value ?? req.Max ?? 0);
-                break;
-            // 重置显存频率
-            case "reset-memory":
-            case "reset-memory-clocks":
-                gpu.ResetMemoryClocks();
-                break;
-            default:
-                return Results.Json(new { ok = false, error = "unknown action: " + req.Action });
-        }
-        // 持久化 GPU 控制设置 (nvidia-smi 路径)
-        SavePerfOverrides(o =>
-        {
-            switch (req.Action)
-            {
-                case "limit-max" or "limit":
-                    o.Gpu.CoreFreqMhz = req.Value ?? req.Max ?? 0;
-                    if (o.Gpu.FreqLocked != true) { /* 未锁定时不改变 locked 状态 */ }
-                    break;
-                case "lock-exact":
-                    o.Gpu.CoreFreqMhz = req.Value ?? 0;
-                    o.Gpu.FreqLocked = true;
-                    break;
-                case "reset-clocks" or "reset":
-                    o.Gpu.CoreFreqMhz = null;
-                    o.Gpu.FreqLocked = null;
-                    break;
-                case "limit-memory":
-                    // 前端传绝对值 9001/11001/12001，转换为 1/2/3 档位
-                    var memMap = new Dictionary<int, int> { [9001] = 1, [11001] = 2, [12001] = 3 };
-                    var val = req.Value ?? req.Max ?? 0;
-                    o.Gpu.MemFreqLevel = memMap.TryGetValue(val, out var lvl) ? lvl : 0;
-                    break;
-                case "reset-memory-clocks" or "reset-memory":
-                    o.Gpu.MemFreqLevel = null;
-                    break;
-            }
-        });
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/gpu/set");
-    }
-});
-app.MapGet("/api/gpu/status", (GpuController gpu) =>
-{
-    try
-    {
-        var info = gpu.GetClockInfo();
-        var baseClock = gpu.GetBaseClock();
-        var maxClock = gpu.GetMaxClock();
-        return Results.Json(new { ok = true, coreClockMHz = info.CoreClockMHz, memoryClockMHz = info.MemoryClockMHz, powerDrawW = info.PowerDrawW, baseCoreClockMHz = baseClock, maxCoreClockMHz = maxClock });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/gpu/status");
-    }
-});
 
 // ---- NVAPI GPU 控制 (超频/降频/功率/温度) ----
 var nvapi = app.Services.GetRequiredService<NvapiGpuController>();
 if (!nvapi.Init())
     Log("[NVAPI] 未初始化，超频/功率/温度控制不可用");
 
-app.MapGet("/api/nvapi/status", (NvapiGpuController nv) =>
-{
-    var s = nv.GetStatus();
-    return Results.Json(new {
-        ok = s.Available, gpuName = s.GpuName, overclockSupported = s.OverclockSupported, ocEngine = s.OcEngine,
-        coreMhz = s.CoreMhz, memMhz = s.MemMhz,
-        coreOffsetMhz = s.CoreOffsetMhz, memOffsetMhz = s.MemOffsetMhz,
-        powerLimitMw = s.PowerLimitMw, powerMinMw = s.PowerMinMw,
-        powerMaxMw = s.PowerMaxMw, powerDefaultMw = s.PowerDefaultMw,
-        thermalLimitC = s.ThermalLimitC, thermalMinC = s.ThermalMinC,
-        thermalMaxC = s.ThermalMaxC, thermalDefaultC = s.ThermalDefaultC
-    });
-});
+app.MapGpuEndpoints();
 
-app.MapGet("/api/nvapi/dump-pstates", (NvapiGpuController nv) =>
-    Results.Text(nv.DumpPStates(), "text/plain"));
-
-app.MapPost("/api/nvapi/overclock", (NvapiGpuController nv, NvapiOverclockRequest req) =>
-{
-    if (!nv.IsAvailable) return Results.Json(new { ok = false, error = "NVAPI not available" });
-    var rc = nv.SetP0Offset(req.CoreOffsetMhz, req.MemOffsetMhz);
-    SavePerfOverrides(o => { o.Nvapi.OcCoreOffsetMhz = req.CoreOffsetMhz; o.Nvapi.OcMemOffsetMhz = req.MemOffsetMhz; });
-    return Results.Json(new { ok = rc == 0, rc });
-});
-
-app.MapPost("/api/nvapi/power-limit", (NvapiGpuController nv, NvapiPowerLimitRequest req) =>
-{
-    if (!nv.IsAvailable) return Results.Json(new { ok = false, error = "NVAPI not available" });
-    var rc = nv.SetPowerLimit((uint)(req.PowerW * 1000)); // W → mW
-    SavePerfOverrides(o => o.Nvapi.PowerLimitW = req.PowerW);
-    return Results.Json(new { ok = rc == 0, rc });
-});
-
-app.MapPost("/api/nvapi/thermal-limit", (NvapiGpuController nv, NvapiThermalLimitRequest req) =>
-{
-    if (!nv.IsAvailable) return Results.Json(new { ok = false, error = "NVAPI not available" });
-    var rc = nv.SetThermalLimit(req.TempC);
-    SavePerfOverrides(o => o.Nvapi.ThermalLimitC = req.TempC);
-    return Results.Json(new { ok = rc == 0, rc });
-});
-
-// ---- CPU 性能控制 (powercfg 电源计划 API) ----
-app.MapGet("/api/cpu/status", (CpuPowerController cpu) =>
-{
-    try
-    {
-        var s = cpu.GetStatus();
-        return Results.Json(new {
-            ok = s.Available,
-            turboEnabled = s.TurboEnabled,
-            coreLimitPercent = s.CoreLimitPercent,
-            freqLimitMhz = s.FreqLimitMhz
-        });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/cpu/status");
-    }
-});
-
-app.MapPost("/api/cpu/freq-limit", async (CpuPowerController cpu, CpuFreqLimitRequest req) =>
-{
-    try
-    {
-        Log($"[cpu/freq-limit] ← mhz={req.Mhz}");
-        await cpu.SetFreqLimitAsync(req.Mhz);
-        SavePerfOverrides(o => o.Cpu.FreqLimitMhz = req.Mhz);
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        Log($"[cpu/freq-limit] ✗ {ex.Message}");
-        return ApiProblem.From(ex, "/api/cpu/freq-limit");
-    }
-});
-
-app.MapPost("/api/cpu/turbo", async (CpuPowerController cpu, CpuTurboRequest req) =>
-{
-    try
-    {
-        Log($"[cpu/turbo] ← enabled={req.Enabled}");
-        await cpu.SetTurboAsync(req.Enabled);
-        SavePerfOverrides(o => o.Cpu.TurboEnabled = req.Enabled);
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        Log($"[cpu/turbo] ✗ {ex.Message}");
-        return ApiProblem.From(ex, "/api/cpu/turbo");
-    }
-});
-
-app.MapPost("/api/cpu/core-limit", async (CpuPowerController cpu, CpuCoreLimitRequest req) =>
-{
-    try
-    {
-        Log($"[cpu/core-limit] ← percent={req.Percent}");
-        await cpu.SetCoreLimitAsync(req.Percent);
-        SavePerfOverrides(o => o.Cpu.CoreLimitPercent = req.Percent);
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        Log($"[cpu/core-limit] ✗ {ex.Message}");
-        return ApiProblem.From(ex, "/api/cpu/core-limit");
-    }
-});
-
-app.MapPost("/api/cpu/reset", async (CpuPowerController cpu) =>
-{
-    try
-    {
-        await cpu.ResetAllAsync();
-        SavePerfOverrides(o => { o.Cpu = new CpuOverrides(); });
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return ApiProblem.From(ex, "/api/cpu/reset");
-    }
-});
+app.MapCpuEndpoints();
 
 // ---- Node.js 废弃迁移端点 ----
 app.MapPost("/api/uxtu/apply", async (HttpContext ctx, SmuController smu) =>
@@ -1576,13 +1141,7 @@ app.MapPost("/api/auto-start", async (HttpContext ctx) =>
 
 // ---- Custom background image ----
 var bgOptsPath = Path.Combine(configDir, "background-opts.json");
-// 只匹配图片文件，排除 background-opts.json / background.json 等
-string[] BgImageFiles() => Directory.GetFiles(configDir, "background.*")
-    .Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-             || f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
-             || f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
-             || f.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
-    .ToArray();
+string[] BgImageFiles() => configStore.BackgroundImageFiles();
 
 app.MapGet("/api/background-opts", () =>
 {
@@ -1902,153 +1461,7 @@ app.MapPost("/api/osd/show", (OsdShowRequest req, OsdService osd) =>
     return Results.Ok();
 });
 
-// ---- Game Profiles API ----
-app.MapGet("/api/game-profiles", (GameProfileService svc) =>
-{
-    return Results.Json(new
-    {
-        enabled = svc.Enabled,
-        defaultMode = svc.DefaultMode,
-        profiles = svc.GetAll()
-    });
-});
-
-app.MapPost("/api/game-profiles", (GameProfileRequest req, GameProfileService svc) =>
-{
-    try
-    {
-        var profile = new GameProfile
-        {
-            Name = req.Name ?? "",
-            ExePath = req.ExePath ?? "",
-            ExeName = req.ExeName ?? Path.GetFileName(req.ExePath ?? ""),
-            TargetMode = req.TargetMode ?? svc.DefaultMode,
-            Enabled = req.Enabled ?? true,
-            Source = req.Source ?? "manual"
-        };
-        var created = svc.Add(profile);
-        return Results.Created($"/api/game-profiles/{created.Id}", created);
-    }
-    catch (InvalidOperationException ex)
-    {
-        return ApiProblem.BadRequest(ex, "/api/game-profiles");
-    }
-});
-
-app.MapPut("/api/game-profiles/{id}", (string id, GameProfileRequest req, GameProfileService svc) =>
-{
-    try
-    {
-        var existing = svc.GetById(id);
-        if (existing == null)
-            return Results.NotFound(new { error = "规则不存在" });
-
-        var updated = svc.Update(id, new GameProfile
-        {
-            Id = id,
-            Name = req.Name ?? existing.Name,
-            ExePath = req.ExePath ?? existing.ExePath,
-            ExeName = req.ExeName ?? existing.ExeName,
-            TargetMode = req.TargetMode ?? existing.TargetMode,
-            Enabled = req.Enabled ?? existing.Enabled,
-            Source = req.Source ?? existing.Source
-        });
-        return Results.Ok(updated);
-    }
-    catch (InvalidOperationException ex)
-    {
-        return ApiProblem.BadRequest(ex, "/api/game-profiles/{id}");
-    }
-});
-
-app.MapDelete("/api/game-profiles/{id}", (string id, GameProfileService svc) =>
-{
-    svc.Delete(id);
-    return Results.Ok();
-});
-
-app.MapPut("/api/game-profiles/config", (GameConfigRequest req, GameProfileService svc) =>
-{
-    svc.UpdateConfig(req.Enabled, req.DefaultMode);
-    return Results.Ok(new { enabled = svc.Enabled, defaultMode = svc.DefaultMode });
-});
-
-app.MapGet("/api/game-profiles/status", (ProcessMonitorService svc) =>
-{
-    return Results.Json(svc.GetStatus());
-});
-
-app.MapGet("/api/game-profiles/file-pick", () =>
-{
-    // 使用 Windows 文件选择对话框
-    var ofd = new System.Windows.Forms.OpenFileDialog
-    {
-        Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-        Title = "选择游戏主程序",
-        Multiselect = false
-    };
-
-    // 需要在 STA 线程上运行
-    string? result = null;
-    var thread = new Thread(() =>
-    {
-        if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            result = ofd.FileName;
-    });
-    thread.SetApartmentState(ApartmentState.STA);
-    thread.Start();
-    thread.Join();
-
-    if (result == null)
-        return Results.Ok(new { selected = false, path = (string?)null, name = (string?)null });
-
-    var fileName = Path.GetFileNameWithoutExtension(result);
-    return Results.Ok(new { selected = true, path = result, name = fileName });
-});
-
-// 扫描已安装游戏（Steam + Epic）
-app.MapGet("/api/game-profiles/scan", (GameProfileService profiles) =>
-{
-    var results = GameScannerService.Scan(profiles);
-    return Results.Json(results);
-});
-
-// 批量添加游戏
-app.MapPost("/api/game-profiles/batch", async (HttpRequest req, GameProfileService profiles) =>
-{
-    var body = await req.ReadFromJsonAsync<JsonElement>();
-    if (!body.TryGetProperty("games", out var games) || games.ValueKind != JsonValueKind.Array)
-        return Results.BadRequest(new { error = "games array required" });
-
-    int added = 0;
-    foreach (var g in games.EnumerateArray())
-    {
-        var name = g.TryGetProperty("name", out var n) ? n.GetString() : null;
-        var exePath = g.TryGetProperty("exePath", out var ep) ? ep.GetString() : null;
-        var targetMode = g.TryGetProperty("targetMode", out var tm) ? tm.GetString() : "gaming";
-        var source = g.TryGetProperty("source", out var src) ? src.GetString() : "scan";
-
-        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(exePath)) continue;
-
-        var exeName = Path.GetFileName(exePath);
-        try
-        {
-            profiles.Add(new GameProfile
-            {
-                Name = name,
-                ExeName = exeName,
-                ExePath = exePath,
-                TargetMode = targetMode,
-                Source = source,
-                Enabled = true
-            });
-            added++;
-        }
-        catch { }
-    }
-
-    return Results.Ok(new { added });
-});
+app.MapGameProfileEndpoints();
 
 // ---- Start server ----
 try
