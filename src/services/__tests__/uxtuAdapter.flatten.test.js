@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { flattenBackendOverrides, powerPlanHALMap } from '../uxtuAdapter'
+import { flattenBackendOverrides, powerPlanHALMap, BUILTIN_MODE_ORDER, resolvePerfMode, sortBuiltinProfiles } from '../uxtuAdapter'
 
 // ── flattenBackendOverrides: powerPlan 整数 → 字符串 id 归一化 ──
 // 回归说明（修的是切到控制面板时「电源管理」已保存的档位不显示）：
@@ -30,5 +30,35 @@ describe('flattenBackendOverrides powerPlan', () => {
   it('无 powerPlan 时不写入 cpuPowerPlan', () => {
     const flat = flattenBackendOverrides({ cpu: { freqLimitMhz: 3000 } })
     expect(flat.cpuPowerPlan).toBeUndefined()
+  })
+})
+
+// ── cfg- 配置 id 辅助（resolvePerfMode / sortBuiltinProfiles / BUILTIN_MODE_ORDER） ──
+describe('cfg- 配置 id 解包与排序', () => {
+  const profiles = [
+    { id: 'cfg-gaming', name: '斗战', builtIn: true, thermalMode: 'gaming' },
+    { id: 'cfg-silent', name: '安静', builtIn: true, thermalMode: 'silent' },
+    { id: 'cfg-office', name: '均衡', builtIn: true, thermalMode: 'office' },
+    { id: 'cfg-beast', name: '野兽', builtIn: true, thermalMode: 'beast' },
+  ]
+
+  it('resolvePerfMode：cfg- 配置 id → 性能模式裸名', () => {
+    expect(resolvePerfMode('cfg-gaming', profiles)).toBe('gaming')
+    expect(resolvePerfMode('cfg-silent', profiles)).toBe('silent')
+  })
+
+  it('resolvePerfMode：裸性能模式名原样返回 / 缺失回退 office', () => {
+    expect(resolvePerfMode('beast', profiles)).toBe('beast')
+    expect(resolvePerfMode('cfg-nonexistent', profiles)).toBe('office')
+    expect(resolvePerfMode('', profiles)).toBe('office')
+  })
+
+  it('sortBuiltinProfiles：按 cfg- 内置顺序（斗战最后）', () => {
+    const sorted = sortBuiltinProfiles(profiles)
+    expect(sorted.map(p => p.id)).toEqual(['cfg-silent', 'cfg-office', 'cfg-beast', 'cfg-gaming'])
+  })
+
+  it('BUILTIN_MODE_ORDER 是 cfg- 前缀配置 id', () => {
+    expect(BUILTIN_MODE_ORDER).toEqual(['cfg-silent', 'cfg-office', 'cfg-beast', 'cfg-gaming'])
   })
 })
