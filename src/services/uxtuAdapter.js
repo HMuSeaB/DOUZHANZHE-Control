@@ -530,7 +530,9 @@ export async function resetToFactoryDefaults(mode) {
   await syncOverrides(mode, {});
 
   // 2. 重发 thermal_mode (EC 重新加载出厂值，包括 CPU PPT/温度/风扇预设)
-  const tv = thermalModeMap[mode];
+  // 配置 id(cfg-…) 需先解出性能模式裸名再查 thermal 字节；裸名则直接查
+  const perfName = mode?.startsWith('cfg-') ? mode.slice(4) : mode;
+  const tv = thermalModeMap[perfName];
   if (tv !== null && tv !== undefined) {
     await applyHardwareControl("thermal_mode", tv, mode);
   }
