@@ -21,11 +21,21 @@ public sealed class ProfileService
 
     private static readonly (string Id, string Name, string ThermalMode)[] BuiltInProfiles =
     [
-        ("silent", "\u5b89\u9759", "silent"),
-        ("office", "\u5747\u8861", "office"),
-        ("gaming", "\u6597\u6218", "gaming"),
-        ("beast",  "\u91ce\u517d", "beast"),
+        ("cfg-silent", "\u5b89\u9759", "silent"),
+        ("cfg-office", "\u5747\u8861", "office"),
+        ("cfg-gaming", "\u6597\u6218", "gaming"),
+        ("cfg-beast",  "\u91ce\u517d", "beast"),
     ];
+
+    /// <summary>
+    /// 配置 id 前缀。统一用连字符，Windows 文件名、last-mode.json、前端 settings.mode、
+    /// 游戏 TargetMode、磁盘文件名全部同一串表示，与 EC 性能模式裸名(silent/office/beast/gaming)
+    /// 彻底区分，避免"一值两义"，且无需任何额外编码（KISS）。
+    /// </summary>
+    public const string Prefix = "cfg-";
+
+    private static bool IsBuiltinId(string id)
+        => BuiltInProfiles.Any(bp => bp.Id == id);
 
     public ProfileService(string configDir)
     {
@@ -293,7 +303,9 @@ public sealed class ProfileService
             return '\0';
         }).Where(c => c != '\0').ToArray();
         var id = new string(chars).Trim('-');
-        return id.Length > 0 ? id : "profile";
+        // 用户配置 id 统一加 cfg- 前缀，与 EC 性能模式裸名彻底区分。
+        if (id.Length == 0) return Prefix + "profile";
+        return Prefix + id;
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()

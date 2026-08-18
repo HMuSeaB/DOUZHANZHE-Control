@@ -71,6 +71,9 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
      .AllowAnyHeader()));
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.IncludeFields = true);
+// last-mode.json：记录当前选中配置 id 的唯一权威持久化文件。
+// 提早在 builder.Build() 前声明，供启动初始化 ProcessMonitor（CurrentMode()）使用。
+var _lastModeFile = "last-mode.json";
 var app = builder.Build();
 var osdService = app.Services.GetRequiredService<OsdService>();
 var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
@@ -124,7 +127,6 @@ catch (Exception ex)
 // ---- 性能设置持久化 (按模式存储) ----
 var _perfLock = new object();
 var _jsonWriteLock = new object();
-var _lastModeFile = "last-mode.json";
 bool _pgSuppress = false; // ParameterGuard 睡眠期间暂停标志
 
 string CurrentMode()
