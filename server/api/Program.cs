@@ -144,6 +144,24 @@ void SetCurrentMode(string mode)
 var _modeToThermal = new Dictionary<string, byte> { ["silent"] = 2, ["office"] = 0, ["beast"] = 1, ["gaming"] = 3 };
 var _ecWriteWhitelist = new HashSet<byte> { 0x5A, 0x5E, 0xE4 };
 
+// 唯一解包点：配置 id（cfg-…）→ 性能模式裸名(silent/office/beast/gaming)。
+// 供 switch / clear / Rank / resetToFactoryDefaults 统一调用，避免各处硬编码。
+// 优先查 ProfileEntry.ThermalMode；若是裸性能模式名则原样返回；否则回退 office。
+string ResolveConfigThermal(string cfgId)
+{
+    if (_modeToThermal.ContainsKey(cfgId)) return cfgId;
+    try
+    {
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        var entry = svc.GetById(cfgId);
+        if (entry != null && !string.IsNullOrEmpty(entry.Value.Entry.ThermalMode)
+            && _modeToThermal.ContainsKey(entry.Value.Entry.ThermalMode))
+            return entry.Value.Entry.ThermalMode;
+    }
+    catch { /* 后端/DI 未就绪时走回退 */ }
+    return "office";
+}
+
 void ApplyThermalMode(string mode)
 {
     if (!_modeToThermal.TryGetValue(mode, out var thermalVal)) return;
