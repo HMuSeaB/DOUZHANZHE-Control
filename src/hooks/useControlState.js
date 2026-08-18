@@ -7,6 +7,7 @@ import {
   fetchProfiles, fetchPlatformInfo,
   clearOverrides,
   setMaxCoresForPercent,
+  resolvePerfMode,
 } from "../services/uxtuAdapter";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ function makeInitialState() {
     telemetry: {},
     history: { cpu: [], gpu: [], fan: [], cpuTemp: [], gpuTemp: [] },
     settings: {
-      mode: "office", dGpuDirect: true, fanBoost: false,
+      mode: "cfg-office", dGpuDirect: true, fanBoost: false,
       numLock: true, capsLock: false, fnLock: false,
       touchpadLock: false, osdDisabled: false, kbBrightnessLevel: 0,
     },
@@ -193,7 +194,7 @@ async function bootstrap() {
   try {
     const { mode, overrides: rawOv } = await fetchOverrides();
     const ov = flattenBackendOverrides(rawOv, maxCores);
-    const fanDefaults = MODE_FAN_DEFAULTS[mode] || {};
+    const fanDefaults = MODE_FAN_DEFAULTS[resolvePerfMode(mode, profileList)] || {};
     // 说明：无需再写 prevMode —— setState 直接通过 prev/next 比较判定模式变更，
     // 且此刻 _bootstrapDone 尚未置 true，初始加载的 mode 不会触发 switchMode。
     setState(prev => ({
@@ -226,7 +227,7 @@ function startModeSwitch(currentMode) {
   switchMode(currentMode).then(({ overrides: rawOv }) => {
     if (gen !== _switchGen) return; // 丢弃过期响应
     const ov = flattenBackendOverrides(rawOv, _maxCores);
-    const fanDefaults = MODE_FAN_DEFAULTS[currentMode] || {};
+    const fanDefaults = MODE_FAN_DEFAULTS[resolvePerfMode(currentMode, state.profiles)] || {};
     setState(prev => ({
       ...prev,
       uxtuParams: { ...FULL_PARAMS, ...fanDefaults, ...ov },
@@ -234,7 +235,7 @@ function startModeSwitch(currentMode) {
     }));
   }).catch(() => {
     if (gen !== _switchGen) return;
-    const fanDefaults = MODE_FAN_DEFAULTS[currentMode] || {};
+    const fanDefaults = MODE_FAN_DEFAULTS[resolvePerfMode(currentMode, state.profiles)] || {};
     setState(prev => ({
       ...prev,
       uxtuParams: { ...FULL_PARAMS, ...fanDefaults },
@@ -314,7 +315,8 @@ function watchTelemetryMock() {
       const fanLargePct = base.fanLargeMax > 0 ? fanLargeRpm / base.fanLargeMax : 0;
       const fanSmallPct = base.fanSmallMax > 0 ? fanSmallRpm / base.fanSmallMax : 0;
       const cooling = 0.4 * fanLargePct + 0.25 * fanSmallPct;
-      const modeBias = u.settings.mode === "silent" ? -0.12 : u.settings.mode === "office" ? -0.05 : u.settings.mode === "gaming" ? 0.05 : u.settings.mode === "beast" ? 0.14 : 0;
+      const perfMode = resolvePerfMode(u.settings.mode, u.profiles);
+      const modeBias = perfMode === "silent" ? -0.12 : perfMode === "office" ? -0.05 : perfMode === "gaming" ? 0.05 : perfMode === "beast" ? 0.14 : 0;
       const cpuTargetUsage = Math.max(5, Math.min(95, 25 + (u.uxtuParams.cpuLongPptW / 120) * 55 + modeBias * 100));
       const gpuTargetUsage = Math.max(2, Math.min(95, 15 + (u.uxtuParams.gpuPptLimitW / 180) * 55 + modeBias * 80));
       const drift = (target, current, strength) => current + (target - current) * strength * dt + (Math.random() - 0.5) * 1.5;
@@ -392,7 +394,7 @@ export function useControlState() {
   // ── 重置参数到官方默认 ──
   const resetParams = useCallback(async (mode) => {
     await syncOverrides(mode, {});
-    const fanDefaults = MODE_FAN_DEFAULTS[mode] || {};
+    const fanDefaults = MODE_FAN_DEFAULTS[resolvePerfMode(mode, state.profiles)] || {};
     setState(prev => ({ ...prev, overrides: {}, uxtuParams: { ...FULL_PARAMS, ...fanDefaults } }));
   }, []);
 
@@ -432,7 +434,7 @@ export function useControlState() {
     try {
       const { mode, overrides: rawOv } = await fetchOverrides();
       const ov = flattenBackendOverrides(rawOv, _maxCores);
-      const fanDefaults = MODE_FAN_DEFAULTS[mode] || {};
+      const fanDefaults = MODE_FAN_DEFAULTS[resolvePerfMode(mode, state.profiles)] || {};
       setState(prev => ({
         ...prev,
         settings: { ...prev.settings, mode },

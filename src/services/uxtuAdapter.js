@@ -54,10 +54,25 @@ const _halToPowerPlanId = Object.entries(powerPlanHALMap).reduce((acc, [id, hal]
   return acc;
 }, {});
 
-// 内置模式显式展示顺序（用于 Dashboard 配置 dock / 控制面板配置下拉）。
+// 内置配置显式展示顺序（用于 Dashboard 配置 dock / 控制面板配置下拉）。
+// 注意：这些是「配置 id」（cfg- 前缀），与 EC 性能模式裸名(silent/office/…) 区分。
 // 后端 /api/profiles 的顺序由被持久化的 .index.json 决定、改源码不生效，
 // 所以前端用这里的固定顺序渲染，确保「斗战(功耗最高)排在最后」在界面稳定一致。
-export const BUILTIN_MODE_ORDER = ['silent', 'office', 'beast', 'gaming'];
+export const BUILTIN_MODE_ORDER = ['cfg-silent', 'cfg-office', 'cfg-beast', 'cfg-gaming'];
+
+// 配置 id → 性能模式裸名（唯一解包点，供 MODE_FAN_DEFAULTS/FAN_RANGES 等按性能模式取值）
+export function perfModeOf(profile) {
+  return profile?.thermalMode || 'office';
+}
+
+// 由「配置 id（或裸性能模式名，兼容旧值）」解析出性能模式裸名。
+// profileList 用于把 cfg- 配置 id 查成其 thermalMode；裸名则原样返回。
+export function resolvePerfMode(mode, profiles) {
+  if (!mode) return 'office';
+  if (mode === 'silent' || mode === 'office' || mode === 'beast' || mode === 'gaming') return mode;
+  const pf = (profiles || []).find(p => p.id === mode);
+  return pf?.thermalMode || 'office';
+}
 
 // 按 BUILTIN_MODE_ORDER 排序内置配置（未知 id 置末尾，保持稳定）
 export function sortBuiltinProfiles(profiles) {

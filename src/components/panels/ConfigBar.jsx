@@ -22,7 +22,8 @@ export default function ConfigBar({
 
   const profileName = currentProfile?.name || settings.mode;
   const isBuiltIn = currentProfile?.builtIn ?? true;
-  const boundMode = currentProfile?.thermalMode || settings.mode;
+  // 绑定的性能模式裸名：从当前配置的 thermalMode 取（配置 id ≠ 性能模式名）
+  const boundMode = currentProfile?.thermalMode || 'office';
   const modeLabel = MODE_LABELS[boundMode] || boundMode;
   const subtitle = isBuiltIn
     ? '内置配置 · 绑定散热模式：' + modeLabel
@@ -31,7 +32,7 @@ export default function ConfigBar({
   async function handleCreate() {
     if (!newName.trim()) return;
     try {
-      const entry = await createProfile(newName.trim(), settings.mode);
+      const entry = await createProfile(newName.trim(), currentProfile?.thermalMode || 'office');
       try {
         const { overrides } = await fetchOverrides();
         if (overrides) await saveProfile(entry.id, overrides);
