@@ -1,6 +1,7 @@
 import { useControlState } from '../hooks/useControlState';
 import { Skeleton, OfflineCard, EmptyState } from '../components/ui/PageState';
 import { useStall } from '../hooks/useStall';
+import { sortBuiltinProfiles } from '../services/uxtuAdapter';
 
 const C = 207; // ring circumference
 
@@ -93,7 +94,7 @@ export default function Dashboard({ onNavigate }) {
   const stalled = useStall(!hasAnyTelemetry);
   const isOffline = useStall(!backendOnline, 1500);
 
-  const builtinProfiles = profiles.filter(p => p.builtIn);
+  const builtinProfiles = sortBuiltinProfiles(profiles.filter(p => p.builtIn));
 
   const gpuModeNum = s.gpuMode != null ? Number(s.gpuMode) : null;
   const memUsedGb = (s.memoryTotalGB ?? 32) * (s.memoryUsage ?? 0) / 100;

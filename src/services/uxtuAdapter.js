@@ -54,6 +54,22 @@ const _halToPowerPlanId = Object.entries(powerPlanHALMap).reduce((acc, [id, hal]
   return acc;
 }, {});
 
+// 内置模式显式展示顺序（用于 Dashboard 配置 dock / 控制面板配置下拉）。
+// 后端 /api/profiles 的顺序由被持久化的 .index.json 决定、改源码不生效，
+// 所以前端用这里的固定顺序渲染，确保「斗战(功耗最高)排在最后」在界面稳定一致。
+export const BUILTIN_MODE_ORDER = ['silent', 'office', 'beast', 'gaming'];
+
+// 按 BUILTIN_MODE_ORDER 排序内置配置（未知 id 置末尾，保持稳定）
+export function sortBuiltinProfiles(profiles) {
+  return [...profiles].sort((a, b) => {
+    const ia = BUILTIN_MODE_ORDER.indexOf(a.id);
+    const ib = BUILTIN_MODE_ORDER.indexOf(b.id);
+    const va = ia === -1 ? BUILTIN_MODE_ORDER.length : ia;
+    const vb = ib === -1 ? BUILTIN_MODE_ORDER.length : ib;
+    return va - vb;
+  });
+}
+
 // C# HAL 硬件控制 (kb_light, fn_lock, num_lock, caps_lock, thermal_mode)
 export async function applyHardwareControl(target, value, mode) {
   const url = mode ? `/api/control?mode=${mode}` : `/api/control`;

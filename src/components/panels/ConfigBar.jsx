@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { createProfile, fetchOverrides, saveProfile } from '../../services/uxtuAdapter';
+import { createProfile, fetchOverrides, saveProfile, sortBuiltinProfiles } from '../../services/uxtuAdapter';
 
 const MODE_LABELS = { silent: '安静', office: '均衡', gaming: '斗战', beast: '野兽' };
 
@@ -42,7 +42,7 @@ export default function ConfigBar({
     } catch (e) { console.error('create profile failed:', e); }
   }
 
-  const builtinProfiles = profiles.filter(p => p.builtIn);
+  const builtinProfiles = sortBuiltinProfiles(profiles.filter(p => p.builtIn));
   const userProfiles = profiles.filter(p => !p.builtIn);
 
   return (
