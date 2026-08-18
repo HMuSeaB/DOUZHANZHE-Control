@@ -47,6 +47,13 @@ export const powerPlanHALMap = {
   performance: 1,
 };
 
+// 反向映射：HAL 整数 → 前端字符串 id（flattenBackendOverrides 用它把后端下发的
+// powerPlan 整数归一成 id，避免 uxtuParams.cpuPowerPlan 变成整数导致选中不高亮）
+const _halToPowerPlanId = Object.entries(powerPlanHALMap).reduce((acc, [id, hal]) => {
+  acc[hal] = id;
+  return acc;
+}, {});
+
 // C# HAL 硬件控制 (kb_light, fn_lock, num_lock, caps_lock, thermal_mode)
 export async function applyHardwareControl(target, value, mode) {
   const url = mode ? `/api/control?mode=${mode}` : `/api/control`;
@@ -388,7 +395,12 @@ export function flattenBackendOverrides(nested, maxCores = 16) {
   }
 
   // Power Plan
-  if (nested.powerPlan != null) flat.cpuPowerPlan = nested.powerPlan;
+  // 后端存的是 HAL 整数(0/1/2)，前端按钮比的是字符串 id(balance/performance/efficiency)。
+  // 这里归一成 id，保证切 tab 重新拉取后 uxtuParams.cpuPowerPlan 仍是 id → 选中项能正确高亮显示。
+  if (nested.powerPlan != null) {
+    const id = _halToPowerPlanId[nested.powerPlan];
+    flat.cpuPowerPlan = id ?? nested.powerPlan;
+  }
 
   return flat;
 }
