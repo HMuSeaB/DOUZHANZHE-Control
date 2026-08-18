@@ -339,20 +339,23 @@ int RestoreCpuAndPowerPlan(string tag, PerformanceOverrides o)
     var cpu = app.Services.GetRequiredService<CpuPowerController>();
 
     // --- CPU (powercfg) ---
-    if (o.Cpu.FreqLimitMhz.HasValue)
+    // 批量化：3 个参数合并为一次 ApplyCpuAsync（单个电源方案往返），
+    // 去掉 2 次多余的 GetActiveScheme/DisableOverlay/SetActiveScheme 子进程开销。
     {
-        try { cpu.SetFreqLimitAsync(o.Cpu.FreqLimitMhz.Value).GetAwaiter().GetResult(); restored++; Log($"[{tag}] CPU freq limit → {o.Cpu.FreqLimitMhz.Value} MHz"); }
-        catch (Exception ex) { Log($"[{tag}] CPU freq limit failed: {ex.Message}"); }
-    }
-    if (o.Cpu.TurboEnabled.HasValue)
-    {
-        try { cpu.SetTurboAsync(o.Cpu.TurboEnabled.Value).GetAwaiter().GetResult(); restored++; Log($"[{tag}] CPU turbo → {o.Cpu.TurboEnabled.Value}"); }
-        catch (Exception ex) { Log($"[{tag}] CPU turbo failed: {ex.Message}"); }
-    }
-    if (o.Cpu.CoreLimitPercent.HasValue && o.Cpu.CoreLimitPercent.Value > 0)
-    {
-        try { cpu.SetCoreLimitAsync(o.Cpu.CoreLimitPercent.Value).GetAwaiter().GetResult(); restored++; Log($"[{tag}] CPU core limit → {o.Cpu.CoreLimitPercent.Value}%"); }
-        catch (Exception ex) { Log($"[{tag}] CPU core limit failed: {ex.Message}"); }
+        int? freq = o.Cpu.FreqLimitMhz.HasValue ? o.Cpu.FreqLimitMhz.Value : (int?)null;
+        bool? turbo = o.Cpu.TurboEnabled.HasValue ? o.Cpu.TurboEnabled.Value : (bool?)null;
+        int? core = (o.Cpu.CoreLimitPercent.HasValue && o.Cpu.CoreLimitPercent.Value > 0) ? o.Cpu.CoreLimitPercent.Value : (int?)null;
+        if (freq.HasValue || turbo.HasValue || core.HasValue)
+        {
+            try
+            {
+                cpu.ApplyCpuAsync(freq, turbo, core).GetAwaiter().GetResult();
+                if (freq.HasValue) { restored++; Log($"[{tag}] CPU freq limit → {freq.Value} MHz"); }
+                if (turbo.HasValue) { restored++; Log($"[{tag}] CPU turbo → {turbo.Value}"); }
+                if (core.HasValue) { restored++; Log($"[{tag}] CPU core limit → {core.Value}%"); }
+            }
+            catch (Exception ex) { Log($"[{tag}] CPU apply failed (batched): {ex.Message}"); }
+        }
     }
 
     // --- 电源计划 ---
@@ -1737,9 +1740,7 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
         // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
         if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
         {
-            try { cpuReset.SetFreqLimitAsync(0).GetAwaiter().GetResult(); } catch { }
-            try { cpuReset.SetTurboAsync(true).GetAwaiter().GetResult(); } catch { }
-            try { cpuReset.SetCoreLimitAsync(100).GetAwaiter().GetResult(); } catch { }
+            try { cpuReset.ApplyCpuAsync(0, true, 100).GetAwaiter().GetResult(); } catch { }
             // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
             lock (_perfLock)
             {
