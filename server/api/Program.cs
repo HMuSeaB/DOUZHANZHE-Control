@@ -75,13 +75,16 @@ var app = builder.Build();
 var osdService = app.Services.GetRequiredService<OsdService>();
 var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
 var wmi = app.Services.GetRequiredService<WmiInterface>();
+// 同步 ProcessMonitor 内部跟踪的当前模式：让它在进程启动时就用 last-mode.json
+// 的权威值（CurrentMode()）初始化，否则游戏启动时 SNAPSHOT 会记成 null，
+// 导致游戏退出时 RESTORE 无法切回原模式（见 ProcessMonitorService._currentMode）。
+app.Services.GetRequiredService<ProcessMonitorService>().UpdateCurrentMode(CurrentMode());
 app.UseCors();
 app.UseWebSockets();
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
-    OnPrepareResponse = ctx =>
-    {
+    OnPrepareResponse = ctx => {
         // index.html 禁止缓存（确保更新后前端 JS bundle 立即生效）
         if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
         {
