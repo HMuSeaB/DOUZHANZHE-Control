@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: MIT
-// CpuPowerController -- Windows 电源计划 CPU 控制封装
-// 基于蛟龙控制台逆向分析 (reference-consoles.md §2)
-// 底层: powercfg.exe (无需管理员权限，无需驱动)
+﻿// SPDX-License-Identifier: MIT
+// CpuPowerController -- Windows 鐢垫簮璁″垝 CPU 鎺у埗灏佽
+// 鍩轰簬铔熼緳鎺у埗鍙伴€嗗悜鍒嗘瀽 (reference-consoles.md 搂2)
+// 搴曞眰: powercfg.exe (鏃犻渶绠＄悊鍛樻潈闄愶紝鏃犻渶椹卞姩)
 
 using System;
 using System.Diagnostics;
@@ -13,69 +13,69 @@ using System.Threading.Tasks;
 namespace Douzhanzhe.HAL;
 
 /// <summary>
-/// CPU 性能控制 — 通过 Windows powercfg 电源计划 API
-/// 支持: 频率限制 / 关闭睿频 / 核心数百分比 / 功耗策略
+/// CPU 鎬ц兘鎺у埗 鈥?閫氳繃 Windows powercfg 鐢垫簮璁″垝 API
+/// 鏀寔: 棰戠巼闄愬埗 / 鍏抽棴鐫块 / 鏍稿績鏁扮櫨鍒嗘瘮 / 鍔熻€楃瓥鐣?
 /// </summary>
 public sealed class CpuPowerController : IDisposable
 {
-    // ── 常量 GUID ──
-    // 电源方案子组: 处理器电源设置 (标准 Windows GUID)
+    // 鈹€鈹€ 甯搁噺 GUID 鈹€鈹€
+    // 鐢垫簮鏂规瀛愮粍: 澶勭悊鍣ㄧ數婧愯缃?(鏍囧噯 Windows GUID)
     private const string SUB_PROCESSOR = "54533251-82be-4824-96c1-47b60b740d00";
 
-    // 处理器频率限制 (OEM 扩展，蛟龙使用此 GUID)
+    // 澶勭悊鍣ㄩ鐜囬檺鍒?(OEM 鎵╁睍锛岃洘榫欎娇鐢ㄦ GUID)
     private const string SET_PROC_FREQ_LIMIT = "75b0ae3f-bce0-45a7-8c89-c9611c25e100";
 
-    // Processor performance boost mode (标准 Windows)
+    // Processor performance boost mode (鏍囧噯 Windows)
     private const string SET_PERF_BOOST = "be337238-0d82-4146-a960-4f3749d470c7";
 
-    // Processor maximum state % (标准 Windows)
+    // Processor maximum state % (鏍囧噯 Windows)
     private const string SET_PROC_MAX_STATE = "0cc5b647-c1df-4637-891a-dec35c318583";
 
-    // Processor minimum state % (标准 Windows)
+    // Processor minimum state % (鏍囧噯 Windows)
     private const string SET_PROC_MIN_STATE = "893dee8e-2bef-41e0-89c6-b55d0929964c";
 
-    // Processor power throttling max (标准 Windows)
+    // Processor power throttling max (鏍囧噯 Windows)
     private const string SET_PROC_THROTTLE_MAX = "8baa4a8a-14c6-4451-8e8b-14bdbd197537";
 
-    // Processor hardware threading (标准 Windows)
+    // Processor hardware threading (鏍囧噯 Windows)
     private const string SET_PROC_HW_THREADING = "ea062031-0e34-4ff1-9b6d-eb1059334028";
 
-    // Processor idle demotion (标准 Windows)
+    // Processor idle demotion (鏍囧噯 Windows)
     private const string SET_PROC_IDLE_DEMOTION = "36687f9e-e3a5-4dbf-b1dc-15eb381c6863";
 
     /// <summary>
-    /// Ryzen 9 8940HX 基础频率 (WMI MaxClockSpeed ≈ 2401 MHz)
+    /// Ryzen 9 8940HX 鍩虹棰戠巼 (WMI MaxClockSpeed 鈮?2401 MHz)
     /// </summary>
     private const int CPU_BASE_CLOCK_MHZ = 2400;
 
     private const int TimeoutMs = 3000;
     private bool _disposed;
 
-    // ── 公共 API ──
+    // 鈹€鈹€ 鍏叡 API 鈹€鈹€
 
     /// <summary>
-    /// 设置 CPU 最大频率限制 (MHz)
-    /// 设为 0 表示取消限制
+    /// 璁剧疆 CPU 鏈€澶ч鐜囬檺鍒?(MHz)
+    /// 璁句负 0 琛ㄧず鍙栨秷闄愬埗
     /// </summary>
     public async Task SetFreqLimitAsync(int mhz)
     {
         if (mhz < 0) throw new ArgumentOutOfRangeException(nameof(mhz));
         var scheme = GetActiveScheme();
         await DisableOverlayAsync();
-        // 直接写入 AC + DC
+        // 鐩存帴鍐欏叆 AC + DC
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_FREQ_LIMIT, mhz.ToString());
-        await Task.Delay(100);
-        // 重新激活方案使设置生效
+        await Task.Delay(50);
+        // 閲嶆柊婵€娲绘柟妗堜娇璁剧疆鐢熸晥
         await SetActiveSchemeAsync(scheme);
     }
 
     /// <summary>
-    /// 启用/禁用锁频模式 (原名"关闭睿频")
-    /// 禁用(锁频): min=max=100% + boost=2，CPU 钉死在当前频率上限
-    ///   - 不修改 freq_limit，由用户通过频率限制滑块控制上限
-    ///   - 若未设频率限制，则 CPU 跑在全核最大睿频
-    /// 启用(正常): min=5% + max=100% + boost=2，恢复正常按需调频
-    ///   - 5% 为 Windows 平衡电源计划出厂默认最小值，避免低负载过度降频 (0.5 GHz)
+    /// 鍚敤/绂佺敤閿侀妯″紡 (鍘熷悕"鍏抽棴鐫块")
+    /// 绂佺敤(閿侀): min=max=100% + boost=2锛孋PU 閽夋鍦ㄥ綋鍓嶉鐜囦笂闄?
+    ///   - 涓嶄慨鏀?freq_limit锛岀敱鐢ㄦ埛閫氳繃棰戠巼闄愬埗婊戝潡鎺у埗涓婇檺
+    ///   - 鑻ユ湭璁鹃鐜囬檺鍒讹紝鍒?CPU 璺戝湪鍏ㄦ牳鏈€澶х澘棰?
+    /// 鍚敤(姝ｅ父): min=5% + max=100% + boost=2锛屾仮澶嶆甯告寜闇€璋冮
+    ///   - 5% 涓?Windows 骞宠　鐢垫簮璁″垝鍑哄巶榛樿鏈€灏忓€硷紝閬垮厤浣庤礋杞借繃搴﹂檷棰?(0.5 GHz)
     /// </summary>
     public async Task SetTurboAsync(bool enabled)
     {
@@ -83,83 +83,83 @@ public sealed class CpuPowerController : IDisposable
         await DisableOverlayAsync();
         if (enabled)
         {
-            // 恢复正常: 允许频率根据负载动态调节
+            // 鎭㈠姝ｅ父: 鍏佽棰戠巼鏍规嵁璐熻浇鍔ㄦ€佽皟鑺?
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MIN_STATE, "5");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PERF_BOOST, "2");
         }
         else
         {
-            // 锁频模式: min=max=100% 强制 CPU 始终运行在最高可用频率
-            // 不动 freq_limit — 用户可通过频率限制滑块设定想要的锁定频率
+            // 閿侀妯″紡: min=max=100% 寮哄埗 CPU 濮嬬粓杩愯鍦ㄦ渶楂樺彲鐢ㄩ鐜?
+            // 涓嶅姩 freq_limit 鈥?鐢ㄦ埛鍙€氳繃棰戠巼闄愬埗婊戝潡璁惧畾鎯宠鐨勯攣瀹氶鐜?
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MIN_STATE, "100");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PERF_BOOST, "2");
         }
-        await Task.Delay(100);
+        await Task.Delay(50);
         await SetActiveSchemeAsync(scheme);
     }
 
     /// <summary>
-    /// 设置 CPU 核心数限制 (0-100%)
-    /// 设为 100 表示无限制
+    /// 璁剧疆 CPU 鏍稿績鏁伴檺鍒?(0-100%)
+    /// 璁句负 100 琛ㄧず鏃犻檺鍒?
     /// </summary>
     public async Task SetCoreLimitAsync(int percent)
     {
         if (percent < 0 || percent > 100)
-            throw new ArgumentOutOfRangeException(nameof(percent), "必须 0-100");
+            throw new ArgumentOutOfRangeException(nameof(percent), "蹇呴』 0-100");
         var scheme = GetActiveScheme();
         await DisableOverlayAsync();
         var val = percent.ToString();
-        // 蛟龙同款: 3 个参数同时设置
+        // 铔熼緳鍚屾: 3 涓弬鏁板悓鏃惰缃?
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_THROTTLE_MAX, val);
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, val);
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_HW_THREADING, val);
-        await Task.Delay(100);
+        await Task.Delay(50);
         await SetActiveSchemeAsync(scheme);
     }
 
     /// <summary>
-    /// 恢复所有 CPU 限制到默认 (无限制)
+    /// 鎭㈠鎵€鏈?CPU 闄愬埗鍒伴粯璁?(鏃犻檺鍒?
     /// </summary>
     public async Task ResetAllAsync()
     {
         var scheme = GetActiveScheme();
         await DisableOverlayAsync();
-        // 频率限制归零 (取消)
+        // 棰戠巼闄愬埗褰掗浂 (鍙栨秷)
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_FREQ_LIMIT, "0");
-        // 睿频启用 (激进模式)
+        // 鐫块鍚敤 (婵€杩涙ā寮?
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MIN_STATE, "0");
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PERF_BOOST, "2");
-        // 核心数 100%
+        // 鏍稿績鏁?100%
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_THROTTLE_MAX, "100");
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_HW_THREADING, "100");
-        await Task.Delay(100);
+        await Task.Delay(50);
         await SetActiveSchemeAsync(scheme);
     }
 
     /// <summary>
-    /// 读取当前 CPU 电源设置状态
+    /// 璇诲彇褰撳墠 CPU 鐢垫簮璁剧疆鐘舵€?
     /// </summary>
     public CpuPowerStatus GetStatus()
     {
         var status = new CpuPowerStatus();
         try
         {
-            // 锁频状态: 通过 min_state 判断 (min=100% 表示锁频/关闭睿频)
+            // 閿侀鐘舵€? 閫氳繃 min_state 鍒ゆ柇 (min=100% 琛ㄧず閿侀/鍏抽棴鐫块)
             var minStr = QueryPowerValue(SUB_PROCESSOR, SET_PROC_MIN_STATE);
             if (int.TryParse(minStr, out var minState))
-                status.TurboEnabled = minState < 100; // min<100% 表示允许调频，即睿频正常
+                status.TurboEnabled = minState < 100; // min<100% 琛ㄧず鍏佽璋冮锛屽嵆鐫块姝ｅ父
             else
                 status.TurboEnabled = true;
 
-            // 读取核心数限制
+            // 璇诲彇鏍稿績鏁伴檺鍒?
             var coreStr = QueryPowerValue(SUB_PROCESSOR, SET_PROC_MAX_STATE);
             if (int.TryParse(coreStr, out var core))
                 status.CoreLimitPercent = core;
 
-            // 读取频率限制
+            // 璇诲彇棰戠巼闄愬埗
             var freqStr = QueryPowerValue(SUB_PROCESSOR, SET_PROC_FREQ_LIMIT);
             if (int.TryParse(freqStr, out var freq))
                 status.FreqLimitMhz = freq;
@@ -174,15 +174,15 @@ public sealed class CpuPowerController : IDisposable
         return status;
     }
 
-    // ── 内部实现 ──
+    // 鈹€鈹€ 鍐呴儴瀹炵幇 鈹€鈹€
 
     private string GetActiveScheme()
     {
         var output = RunPowerCfg("/getactivescheme");
-        // 输出格式: "电源方案 GUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (方案名称)"
+        // 杈撳嚭鏍煎紡: "鐢垫簮鏂规 GUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (鏂规鍚嶇О)"
         var match = Regex.Match(output, @"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", RegexOptions.IgnoreCase);
         if (!match.Success)
-            throw new InvalidOperationException("无法获取当前电源方案 GUID");
+            throw new InvalidOperationException("鏃犳硶鑾峰彇褰撳墠鐢垫簮鏂规 GUID");
         return match.Groups[1].Value;
     }
 
@@ -207,11 +207,11 @@ public sealed class CpuPowerController : IDisposable
     private string QueryPowerValue(string subGroup, string setting)
     {
         var output = RunPowerCfg("/query SCHEME_CURRENT " + subGroup + " " + setting);
-        // powercfg /query 输出中，最后两行始终是:
-        //   "当前交流电源设置索引: 0xHHHH" (AC)
-        //   "当前直流电源设置索引: 0xHHHH" (DC)
-        // 中文标签在 UTF-8/GBK 编码不匹配时会乱码，但 0x 十六进制数值是纯 ASCII，不受影响。
-        // 因此用全局匹配取倒数第二个 0x 值作为 AC 设置。
+        // powercfg /query 杈撳嚭涓紝鏈€鍚庝袱琛屽缁堟槸:
+        //   "褰撳墠浜ゆ祦鐢垫簮璁剧疆绱㈠紩: 0xHHHH" (AC)
+        //   "褰撳墠鐩存祦鐢垫簮璁剧疆绱㈠紩: 0xHHHH" (DC)
+        // 涓枃鏍囩鍦?UTF-8/GBK 缂栫爜涓嶅尮閰嶆椂浼氫贡鐮侊紝浣?0x 鍗佸叚杩涘埗鏁板€兼槸绾?ASCII锛屼笉鍙楀奖鍝嶃€?
+        // 鍥犳鐢ㄥ叏灞€鍖归厤鍙栧€掓暟绗簩涓?0x 鍊间綔涓?AC 璁剧疆銆?
         var hexMatches = Regex.Matches(output, @"0x([0-9a-fA-F]+)");
         if (hexMatches.Count >= 2)
         {
@@ -224,7 +224,7 @@ public sealed class CpuPowerController : IDisposable
             if (int.TryParse(hexMatches[0].Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var val))
                 return val.ToString();
         }
-        // 回退: 尝试十进制格式 (仅 ASCII 数字)
+        // 鍥為€€: 灏濊瘯鍗佽繘鍒舵牸寮?(浠?ASCII 鏁板瓧)
         var match = Regex.Match(output, @"(\d+)\s*\r?\n[^\r\n]*(\d+)\s*$");
         if (match.Success) return match.Groups[1].Value;
         return "0";
@@ -271,5 +271,5 @@ public struct CpuPowerStatus
     public bool Available;
     public bool TurboEnabled;
     public int CoreLimitPercent;  // 0-100
-    public int FreqLimitMhz;     // 0 = 无限制
+    public int FreqLimitMhz;     // 0 = 鏃犻檺鍒?
 }

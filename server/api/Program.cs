@@ -1,4 +1,4 @@
-﻿using Douzhanzhe.HAL;
+using Douzhanzhe.HAL;
 using Douzhanzhe.API;
 using System.Net.WebSockets;
 using System.Net.Http;
@@ -312,158 +312,186 @@ async System.Threading.Tasks.Task RestoreComputeSettings(string tag)
     try
     {
         var o = LoadPerfOverrides();
-        int restored = 0;
 
-        // --- CPU (powercfg) ---
-        if (o.Cpu.FreqLimitMhz.HasValue)
-        {
-            try { await app.Services.GetRequiredService<CpuPowerController>().SetFreqLimitAsync(o.Cpu.FreqLimitMhz.Value); restored++; Log($"[{tag}] CPU freq limit → {o.Cpu.FreqLimitMhz.Value} MHz"); }
-            catch (Exception ex) { Log($"[{tag}] CPU freq limit failed: {ex.Message}"); }
-        }
-        if (o.Cpu.TurboEnabled.HasValue)
-        {
-            try { await app.Services.GetRequiredService<CpuPowerController>().SetTurboAsync(o.Cpu.TurboEnabled.Value); restored++; Log($"[{tag}] CPU turbo → {o.Cpu.TurboEnabled.Value}"); }
-            catch (Exception ex) { Log($"[{tag}] CPU turbo failed: {ex.Message}"); }
-        }
-        if (o.Cpu.CoreLimitPercent.HasValue && o.Cpu.CoreLimitPercent.Value > 0)
-        {
-            try { await app.Services.GetRequiredService<CpuPowerController>().SetCoreLimitAsync(o.Cpu.CoreLimitPercent.Value); restored++; Log($"[{tag}] CPU core limit → {o.Cpu.CoreLimitPercent.Value}%"); }
-            catch (Exception ex) { Log($"[{tag}] CPU core limit failed: {ex.Message}"); }
-        }
+        //  并行化说明（优化 overrides/switch 延迟，实测 2.5~3s → 目标 ~1~1.3s）：
+        //  CPU/powercfg、SMU(PawnIO 邮箱)、GPU(nvidia-smi)+NVAPI 是三个互相独立的硬件/OS 通道，
+        //  原本串行执行；现各自保持内部原有串行顺序（避免破坏硬件写入），仅跨通道并行。
+        //  ⚠️ 保持串行边界（防竞态）：
+        //    - CPU 与电源计划同组：两者都操作「当前电源方案」SCHEME_CURRENT，不能与其它 powercfg 并发；
+        //    - SMU 单设备，串行；GPU+nvapi 共享 gpuMode 判定，同组串行；
+        //    - 跨通道不做任何共享可变状态写（restored 只在各自通道内 + 汇总）。
+        var cpuTask = System.Threading.Tasks.Task.Run(() => RestoreCpuAndPowerPlan(tag, o));
+        var smuTask = System.Threading.Tasks.Task.Run(() => RestoreSmu(tag, o));
+        var gpuTask = System.Threading.Tasks.Task.Run(() => RestoreGpuAndNvapi(tag, o));
+        await System.Threading.Tasks.Task.WhenAll(cpuTask, smuTask, gpuTask);
 
-        // --- SMU (AmdSmuController) ---
-        Action<uint?, uint?, uint?, uint?, int?> applySmu = (stapmMw, fastMw, slowMw, tempC, coAll) =>
-        {
-            var ctrl = _newSmu.Value;
-            if (ctrl == null) return;
-            if (stapmMw.HasValue) ctrl.SetPowerLimit(stapmMw.Value);
-            if (fastMw.HasValue) ctrl.SetShortPowerLimit(fastMw.Value, slowMw ?? fastMw.Value);
-            if (tempC.HasValue) ctrl.SetTempLimit(tempC.Value);
-            if (coAll.HasValue) ctrl.SetCurveOptimizer(coAll.Value);
-        };
-
-        {
-            var stapmMw = o.Smu.StapmLimitW.HasValue ? (uint?)(o.Smu.StapmLimitW.Value * 1000) : null;
-            var fastMw = o.Smu.ShortPowerLimitW.HasValue ? (uint?)(o.Smu.ShortPowerLimitW.Value * 1000) : null;
-            var slowMw = fastMw;
-            var tempC = o.Smu.TempLimitC.HasValue ? (uint?)o.Smu.TempLimitC.Value : null;
-            var coAll = o.Smu.CoAll.HasValue ? (int?)o.Smu.CoAll.Value : null;
-
-            if (stapmMw.HasValue || fastMw.HasValue || tempC.HasValue || coAll.HasValue)
-            {
-                try
-                {
-                    applySmu(stapmMw, fastMw, slowMw, tempC, coAll);
-                    int smuCount = 0;
-                    if (stapmMw.HasValue) { smuCount++; Log($"[{tag}] SMU stapm → {o.Smu.StapmLimitW!.Value}W"); }
-                    if (fastMw.HasValue) { smuCount++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
-                if (slowMw.HasValue) { smuCount++; Log($"[{tag}] SMU slow power → {o.Smu.ShortPowerLimitW!.Value}W"); }
-                    if (tempC.HasValue) { smuCount++; Log($"[{tag}] SMU temp → {o.Smu.TempLimitC!.Value}°C"); }
-                    if (coAll.HasValue) { smuCount++; Log($"[{tag}] SMU CO → {o.Smu.CoAll!.Value}"); }
-                    restored += smuCount;
-                }
-                catch (Exception ex) { Log($"[{tag}] SMU BatchApply failed: {ex.Message}"); }
-            }
-        }
-
-        // --- GPU mode 检测: 优先读保存的目标模式(gpu-mode.json)，回退到 EC 当前值 ---
-        byte gpuMode = 1; // 默认独显
-        try
-        {
-            var gpuModeFile = JsonRead<Dictionary<string, int>>("gpu-mode.json", new Dictionary<string, int>());
-            if (gpuModeFile.TryGetValue("gpuMode", out int savedMode) && savedMode >= 0 && savedMode <= 2)
-                gpuMode = (byte)savedMode;
-            else
-                gpuMode = app.Services.GetRequiredService<WmiInterface>().GetGpuMode();
-        }
-        catch { }
-
-        // --- GPU (nvidia-smi) ---
-        // 混合模式(0): 跳过时钟锁定，避免干扰 Optimus P-state 管理
-        // 集显模式(2): 跳过所有 GPU 命令（独显不可用）
-        var gpu = app.Services.GetRequiredService<GpuController>();
-        if (gpuMode != 2 && o.Gpu.CoreFreqMhz.HasValue && o.Gpu.CoreFreqMhz.Value > 0)
-        {
-            try
-            {
-                if (gpuMode == 0)
-                {
-                    Log($"[{tag}] GPU core skipped (hybrid mode, gpuMode=0)");
-                }
-                else
-                {
-                    gpu.SetMaxGpuClock(o.Gpu.CoreFreqMhz.Value);
-                    if (o.Gpu.FreqLocked == true) gpu.SetExactGpuClock(o.Gpu.CoreFreqMhz.Value);
-                    restored++;
-                    Log($"[{tag}] GPU core → {o.Gpu.CoreFreqMhz.Value} MHz (locked={o.Gpu.FreqLocked})");
-                }
-            }
-            catch (Exception ex) { Log($"[{tag}] GPU core failed: {ex.Message}"); }
-        }
-        if (gpuMode != 2 && o.Gpu.MemFreqLevel.HasValue && o.Gpu.MemFreqLevel.Value > 0)
-        {
-            try
-            {
-                if (gpuMode == 0)
-                {
-                    Log($"[{tag}] GPU mem skipped (hybrid mode, gpuMode=0)");
-                }
-                else
-                {
-                    var memMap = new int[] { 0, 9001, 11001, 12001 };
-                    var idx = Math.Clamp(o.Gpu.MemFreqLevel.Value, 0, 3);
-                    if (idx > 0) gpu.SetMaxMemoryClock(memMap[idx]);
-                    restored++;
-                    Log($"[{tag}] GPU mem level → {idx} ({memMap[idx]} MHz)");
-                }
-            }
-            catch (Exception ex) { Log($"[{tag}] GPU mem failed: {ex.Message}"); }
-        }
-
-        // --- NVAPI ---
-        // 集显模式(2): 跳过所有 NVAPI（独显不可用）
-        // 混合模式(0): NVAPI 偏移/温度正常下发（不干扰 Optimus）
-        var nv = app.Services.GetRequiredService<NvapiGpuController>();
-        if (gpuMode != 2 && (o.Nvapi.OcCoreOffsetMhz.HasValue || o.Nvapi.OcMemOffsetMhz.HasValue))
-        {
-            try
-            {
-                var rc = nv.SetP0Offset(o.Nvapi.OcCoreOffsetMhz ?? 0, o.Nvapi.OcMemOffsetMhz ?? 0);
-                restored++;
-                Log($"[{tag}] NVAPI OC → core={o.Nvapi.OcCoreOffsetMhz ?? 0}, mem={o.Nvapi.OcMemOffsetMhz ?? 0} (rc={rc})");
-            }
-            catch (Exception ex) { Log($"[{tag}] NVAPI OC failed: {ex.Message}"); }
-        }
-        if (gpuMode != 2 && o.Nvapi.PowerLimitW.HasValue)
-        {
-            try { nv.SetPowerLimit((uint)(o.Nvapi.PowerLimitW.Value * 1000)); restored++; Log($"[{tag}] NVAPI power → {o.Nvapi.PowerLimitW.Value}W"); }
-            catch (Exception ex) { Log($"[{tag}] NVAPI power failed: {ex.Message}"); }
-        }
-        if (gpuMode != 2 && o.Nvapi.ThermalLimitC.HasValue)
-        {
-            try { nv.SetThermalLimit(o.Nvapi.ThermalLimitC.Value); restored++; Log($"[{tag}] NVAPI thermal → {o.Nvapi.ThermalLimitC.Value}°C"); }
-            catch (Exception ex) { Log($"[{tag}] NVAPI thermal failed: {ex.Message}"); }
-        }
-
-        // --- 电源计划 ---
-        if (o.PowerPlan.HasValue)
-        {
-            try
-            {
-                var hal2 = app.Services.GetRequiredService<HardwareAbstractionLayer>();
-                hal2.PowerPlan = o.PowerPlan.Value;
-                restored++;
-                var planNames = new[] { "平衡", "高性能", "节能" };
-                var idx = Math.Clamp(o.PowerPlan.Value, 0, 2);
-                Log($"[{tag}] Power plan → {planNames[idx]} ({idx})");
-            }
-            catch (Exception ex) { Log($"[{tag}] Power plan failed: {ex.Message}"); }
-        }
-
-        if (restored > 0) Log($"[{tag}] Compute settings restored: {restored} applied");
+        int restored = cpuTask.Result + smuTask.Result + gpuTask.Result;
+        if (restored > 0) Log($"[{tag}] Compute settings restored: {restored} applied (parallel)");
         else Log($"[{tag}] No compute settings to restore");
     }
     catch (Exception ex) { Log($"[{tag}] Compute settings restore failed: {ex.Message}"); }
+}
+
+// CPU (powercfg) + 电源计划 —— 两者都操作当前活动电源方案，保持串行
+int RestoreCpuAndPowerPlan(string tag, PerformanceOverrides o)
+{
+    int restored = 0;
+    var cpu = app.Services.GetRequiredService<CpuPowerController>();
+
+    // --- CPU (powercfg) ---
+    if (o.Cpu.FreqLimitMhz.HasValue)
+    {
+        try { cpu.SetFreqLimitAsync(o.Cpu.FreqLimitMhz.Value).GetAwaiter().GetResult(); restored++; Log($"[{tag}] CPU freq limit → {o.Cpu.FreqLimitMhz.Value} MHz"); }
+        catch (Exception ex) { Log($"[{tag}] CPU freq limit failed: {ex.Message}"); }
+    }
+    if (o.Cpu.TurboEnabled.HasValue)
+    {
+        try { cpu.SetTurboAsync(o.Cpu.TurboEnabled.Value).GetAwaiter().GetResult(); restored++; Log($"[{tag}] CPU turbo → {o.Cpu.TurboEnabled.Value}"); }
+        catch (Exception ex) { Log($"[{tag}] CPU turbo failed: {ex.Message}"); }
+    }
+    if (o.Cpu.CoreLimitPercent.HasValue && o.Cpu.CoreLimitPercent.Value > 0)
+    {
+        try { cpu.SetCoreLimitAsync(o.Cpu.CoreLimitPercent.Value).GetAwaiter().GetResult(); restored++; Log($"[{tag}] CPU core limit → {o.Cpu.CoreLimitPercent.Value}%"); }
+        catch (Exception ex) { Log($"[{tag}] CPU core limit failed: {ex.Message}"); }
+    }
+
+    // --- 电源计划 ---
+    if (o.PowerPlan.HasValue)
+    {
+        try
+        {
+            var hal2 = app.Services.GetRequiredService<HardwareAbstractionLayer>();
+            hal2.PowerPlan = o.PowerPlan.Value;
+            restored++;
+            var planNames = new[] { "平衡", "高性能", "节能" };
+            var idx = Math.Clamp(o.PowerPlan.Value, 0, 2);
+            Log($"[{tag}] Power plan → {planNames[idx]} ({idx})");
+        }
+        catch (Exception ex) { Log($"[{tag}] Power plan failed: {ex.Message}"); }
+    }
+    return restored;
+}
+
+// SMU (AmdSmuController) —— PawnIO 邮箱单设备，保持原有单次调用串行
+int RestoreSmu(string tag, PerformanceOverrides o)
+{
+    int restored = 0;
+    Action<uint?, uint?, uint?, uint?, int?> applySmu = (stapmMw, fastMw, slowMw, tempC, coAll) =>
+    {
+        var ctrl = _newSmu.Value;
+        if (ctrl == null) return;
+        if (stapmMw.HasValue) ctrl.SetPowerLimit(stapmMw.Value);
+        if (fastMw.HasValue) ctrl.SetShortPowerLimit(fastMw.Value, slowMw ?? fastMw.Value);
+        if (tempC.HasValue) ctrl.SetTempLimit(tempC.Value);
+        if (coAll.HasValue) ctrl.SetCurveOptimizer(coAll.Value);
+    };
+
+    var stapmMw = o.Smu.StapmLimitW.HasValue ? (uint?)(o.Smu.StapmLimitW.Value * 1000) : null;
+    var fastMw = o.Smu.ShortPowerLimitW.HasValue ? (uint?)(o.Smu.ShortPowerLimitW.Value * 1000) : null;
+    var slowMw = fastMw;
+    var tempC = o.Smu.TempLimitC.HasValue ? (uint?)o.Smu.TempLimitC.Value : null;
+    var coAll = o.Smu.CoAll.HasValue ? (int?)o.Smu.CoAll.Value : null;
+
+    if (stapmMw.HasValue || fastMw.HasValue || tempC.HasValue || coAll.HasValue)
+    {
+        try
+        {
+            applySmu(stapmMw, fastMw, slowMw, tempC, coAll);
+            if (stapmMw.HasValue) { restored++; Log($"[{tag}] SMU stapm → {o.Smu.StapmLimitW!.Value}W"); }
+            if (fastMw.HasValue) { restored++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
+            if (slowMw.HasValue) { restored++; Log($"[{tag}] SMU slow power → {o.Smu.ShortPowerLimitW!.Value}W"); }
+            if (tempC.HasValue) { restored++; Log($"[{tag}] SMU temp → {o.Smu.TempLimitC!.Value}°C"); }
+            if (coAll.HasValue) { restored++; Log($"[{tag}] SMU CO → {o.Smu.CoAll!.Value}"); }
+        }
+        catch (Exception ex) { Log($"[{tag}] SMU BatchApply failed: {ex.Message}"); }
+    }
+    return restored;
+}
+
+// GPU (nvidia-smi) + NVAPI —— 共享 gpuMode 判定，同组串行
+int RestoreGpuAndNvapi(string tag, PerformanceOverrides o)
+{
+    int restored = 0;
+
+    // --- GPU mode 检测: 优先读保存的目标模式(gpu-mode.json)，回退到 EC 当前值 ---
+    byte gpuMode = 1; // 默认独显
+    try
+    {
+        var gpuModeFile = JsonRead<Dictionary<string, int>>("gpu-mode.json", new Dictionary<string, int>());
+        if (gpuModeFile.TryGetValue("gpuMode", out int savedMode) && savedMode >= 0 && savedMode <= 2)
+            gpuMode = (byte)savedMode;
+        else
+            gpuMode = app.Services.GetRequiredService<WmiInterface>().GetGpuMode();
+    }
+    catch { }
+
+    // --- GPU (nvidia-smi) ---
+    // 混合模式(0): 跳过时钟锁定，避免干扰 Optimus P-state 管理
+    // 集显模式(2): 跳过所有 GPU 命令（独显不可用）
+    var gpu = app.Services.GetRequiredService<GpuController>();
+    if (gpuMode != 2 && o.Gpu.CoreFreqMhz.HasValue && o.Gpu.CoreFreqMhz.Value > 0)
+    {
+        try
+        {
+            if (gpuMode == 0)
+            {
+                Log($"[{tag}] GPU core skipped (hybrid mode, gpuMode=0)");
+            }
+            else
+            {
+                gpu.SetMaxGpuClock(o.Gpu.CoreFreqMhz.Value);
+                if (o.Gpu.FreqLocked == true) gpu.SetExactGpuClock(o.Gpu.CoreFreqMhz.Value);
+                restored++;
+                Log($"[{tag}] GPU core → {o.Gpu.CoreFreqMhz.Value} MHz (locked={o.Gpu.FreqLocked})");
+            }
+        }
+        catch (Exception ex) { Log($"[{tag}] GPU core failed: {ex.Message}"); }
+    }
+    if (gpuMode != 2 && o.Gpu.MemFreqLevel.HasValue && o.Gpu.MemFreqLevel.Value > 0)
+    {
+        try
+        {
+            if (gpuMode == 0)
+            {
+                Log($"[{tag}] GPU mem skipped (hybrid mode, gpuMode=0)");
+            }
+            else
+            {
+                var memMap = new int[] { 0, 9001, 11001, 12001 };
+                var idx = Math.Clamp(o.Gpu.MemFreqLevel.Value, 0, 3);
+                if (idx > 0) gpu.SetMaxMemoryClock(memMap[idx]);
+                restored++;
+                Log($"[{tag}] GPU mem level → {idx} ({memMap[idx]} MHz)");
+            }
+        }
+        catch (Exception ex) { Log($"[{tag}] GPU mem failed: {ex.Message}"); }
+    }
+
+    // --- NVAPI ---
+    // 集显模式(2): 跳过所有 NVAPI（独显不可用）
+    // 混合模式(0): NVAPI 偏移/温度正常下发（不干扰 Optimus）
+    var nv = app.Services.GetRequiredService<NvapiGpuController>();
+    if (gpuMode != 2 && (o.Nvapi.OcCoreOffsetMhz.HasValue || o.Nvapi.OcMemOffsetMhz.HasValue))
+    {
+        try
+        {
+            var rc = nv.SetP0Offset(o.Nvapi.OcCoreOffsetMhz ?? 0, o.Nvapi.OcMemOffsetMhz ?? 0);
+            restored++;
+            Log($"[{tag}] NVAPI OC → core={o.Nvapi.OcCoreOffsetMhz ?? 0}, mem={o.Nvapi.OcMemOffsetMhz ?? 0} (rc={rc})");
+        }
+        catch (Exception ex) { Log($"[{tag}] NVAPI OC failed: {ex.Message}"); }
+    }
+    if (gpuMode != 2 && o.Nvapi.PowerLimitW.HasValue)
+    {
+        try { nv.SetPowerLimit((uint)(o.Nvapi.PowerLimitW.Value * 1000)); restored++; Log($"[{tag}] NVAPI power → {o.Nvapi.PowerLimitW.Value}W"); }
+        catch (Exception ex) { Log($"[{tag}] NVAPI power failed: {ex.Message}"); }
+    }
+    if (gpuMode != 2 && o.Nvapi.ThermalLimitC.HasValue)
+    {
+        try { nv.SetThermalLimit(o.Nvapi.ThermalLimitC.Value); restored++; Log($"[{tag}] NVAPI thermal → {o.Nvapi.ThermalLimitC.Value}°C"); }
+        catch (Exception ex) { Log($"[{tag}] NVAPI thermal failed: {ex.Message}"); }
+    }
+    return restored;
 }
 
 // ---- 恢复所有性能设置 (启动 + 睡眠恢复共用, 含风扇) ----
@@ -1657,7 +1685,7 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     Log($"[overrides/switch] ← mode={req.Mode}");
     SetCurrentMode(req.Mode);
     ApplyThermalMode(req.Mode);
-    await System.Threading.Tasks.Task.Delay(500); // 等 EC 完成模式预设加载
+    await System.Threading.Tasks.Task.Delay(250); // 等 EC 完成模式预设加载（500→250，配合并行 after 缩短延迟）
 
     var overrides = LoadPerfOverrides();
     // 用户自建 profile: 从 ProfileService 加载配置（内置模式使用 overrides-{mode}.json）
