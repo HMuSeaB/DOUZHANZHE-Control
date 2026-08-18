@@ -307,4 +307,47 @@ describe('useControlState 对外契约', () => {
     expect(result.current.uxtuParams).toHaveProperty('cpuLongPptW')
     expect(result.current.settings.mode).toBeDefined()
   })
+
+  // ── 共享 store 核心目标：多个实例共享同一份状态，切 Tab 秒开、改配置即跨页广播 ──
+  it('单例共享：两个独立 hook 实例读到同一份 uxtuParams/overrides 引用', async () => {
+    const a = renderHook(() => useControlState())
+    const b = renderHook(() => useControlState())
+
+    await waitFor(() => {
+      expect(a.result.current.settings.mode).toBe('office')
+    })
+    // 两个实例订阅同一 module store，读到的应是同一份对象引用
+    expect(a.result.current.uxtuParams).toBe(b.result.current.uxtuParams)
+    expect(a.result.current.settings).toBe(b.result.current.settings)
+    expect(a.result.current.overrides).toBe(b.result.current.overrides)
+  })
+
+  it('单例共享：一个实例切换配置，另一个实例立即同步（改配置即刷所有 Tab）', async () => {
+    fetchProfiles.mockResolvedValue({
+      profiles: [
+        MOCK_PROFILE,
+        { id: 'beast', name: '高性能', builtIn: true },
+      ],
+    })
+
+    const a = renderHook(() => useControlState())
+    const b = renderHook(() => useControlState())
+
+    await waitFor(() => {
+      expect(a.result.current.profiles).toHaveLength(2)
+    })
+
+    // 仅在实例 a 上切换模式
+    await act(async () => {
+      a.result.current.switchProfile('beast')
+    })
+
+    // 实例 b 虽然“没被点击”，也应立即反映出新模式（跨 Tab 广播）
+    await waitFor(() => {
+      expect(b.result.current.settings.mode).toBe('beast')
+      expect(b.result.current.currentProfile?.id).toBe('beast')
+    })
+    // 实例 a 同步一致
+    expect(a.result.current.settings.mode).toBe('beast')
+  })
 })
