@@ -179,29 +179,30 @@ void ApplyThermalMode(string mode)
 }
 
 PerformanceOverrides LoadPerfOverrides()
-    => JsonRead($"overrides-{CurrentMode()}.json", new PerformanceOverrides());
+    => ProfileLoadOverrides(CurrentMode());
+
+PerformanceOverrides ProfileLoadOverrides(string cfgId)
+{
+    try
+    {
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        return svc.GetById(cfgId)?.Overrides ?? new PerformanceOverrides();
+    }
+    catch { return new PerformanceOverrides(); }
+}
 
 void SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
 {
     lock (_perfLock)
     {
-        var file = $"overrides-{mode ?? CurrentMode()}.json";
-        var o = JsonRead(file, new PerformanceOverrides());
+        var id = mode ?? CurrentMode();
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        var o = svc.GetById(id)?.Overrides ?? new PerformanceOverrides();
         mutate(o);
-        JsonWrite(file, o);
-        // 用户自建配置同时写回 profiles/{id}.json，避免切换配置后编辑丢失
-        if (mode != null && !_modeToThermal.ContainsKey(mode))
-        {
-            try
-            {
-                app.Services.GetRequiredService<ProfileService>().SaveOverrides(mode, o);
-            }
-            catch (Exception ex)
-            {
-                Log($"[overrides] profile sync failed: {ex.Message}");
-            }
-        }
-        Log($"[overrides] ✓ saved → {file}{(mode != null ? " (pinned)" : "")}");
+        // 单一存储：内置/用户统一写 ProfileService（profiles/），不再写 overrides-*.json
+        try { svc.SaveOverrides(id, o); }
+        catch (Exception ex) { Log($"[overrides] save failed: {ex.Message}"); }
+        Log($"[overrides] ✓ saved → config '{id}'");
     }
 }
 
@@ -1765,18 +1766,14 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
 
     var cpuResetTask = System.Threading.Tasks.Task.Run(() =>
     {
-        // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
+        // CPU 功率配置: 无覆盖时恢复默认（写入当前配置，CurrentMode 已切换不受并发影响）
         if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
         {
             try { cpuReset.ApplyCpuAsync(0, true, 100).GetAwaiter().GetResult(); } catch { }
-            // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
-            lock (_perfLock)
+            SavePerfOverrides(o =>
             {
-                var file = $"overrides-{req.Mode}.json";
-                var o = JsonRead<PerformanceOverrides>(file, new PerformanceOverrides());
                 o.Cpu.FreqLimitMhz = null; o.Cpu.TurboEnabled = null; o.Cpu.CoreLimitPercent = null;
-                JsonWrite(file, o);
-            }
+            }, req.Mode);
         }
         // 电源计划: 无覆盖时恢复平衡
         if (!overrides.PowerPlan.HasValue)
@@ -1793,11 +1790,11 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     return Results.Json(new { overrides });
 });
 
-app.MapPost("/api/overrides/sync", (SyncOverridesRequest req) =>
+app.MapPost("/api/overrides/sync", (SyncOverridesRequest req, ProfileService profileSvc) =>
 {
     Log($"[overrides/sync] ← mode={req.Mode}, clearing overrides");
-    var file = $"overrides-{req.Mode}.json";
-    lock (_perfLock) JsonWrite(file, new PerformanceOverrides());
+    try { profileSvc.ResetToDefaults(req.Mode); }
+    catch (Exception ex) { Log($"[overrides/sync] failed: {ex.Message}"); return Results.BadRequest(); }
     return Results.Ok();
 });
 
@@ -1913,12 +1910,12 @@ app.MapPost("/api/overrides/clear", async (ClearOverridesRequest req, ProfileSer
     }
 });
 
-app.MapPost("/api/overrides/import", (SyncOverridesRequest req) =>
+app.MapPost("/api/overrides/import", (SyncOverridesRequest req, ProfileService profileSvc) =>
 {
     if (req.Overrides == null) return Results.BadRequest("overrides required");
-    var file = $"overrides-{req.Mode}.json";
-    lock (_perfLock) JsonWrite(file, req.Overrides);
-    Log($"[overrides/import] ← mode={req.Mode}, imported from localStorage migration");
+    try { profileSvc.SaveOverrides(req.Mode, req.Overrides); }
+    catch (Exception ex) { Log($"[overrides/import] failed: {ex.Message}"); return Results.BadRequest(); }
+    Log($"[overrides/import] ← mode={req.Mode}");
     return Results.Ok();
 });
 
@@ -2002,7 +1999,7 @@ app.MapPost("/api/notify", async (HttpContext ctx) =>
 // ---- 配置备份/恢复 ----
 var backupCategories = new Dictionary<string, string[]>
 {
-    ["config"] = new[] { "overrides-office.json", "overrides-beast.json", "overrides-silent.json", "overrides-gaming.json", "custom-params.json", "fan-curve.json", "gpu-mode.json", "profiles/.index.json" },
+    ["config"] = new[] { "custom-params.json", "fan-curve.json", "gpu-mode.json", "profiles/.index.json" },
     ["games"] = new[] { "game-profiles.json" },
     ["hotkeys"] = new[] { "hotkey-config.json", "hotkey-status.json" },
     ["appearance"] = new[] { "ui-state.json" },
@@ -2845,21 +2842,8 @@ profileSvc.EnsureInitialized(configDir);
 var validProfileIds = new HashSet<string>(profileSvc.GetAll().Select(p => p.Id));
 if (!validProfileIds.Contains(CurrentMode()))
 {
-    Log($"[Profiles] 当前模式 {CurrentMode()} 不存在，回退到 office");
-    SetCurrentMode("office");
-}
-foreach (var orphanFile in Directory.GetFiles(configDir, "overrides-*.json"))
-{
-    var orphanId = Path.GetFileNameWithoutExtension(orphanFile)["overrides-".Length..];
-    if (!validProfileIds.Contains(orphanId))
-    {
-        try
-        {
-            File.Delete(orphanFile);
-            Log($"[Profiles] 清理孤立 overrides 文件: {Path.GetFileName(orphanFile)}");
-        }
-        catch (Exception ex) { Log($"[Profiles] 清理孤立 overrides 失败: {ex.Message}"); }
-    }
+    Log($"[Profiles] 当前模式 {CurrentMode()} 不存在，回退到 cfg-office");
+    SetCurrentMode("cfg-office");
 }
 
 // ---- Profiles API ----
@@ -2936,10 +2920,6 @@ app.MapDelete("/api/profiles/{id}", (string id, ProfileService svc, GameProfileS
     if (boundGames.Count > 0)
         return Results.BadRequest(new { error = $"有 {boundGames.Count} 条游戏规则绑定此配置，请先解除绑定再删除" });
 
-    // 清理用户配置的 overrides 缓存，避免删除后继续被 current mode 使用
-    var orphanPath = Path.Combine(configDir, $"overrides-{id}.json");
-    if (File.Exists(orphanPath)) File.Delete(orphanPath);
-
     if (!svc.Delete(id))
         return Results.BadRequest(new { error = "删除失败" });
     return Results.Ok(new { ok = true });
@@ -2958,25 +2938,18 @@ app.MapPost("/api/profiles/{id}/rename", async (string id, HttpContext ctx, Prof
 
 app.MapPost("/api/profiles/{id}/copy", (string id, ProfileService svc) =>
 {
+    // svc.Copy 已从 ProfileService 复制参数（profiles/），无需再同步 overrides-*.json
     var created = svc.Copy(id);
     if (created == null)
         return Results.BadRequest(new { error = "复制失败" });
-    // 内置配置的实际参数在 overrides-{id}.json，复制后同步写入新配置
-    if (new[] { "silent", "office", "gaming", "beast" }.Contains(id))
-    {
-        var srcOverrides = JsonRead<PerformanceOverrides>($"overrides-{id}.json", new PerformanceOverrides());
-        svc.SaveOverrides(created.Id, srcOverrides);
-    }
     return Results.Json(created);
 });
 
 app.MapPost("/api/profiles/{id}/reset", (string id, ProfileService svc) =>
 {
+    // ResetToDefaults 已清空 ProfileService 参数（保留 thermalMode），无需再清 overrides-*.json
     if (!svc.ResetToDefaults(id))
         return Results.BadRequest(new { error = "重置失败" });
-    // 内置配置的实际生效源是 overrides-{id}.json，必须同步清空，否则重置不生效
-    if (new[] { "silent", "office", "gaming", "beast" }.Contains(id))
-        JsonWrite($"overrides-{id}.json", new PerformanceOverrides());
     return Results.Ok(new { ok = true });
 });
 
