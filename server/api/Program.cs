@@ -162,6 +162,11 @@ string ResolveConfigThermal(string cfgId)
     return "office";
 }
 
+// 统一内置配置判定：内置 id 固定为 cfg-silent/office/beast/gaming（或旧裸性能模式名兼容）。
+bool IsBuiltinConfig(string cfgId)
+    => cfgId is "cfg-silent" or "cfg-office" or "cfg-beast" or "cfg-gaming"
+       || _modeToThermal.ContainsKey(cfgId);
+
 void ApplyThermalMode(string mode)
 {
     if (!_modeToThermal.TryGetValue(mode, out var thermalVal)) return;
@@ -1710,13 +1715,14 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
 {
     Log($"[overrides/switch] ← mode={req.Mode}");
     SetCurrentMode(req.Mode);
-    ApplyThermalMode(req.Mode);
+    // thermal 先：用唯一解包点把配置 id → 性能模式裸名，再下发 EC（用户配置也能正确下发生效散热模式）
+    ApplyThermalMode(ResolveConfigThermal(req.Mode));
     await System.Threading.Tasks.Task.Delay(250); // 等 EC 完成模式预设加载（500→250，配合并行 after 缩短延迟）
 
     var overrides = LoadPerfOverrides();
     // 用户自建 profile: 从 ProfileService 加载配置（内置模式使用 overrides-{mode}.json）
     var profileSvc = app.Services.GetRequiredService<ProfileService>();
-    var isBuiltin = new[] { "silent", "office", "gaming", "beast" }.Contains(req.Mode);
+    var isBuiltin = IsBuiltinConfig(req.Mode);
     if (!isBuiltin)
     {
         var profileData = profileSvc.GetById(req.Mode);
