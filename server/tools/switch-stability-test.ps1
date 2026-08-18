@@ -24,14 +24,14 @@ param(
     [switch]$Synthetic = $true,
     [switch]$NoSynthetic,
     [switch]$QuietDetails,
-    [string]$ConfigDir = "server\api\bin\build\config"
+    [string]$ConfigDir = "server\config"
 )
 if ($NoSynthetic) { $Synthetic = $false }
 
 $ErrorActionPreference = 'Stop'
 $base = "http://127.0.0.1:$Port/api"
 $pass = 0; $fail = 0; $errors = @(); $lat = @()
-$Modes = @('silent','office','beast','gaming')
+$Modes = @('cfg-silent','cfg-office','cfg-beast','cfg-gaming')
 
 function Write-Step($m){ Write-Host ">> $m" -ForegroundColor Cyan }
 
@@ -118,11 +118,11 @@ for ($i = 0; $i -lt $IterRounds; $i++) {
 # ════ Phase 2: 合成 override 组合矩阵（备份 → import → 切 → 验证 → 恢复） ════
 if ($Synthetic) {
     Write-Step "Phase 2: 合成 override 组合矩阵（开发 config 备份/恢复，不碰安装版）"
-    $cfgFull = (Join-Path $PWD (Join-Path $ConfigDir 'overrides-office.json'))
-    if (-not (Test-Path $cfgFull)) { Write-Host "  ! 找不到开发 config 目录 ($ConfigDir)，跳过合成矩阵" -ForegroundColor Yellow }
+    $targetCfg = 'cfg-office'
+    $cfgFile = (Join-Path $ConfigDir "profiles\$targetCfg.json")
+    if (-not (Test-Path (Join-Path $PWD $cfgFile))) { Write-Host "  ! 找不到配置 $cfgFile，跳过合成矩阵" -ForegroundColor Yellow }
     else {
-        $backups = @{}
-        foreach ($m in $Modes) { $f = Join-Path $ConfigDir "overrides-$m.json"; if (Test-Path $f) { $backups[$m] = Get-Content $f -Raw -Encoding UTF8 } }
+        $backupContent = Get-Content (Join-Path $PWD $cfgFile) -Raw -Encoding UTF8
 
         $combos = @(
             @{ name='CPU-only';   ov=@{ cpu=@{ freqLimitMhz=4200; turboEnabled=$false; coreLimitPercent=80 }; gpu=@{}; nvapi=@{}; smu=@{}; fan=@{}; powerPlan=$null } },
@@ -136,24 +136,18 @@ if ($Synthetic) {
         )
 
         foreach ($combo in $combos) {
-            $target = 'office'   # 用 office 作为合成测试目标
             try {
-                $null = Invoke-RestMethod -Method Post -Uri "$base/overrides/import" -ContentType 'application/json' -Body (@{ mode=$target; overrides=$combo.ov } | ConvertTo-Json -Depth 8) -TimeoutSec 10
-                foreach ($i in 1..2) { Test-Switch $target ("$($combo.name)#$i") }
+                $null = Invoke-RestMethod -Method Post -Uri "$base/overrides/import" -ContentType 'application/json' -Body (@{ mode=$targetCfg; overrides=$combo.ov } | ConvertTo-Json -Depth 8) -TimeoutSec 10
+                foreach ($i in 1..2) { Test-Switch $targetCfg ("$($combo.name)#$i") }
             }
             catch { $fail++; $msg="  ✗ [合成 $($combo.name)] 设置失败: $($_.Exception.Message)"; $errors+=$msg; Write-Host $msg -ForegroundColor Red }
         }
 
-        # 恢复所有模式的原始 overrides（避免污染开发环境配置）
-        foreach ($m in $Modes) {
-            if ($backups.ContainsKey($m)) {
-                $f = Join-Path $ConfigDir "overrides-$m.json"
-                [System.IO.File]::WriteAllText((Join-Path $PWD $f), $backups[$m], (New-Object System.Text.UTF8Encoding($false)))
-            }
-        }
-        Write-Host "  ↺ 已恢复开发 config 原始配置" -ForegroundColor Yellow
-        # 回到 silent，让后端处于一个稳定模式
-        try { $null = Invoke-RestMethod -Method Post -Uri "$base/overrides/switch" -ContentType 'application/json' -Body (@{mode='office'}|ConvertTo-Json) -TimeoutSec 20 } catch {}
+        # 恢复 cfg-office 原始参数（单一存储：profiles/）
+        [System.IO.File]::WriteAllText((Join-Path $PWD $cfgFile), $backupContent, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "  ↺ 已恢复 $targetCfg 原始参数" -ForegroundColor Yellow
+        # 回到安静模式，让后端处于低功耗稳定态
+        try { $null = Invoke-RestMethod -Method Post -Uri "$base/overrides/switch" -ContentType 'application/json' -Body (@{mode='cfg-silent'}|ConvertTo-Json) -TimeoutSec 20 } catch {}
     }
 }
 
