@@ -100,6 +100,13 @@ if ($others) {
 }
 Write-Host "  ✓ 单实例约束通过（仅 $Port 在跑）" -ForegroundColor Green
 
+# ── EC 副作用防护：快照键盘背光亮度，测试结束时恢复 ──
+# 真实硬件 switch 下发（thermal_mode/fan 直写 EC 等）**可能**碰脏相邻 EC 寄存器（实测曾把
+# 背光寄存器 0x9A 读到 94）。为避免把用户机器留在脏状态，测试开始前记下亮度，结束前写回。
+$kb0 = $null
+try { $kb0 = (Invoke-RestMethod -Uri "$base/telemetry" -TimeoutSec 10).kbBrightness } catch { $kb0 = $null }
+if ($null -ne $kb0) { Write-Host "  背光快照 kb=$kb0（测试结束恢复该值）" -ForegroundColor Gray }
+
 # ════ Phase 1: 内置模式往返切换（不改配置，纯切） ════
 Write-Step "Phase 1: $IterRounds 轮 4 模式往返切换"
 for ($i = 0; $i -lt $IterRounds; $i++) {
@@ -148,6 +155,20 @@ if ($Synthetic) {
         # 回到 silent，让后端处于一个稳定模式
         try { $null = Invoke-RestMethod -Method Post -Uri "$base/overrides/switch" -ContentType 'application/json' -Body (@{mode='office'}|ConvertTo-Json) -TimeoutSec 20 } catch {}
     }
+}
+
+# ════ EC 副作用恢复：若键盘背光被测试碰脏，写回快照值 ════
+if ($null -ne $kb0) {
+    try {
+        $kbNow = (Invoke-RestMethod -Uri "$base/telemetry" -TimeoutSec 10).kbBrightness
+        if ([int]$kbNow -ne [int]$kb0) {
+            $clamp = [Math]::Clamp([int]$kb0, 0, 3)
+            $null = Invoke-RestMethod -Method Post -Uri "$base/control" -ContentType 'application/json' -Body (@{ target='kb_light'; value=$clamp } | ConvertTo-Json) -TimeoutSec 10
+            Write-Host "  ↺ 键盘背光被测试碰脏（$kbNow → $kb0），已写回 kb_light=$clamp" -ForegroundColor Yellow
+        } else {
+            Write-Host "  背光保持快照值 $kb0（未被测试污染）" -ForegroundColor Gray
+        }
+    } catch { Write-Host "  ! 恢复背光失败: $($_.Exception.Message)" -ForegroundColor Yellow }
 }
 
 # ════ 汇总 ════
