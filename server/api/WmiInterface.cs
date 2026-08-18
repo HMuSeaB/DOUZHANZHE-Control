@@ -53,9 +53,9 @@ public sealed class WmiInterface
             "root\\WMI",
             "MICommonInterface.InstanceName='ACPI\\PNP0C14\\MIFS_0'",
             null);
-        var inParams = obj.GetMethodParameters("MiInterface");
+        using var inParams = obj.GetMethodParameters("MiInterface");
         inParams["InData"] = input;
-        var outParams = obj.InvokeMethod("MiInterface", inParams, null);
+        using var outParams = obj.InvokeMethod("MiInterface", inParams, null);
         return (byte[])outParams["OutData"];
     }
 

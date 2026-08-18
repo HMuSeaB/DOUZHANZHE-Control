@@ -742,35 +742,47 @@ public sealed class HardwareAbstractionLayer : IDisposable
             // Step 2: Query Win32_LogicalDisk for local fixed drives (DriveType=3)
             using var searcher = new System.Management.ManagementObjectSearcher(
                 "SELECT * FROM Win32_LogicalDisk WHERE DriveType=3");
-            foreach (var disk in searcher.Get().Cast<System.Management.ManagementObject>())
+            using var diskCollection = searcher.Get();
+            foreach (System.Management.ManagementObject disk in diskCollection)
             {
-                var deviceId = disk["DeviceID"]?.ToString();
-                if (string.IsNullOrEmpty(deviceId)) continue;
-
-                // Step 3: Navigate LogicalDisk → Partition → DiskDrive, check disk Index
-                var assocQuery = $"ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{deviceId}'}} " +
-                                 "WHERE AssocClass=Win32_LogicalDiskToPartition";
-                using var assocSearcher = new System.Management.ManagementObjectSearcher(assocQuery);
-                bool onLocalDisk = false;
-                foreach (var part in assocSearcher.Get().Cast<System.Management.ManagementObject>())
+                using (disk)
                 {
-                    var partPath = part["__PATH"]?.ToString();
-                    if (string.IsNullOrEmpty(partPath)) continue;
-                    var ddQuery = $"ASSOCIATORS OF {{{partPath}}} WHERE AssocClass=Win32_DiskDriveToDiskPartition";
-                    using var ddSearcher = new System.Management.ManagementObjectSearcher(ddQuery);
-                    foreach (var dd in ddSearcher.Get().Cast<System.Management.ManagementObject>())
-                    {
-                        var idx = dd["Index"]?.ToString();
-                        if (idx != null && int.TryParse(idx, out var diskNum) && localDiskNums.Contains(diskNum))
-                            onLocalDisk = true;
-                    }
-                }
-                if (!onLocalDisk) continue;
+                    var deviceId = disk["DeviceID"]?.ToString();
+                    if (string.IsNullOrEmpty(deviceId)) continue;
 
-                long size = Convert.ToInt64(disk["Size"]);
-                long free = Convert.ToInt64(disk["FreeSpace"]);
-                total += size;
-                used += size - free;
+                    // Step 3: Navigate LogicalDisk → Partition → DiskDrive, check disk Index
+                    var assocQuery = $"ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{deviceId}'}} " +
+                                     "WHERE AssocClass=Win32_LogicalDiskToPartition";
+                    using var assocSearcher = new System.Management.ManagementObjectSearcher(assocQuery);
+                    using var partCollection = assocSearcher.Get();
+                    bool onLocalDisk = false;
+                    foreach (System.Management.ManagementObject part in partCollection)
+                    {
+                        using (part)
+                        {
+                            var partPath = part["__PATH"]?.ToString();
+                            if (string.IsNullOrEmpty(partPath)) continue;
+                            var ddQuery = $"ASSOCIATORS OF {{{partPath}}} WHERE AssocClass=Win32_DiskDriveToDiskPartition";
+                            using var ddSearcher = new System.Management.ManagementObjectSearcher(ddQuery);
+                            using var ddCollection = ddSearcher.Get();
+                            foreach (System.Management.ManagementObject dd in ddCollection)
+                            {
+                                using (dd)
+                                {
+                                    var idx = dd["Index"]?.ToString();
+                                    if (idx != null && int.TryParse(idx, out var diskNum) && localDiskNums.Contains(diskNum))
+                                        onLocalDisk = true;
+                                }
+                            }
+                        }
+                    }
+                    if (!onLocalDisk) continue;
+
+                    long size = Convert.ToInt64(disk["Size"]);
+                    long free = Convert.ToInt64(disk["FreeSpace"]);
+                    total += size;
+                    used += size - free;
+                }
             }
             if (total > 0)
             {
