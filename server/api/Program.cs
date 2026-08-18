@@ -1706,49 +1706,57 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     // 非覆盖通道: 直接调用硬件控制器重置（绕过 SavePerfOverrides，避免并发模式切换写错文件）
     var gpuCtrl = app.Services.GetRequiredService<GpuController>();
     var nvCtrl = app.Services.GetRequiredService<NvapiGpuController>();
+    var cpuReset = app.Services.GetRequiredService<CpuPowerController>();
 
-    // GPU 核心/显存时钟: 先清理再让 RestoreComputeSettings 重新应用
-    if (!overrides.Gpu.CoreFreqMhz.HasValue && !overrides.Gpu.FreqLocked.HasValue)
+    // 重置阶段并行化（与 RestoreComputeSettings 相同的通道独立性原则）：
+    //  GPU+nvapi 一组（共享 GPU），CPU powercfg+电源计划一组（都操作当前电源方案），互不依赖 → 并行。
+    var gpuResetTask = System.Threading.Tasks.Task.Run(() =>
     {
-        try { gpuCtrl.ResetGpuClocks(); } catch { }
-    }
-    if (!overrides.Gpu.MemFreqLevel.HasValue)
-    {
-        try { gpuCtrl.ResetMemoryClocks(); } catch { }
-    }
-
-    // NVAPI: 超频偏移和温度限制恢复默认
-    if (!overrides.Nvapi.OcCoreOffsetMhz.HasValue && !overrides.Nvapi.OcMemOffsetMhz.HasValue)
-    {
-        try { nvCtrl.SetP0Offset(0, 0); } catch { }
-    }
-    if (!overrides.Nvapi.ThermalLimitC.HasValue)
-    {
-        try { nvCtrl.SetThermalLimit(87); } catch { }
-    }
-
-    // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
-    if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
-    {
-        var cpu = app.Services.GetRequiredService<CpuPowerController>();
-        try { await cpu.SetFreqLimitAsync(0); } catch { }
-        try { await cpu.SetTurboAsync(true); } catch { }
-        try { await cpu.SetCoreLimitAsync(100); } catch { }
-        // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
-        lock (_perfLock)
+        // GPU 核心/显存时钟: 先清理再让 RestoreComputeSettings 重新应用
+        if (!overrides.Gpu.CoreFreqMhz.HasValue && !overrides.Gpu.FreqLocked.HasValue)
         {
-            var file = $"overrides-{req.Mode}.json";
-            var o = JsonRead<PerformanceOverrides>(file, new PerformanceOverrides());
-            o.Cpu.FreqLimitMhz = null; o.Cpu.TurboEnabled = null; o.Cpu.CoreLimitPercent = null;
-            JsonWrite(file, o);
+            try { gpuCtrl.ResetGpuClocks(); } catch { }
         }
-    }
+        if (!overrides.Gpu.MemFreqLevel.HasValue)
+        {
+            try { gpuCtrl.ResetMemoryClocks(); } catch { }
+        }
+        // NVAPI: 超频偏移和温度限制恢复默认
+        if (!overrides.Nvapi.OcCoreOffsetMhz.HasValue && !overrides.Nvapi.OcMemOffsetMhz.HasValue)
+        {
+            try { nvCtrl.SetP0Offset(0, 0); } catch { }
+        }
+        if (!overrides.Nvapi.ThermalLimitC.HasValue)
+        {
+            try { nvCtrl.SetThermalLimit(87); } catch { }
+        }
+    });
 
-    // 电源计划: 无覆盖时恢复平衡
-    if (!overrides.PowerPlan.HasValue)
+    var cpuResetTask = System.Threading.Tasks.Task.Run(() =>
     {
-        try { app.Services.GetRequiredService<HardwareAbstractionLayer>().PowerPlan = 0; } catch { }
-    }
+        // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
+        if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
+        {
+            try { cpuReset.SetFreqLimitAsync(0).GetAwaiter().GetResult(); } catch { }
+            try { cpuReset.SetTurboAsync(true).GetAwaiter().GetResult(); } catch { }
+            try { cpuReset.SetCoreLimitAsync(100).GetAwaiter().GetResult(); } catch { }
+            // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
+            lock (_perfLock)
+            {
+                var file = $"overrides-{req.Mode}.json";
+                var o = JsonRead<PerformanceOverrides>(file, new PerformanceOverrides());
+                o.Cpu.FreqLimitMhz = null; o.Cpu.TurboEnabled = null; o.Cpu.CoreLimitPercent = null;
+                JsonWrite(file, o);
+            }
+        }
+        // 电源计划: 无覆盖时恢复平衡
+        if (!overrides.PowerPlan.HasValue)
+        {
+            try { app.Services.GetRequiredService<HardwareAbstractionLayer>().PowerPlan = 0; } catch { }
+        }
+    });
+
+    await System.Threading.Tasks.Task.WhenAll(gpuResetTask, cpuResetTask);
 
     // 应用新模式的全部覆盖设置（CPU/SMU/GPU/NVAPI/电源计划 + 风扇）
     await RestoreAllPerfSettings("switch");
