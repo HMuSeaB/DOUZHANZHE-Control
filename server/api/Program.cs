@@ -78,10 +78,6 @@ var app = builder.Build();
 var osdService = app.Services.GetRequiredService<OsdService>();
 var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
 var wmi = app.Services.GetRequiredService<WmiInterface>();
-// 同步 ProcessMonitor 内部跟踪的当前模式：让它在进程启动时就用 last-mode.json
-// 的权威值（CurrentMode()）初始化，否则游戏启动时 SNAPSHOT 会记成 null，
-// 导致游戏退出时 RESTORE 无法切回原模式（见 ProcessMonitorService._currentMode）。
-app.Services.GetRequiredService<ProcessMonitorService>().UpdateCurrentMode(CurrentMode());
 app.UseCors();
 app.UseWebSockets();
 app.UseDefaultFiles();
@@ -167,6 +163,10 @@ bool IsBuiltinConfig(string cfgId)
     => cfgId is "cfg-silent" or "cfg-office" or "cfg-beast" or "cfg-gaming"
        || _modeToThermal.ContainsKey(cfgId);
 
+// 启动注入 ProcessMonitor 的配置解析依赖（必须在上述局部函数已声明后调用）
+app.Services.GetRequiredService<ProcessMonitorService>().Configure(
+    () => CurrentMode(), ResolveConfigThermal);
+
 void ApplyThermalMode(string mode)
 {
     if (!_modeToThermal.TryGetValue(mode, out var thermalVal)) return;
@@ -176,7 +176,6 @@ void ApplyThermalMode(string mode)
     else
         hal.ThermalMode = thermalVal;
     osdService.Show(mode);
-    app.Services.GetRequiredService<ProcessMonitorService>().UpdateCurrentMode(mode);
 }
 
 PerformanceOverrides LoadPerfOverrides()
