@@ -2846,6 +2846,59 @@ if (!validProfileIds.Contains(CurrentMode()))
     SetCurrentMode("cfg-office");
 }
 
+// ---- 旧配置一次性迁移（1.6.x overrides-*.json → 用户配置，幂等） ----
+// 只导入 PerformanceOverrides 嵌套结构的 overrides-*.json；扁平文件(custom-params 等)不导入。
+void MigrateLegacyOverrides(string cfgDir, ProfileService svc)
+{
+    var marker = Path.Combine(cfgDir, "legacy-migration-done.json");
+    if (File.Exists(marker)) return;
+
+    var files = Directory.GetFiles(cfgDir, "overrides-*.json").OrderBy(f => f, StringComparer.Ordinal).ToList();
+    int imported = 0;
+    foreach (var file in files)
+    {
+        var bare = Path.GetFileNameWithoutExtension(file)["overrides-".Length..];
+        if (bare.StartsWith("cfg-", StringComparison.OrdinalIgnoreCase)) continue; // 新内置残留，跳过
+        try
+        {
+            var ov = JsonRead<PerformanceOverrides>(file, new PerformanceOverrides());
+            if (!HasAnyOverride(ov)) { continue; } // 空/非法跳过
+            var thermal = bare switch { "silent" or "office" or "beast" or "gaming" => bare, _ => "office" };
+            var created = svc.Create($"旧版-{bare}", thermal);
+            if (created == null) continue;
+            svc.SaveOverrides(created.Id, ov);
+            imported++;
+            Log($"[MigrateLegacy] 导入旧配置 → 用户配置 '{created.Id}' (from {Path.GetFileName(file)})");
+        }
+        catch (Exception ex)
+        {
+            Log($"[MigrateLegacy] 跳过 {Path.GetFileName(file)}: {ex.Message}");
+        }
+    }
+    if (imported > 0) Log($"[MigrateLegacy] 完成：导入 {imported} 个旧配置");
+    // 无论是否导入都写标记，避免每次启动重复扫描；导入成功的源文件一并清理
+    try { JsonWrite(marker, new { done = true }); } catch { }
+    foreach (var file in files)
+    {
+        var bare = Path.GetFileNameWithoutExtension(file)["overrides-".Length..];
+        if (!bare.StartsWith("cfg-", StringComparison.OrdinalIgnoreCase))
+        {
+            try { File.Delete(file); Log($"[MigrateLegacy] 已清理旧源文件: {Path.GetFileName(file)}"); }
+            catch (Exception ex) { Log($"[MigrateLegacy] 清理失败: {ex.Message}"); }
+        }
+    }
+}
+
+bool HasAnyOverride(PerformanceOverrides o)
+    => o.PowerPlan != null
+       || o.Cpu.FreqLimitMhz != null || o.Cpu.TurboEnabled != null || o.Cpu.CoreLimitPercent != null
+       || o.Gpu.CoreFreqMhz != null || o.Gpu.FreqLocked != null || o.Gpu.MemFreqLevel != null
+       || o.Nvapi.OcCoreOffsetMhz != null || o.Nvapi.OcMemOffsetMhz != null || o.Nvapi.PowerLimitW != null || o.Nvapi.ThermalLimitC != null
+       || o.Smu.StapmLimitW != null || o.Smu.ShortPowerLimitW != null || o.Smu.TempLimitC != null || o.Smu.CoAll != null
+       || o.Fan.LargeRpm != null || o.Fan.SmallRpm != null;
+
+MigrateLegacyOverrides(configDir, profileSvc);
+
 // ---- Profiles API ----
 app.MapGet("/api/profiles", (ProfileService svc) =>
 {
