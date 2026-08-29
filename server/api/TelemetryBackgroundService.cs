@@ -80,6 +80,15 @@ public class TelemetryBackgroundService : BackgroundService
     private ushort _lkgCpuFan;           // CPU 风扇 RPM 上次有效值
     private ushort _lkgGpuFan;           // GPU 风扇 RPM 上次有效值
 
+    // ── 慢变 WMI 状态缓存（FnLock/散热模式/触控板/GPU 模式变化慢，不必 250ms 轮询）──
+    private static readonly TimeSpan WmiSlowPollInterval = TimeSpan.FromSeconds(2);
+    private DateTime _wmiSlowPolledAt = DateTime.MinValue;
+    private bool _wmiSlowValid;
+    private bool _cachedFnLock;
+    private byte _cachedThermalMode;
+    private bool _cachedTouchpadLock;
+    private byte _cachedGpuMode;
+
     public TelemetryBackgroundService(
         HardwareAbstractionLayer hal,
         WmiInterface wmi,
@@ -147,6 +156,8 @@ public class TelemetryBackgroundService : BackgroundService
                 if (cpuFan == 0 && _lkgCpuFan > 0) cpuFan = _lkgCpuFan;
                 if (gpuFan == 0 && _lkgGpuFan > 0) gpuFan = _lkgGpuFan;
 
+                RefreshSlowWmiIfNeeded();
+
                 // 构建 JSON 负载（全量遥测）
                 var payload = JsonSerializer.Serialize(new
                 {
@@ -172,13 +183,13 @@ public class TelemetryBackgroundService : BackgroundService
                     diskTotalGB = _hal.DiskTotalGB,
                     diskFreeGB = _hal.DiskFreeGB,
                     kbBrightness = _hal.KeyboardBrightness,
-                    fnLock = _wmi.Available ? _wmi.GetFnLock() == 1 : _hal.FnLock,
+                    fnLock = _wmi.Available ? _cachedFnLock : _hal.FnLock,
                     numLock = _hal.NumLock,
                     capsLock = _hal.CapsLock,
-                    thermalMode = _wmi.Available ? _wmi.GetThermalMode() : _hal.ThermalMode,
+                    thermalMode = _wmi.Available ? _cachedThermalMode : _hal.ThermalMode,
                     powerPlan = _hal.PowerPlan,
-                    touchpadLock = _wmi.Available ? _wmi.GetTouchpadLock() == 1 : _hal.TouchpadLocked,
-                    gpuMode = _wmi.Available ? _wmi.GetGpuMode().ToString() : null,
+                    touchpadLock = _wmi.Available ? _cachedTouchpadLock : _hal.TouchpadLocked,
+                    gpuMode = _wmi.Available ? _cachedGpuMode.ToString() : null,
                     savedGpuMode = GetSavedGpuMode(),
                     timestamp = DateTime.Now.ToString("HH:mm:ss"),
                 }, _jsonOpt);
@@ -227,6 +238,23 @@ public class TelemetryBackgroundService : BackgroundService
                 _log.LogWarning("[Telemetry] 推送异常: {Msg}", ex.Message);
             }
         }
+    }
+
+    /// <summary>每 2s 刷新一次慢变 WMI 开关状态，避免 250ms 循环频繁创建 COM 对象。</summary>
+    private void RefreshSlowWmiIfNeeded()
+    {
+        if (!_wmi.Available) return;
+
+        var now = DateTime.UtcNow;
+        if (_wmiSlowValid && (now - _wmiSlowPolledAt) < WmiSlowPollInterval)
+            return;
+
+        _wmiSlowPolledAt = now;
+        _cachedFnLock = _wmi.GetFnLock() == 1;
+        _cachedThermalMode = _wmi.GetThermalMode();
+        _cachedTouchpadLock = _wmi.GetTouchpadLock() == 1;
+        _cachedGpuMode = _wmi.GetGpuMode();
+        _wmiSlowValid = true;
     }
 
     /// <summary>
