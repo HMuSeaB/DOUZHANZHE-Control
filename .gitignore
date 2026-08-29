@@ -123,7 +123,6 @@ server/api/config/*.json
 
 # Other dot-prefixed directories
 .venv/
-.github/
 
 # Build output published alongside source (server/api/)
 server/api/*.dll
