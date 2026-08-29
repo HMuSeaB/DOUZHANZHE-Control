@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: MIT
 //
-// WmiInterface -- WMI ACPI MICommonInterface ??
+// WmiInterface -- WMI ACPI MICommonInterface 封装
 // ==============================================
-// ?? root\WMI ?????? MiInterface ????????
-// ??? DLL ?????? System.Management ???
+// 通过 root\WMI 命名空间调用 MiInterface 方法读写 EC/平台状态。
+// 不依赖额外 DLL，仅使用 System.Management。
 //
-// ???? (32 ??):
+// 协议格式 (32 字节):
 //   InData[1] = 250(Get) / 251(Set)
-//   InData[3] = ????
-//   InData[4] = ??? (Set ?)
-//   OutData[4..11] = ???
+//   InData[3] = 方法号
+//   InData[4] = 参数值 (Set 时)
+//   OutData[4..11] = 返回值
 
 using System.Management;
 
 namespace Douzhanzhe.API;
 
-public sealed class WmiInterface
+public sealed class WmiInterface : IDisposable
 {
-    private readonly ManagementScope _scope = null!;
+    private readonly ManagementScope? _scope;
+    private readonly ManagementObject? _interface;
+    private readonly object _callLock = new();
     private readonly bool _available;
     private readonly string _error;
+    private bool _disposed;
 
     public WmiInterface()
     {
@@ -28,11 +31,11 @@ public sealed class WmiInterface
             _scope = new ManagementScope(@"root\WMI");
             _scope.Connect();
 
-            using var obj = new ManagementObject(
+            _interface = new ManagementObject(
                 _scope,
                 new ManagementPath(@"MICommonInterface.InstanceName='ACPI\PNP0C14\MIFS_0'"),
                 null);
-            obj.Get();
+            _interface.Get();
             _available = true;
             _error = string.Empty;
         }
@@ -49,17 +52,20 @@ public sealed class WmiInterface
 
     private byte[] CallMethod(byte[] input)
     {
-        using var obj = new ManagementObject(
-            "root\\WMI",
-            "MICommonInterface.InstanceName='ACPI\\PNP0C14\\MIFS_0'",
-            null);
-        var inParams = obj.GetMethodParameters("MiInterface");
-        inParams["InData"] = input;
-        var outParams = obj.InvokeMethod("MiInterface", inParams, null);
-        return (byte[])outParams["OutData"];
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_interface == null)
+            throw new InvalidOperationException("WMI interface unavailable");
+
+        lock (_callLock)
+        {
+            using var inParams = _interface.GetMethodParameters("MiInterface");
+            inParams["InData"] = input;
+            using var outParams = _interface.InvokeMethod("MiInterface", inParams, null);
+            return (byte[])outParams["OutData"];
+        }
     }
 
-    // ---- SystemPerMode (?? 8) — 散热模式切换 ----
+    // ---- SystemPerMode (方法 8) — 散热模式切换 ----
     public byte GetThermalMode()
     {
         var input = new byte[32];
@@ -86,7 +92,7 @@ public sealed class WmiInterface
         }
     }
 
-    // ---- GPUMode (?? 9) ----
+    // ---- GPUMode (方法 9) ----
     public byte GetGpuMode()
     {
         var input = new byte[32];
@@ -113,7 +119,7 @@ public sealed class WmiInterface
         }
     }
 
-    // ---- FnLock (?? 11) ----
+    // ---- FnLock (方法 11) ----
     public byte GetFnLock()
     {
         var input = new byte[32];
@@ -137,7 +143,7 @@ public sealed class WmiInterface
         catch { return false; }
     }
 
-    // ---- TPLock / TouchpadLock (?? 12) ----
+    // ---- TPLock / TouchpadLock (方法 12) ----
     public byte GetTouchpadLock()
     {
         var input = new byte[32];
@@ -167,7 +173,6 @@ public sealed class WmiInterface
     {
         try
         {
-            // MaxFanSwitch(20): data[4]=FanType, data[5]=enable
             var input = new byte[32];
             input[1] = 251;
             input[3] = 20;
@@ -183,7 +188,6 @@ public sealed class WmiInterface
     {
         try
         {
-            // MaxFanSpeed(21): data[4]=FanType, data[5]=RPM/100
             var input = new byte[32];
             input[1] = 251;
             input[3] = 21;
@@ -232,5 +236,15 @@ public sealed class WmiInterface
         input[3] = method;
         if (value.HasValue) input[4] = value.Value;
         return CallMethod(input);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        lock (_callLock)
+        {
+            _interface?.Dispose();
+        }
     }
 }
