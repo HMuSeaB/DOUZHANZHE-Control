@@ -26,10 +26,12 @@ Lazy<IntelPowerController?> _intelSmu = new(() =>
 }, LazyThreadSafetyMode.ExecutionAndPublication);
 
 // ---- AppLog 统一日志初始化（所有服务注册之前）----
-var _logDir = Path.Combine(
+var _appDataDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "Douzhanzhe Console", "logs");
+    "Douzhanzhe Console");
+var _logDir = Path.Combine(_appDataDir, "logs");
 AppLog.Init(_logDir);
+LocalAccessGuard.InitToken(_appDataDir);
 
 // 提升进程与主线程优先级，确保在游戏满载时遥测采样与风扇控制仍能及时响应
 var proc = Process.GetCurrentProcess();
@@ -63,19 +65,30 @@ builder.Services.AddSingleton<FanCurveService>(sp => new FanCurveService(
     sp.GetRequiredService<ILogger<FanCurveService>>(),
     configDir));
 builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
-builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.WithOrigins(
-        "http://localhost:3100", "http://127.0.0.1:3100",
-        "http://localhost:3101", "http://127.0.0.1:3101")
-     .AllowAnyMethod()
-     .AllowAnyHeader()));
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.IncludeFields = true);
 var app = builder.Build();
+var _devMode = app.Environment.IsDevelopment();
 var osdService = app.Services.GetRequiredService<OsdService>();
 var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
 var wmi = app.Services.GetRequiredService<WmiInterface>();
-app.UseCors();
+
+// ---- 本机同源守卫（前端与 API 同源，无需 CORS）----
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path;
+    if (path.StartsWithSegments("/api") || path.StartsWithSegments("/ws"))
+    {
+        if (!LocalAccessGuard.IsAllowed(ctx, _devMode, out var denyReason))
+        {
+            AppLog.Write("Guard", $"拒绝 {ctx.Request.Method} {path} — {denyReason}");
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "请求来源不被信任" });
+            return;
+        }
+    }
+    await next();
+});
 app.UseWebSockets();
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
@@ -98,6 +111,7 @@ void Log(string msg)
     AppLog.Write("API", msg);
 }
 Log($"API starting, BaseDir={AppContext.BaseDirectory}, ConfigDir={configDir}");
+Log($"[Guard] 同源守卫已启用 (devMode={_devMode}, 裸硬件端点={(LocalAccessGuard.UnsafeToolsEnabled ? "已解锁" : "禁用")}), 会话令牌={LocalAccessGuard.TokenPath}");
 
 // 观察所有未被消费的后台任务异常，避免异步异常静默丢失
 TaskScheduler.UnobservedTaskException += (_, e) =>
@@ -1110,6 +1124,9 @@ app.MapGet("/api/discover", (HardwareAbstractionLayer hal) =>
 });
 app.MapGet("/api/ec-scan", (HttpContext ctx, HardwareAbstractionLayer hal) =>
 {
+    var blocked = LocalAccessGuard.BlockUnsafeTool("/api/ec-scan");
+    if (blocked != null) return blocked;
+
     var offsetStr = ctx.Request.Query["offset"].FirstOrDefault() ?? "0";
     var countStr = ctx.Request.Query["count"].FirstOrDefault() ?? "16";
     try
@@ -1130,7 +1147,7 @@ app.MapGet("/api/ec-scan", (HttpContext ctx, HardwareAbstractionLayer hal) =>
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 400);
+        return ApiProblem.BadRequest(ex, "ec-scan");
     }
 });
 app.MapPost("/api/smu/set", (SmuSetRequest req, HardwareDetector detector, string? mode = null) =>
@@ -1232,6 +1249,9 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi, Hardwar
 // ---- Fan write strategy test (compare manual flag behavior) ----
 app.MapPost("/api/fan/test-write", (FanTestWriteRequest req, WmiInterface wmi) =>
 {
+    var blocked = LocalAccessGuard.BlockUnsafeTool("/api/fan/test-write");
+    if (blocked != null) return blocked;
+
     try
     {
         var strategy = req.Strategy ?? "manual-true";
@@ -1865,6 +1885,9 @@ app.MapPost("/api/log", (FrontendLogRequest req) =>
 
 app.MapPost("/api/wmi/cmd", (WmiInterface wmi, WmiCmdRequest req) =>
 {
+    var blocked = LocalAccessGuard.BlockUnsafeTool("/api/wmi/cmd");
+    if (blocked != null) return blocked;
+
     try
     {
         byte? value = req.Value.HasValue ? (byte?)req.Value.Value : null;
@@ -1875,10 +1898,9 @@ app.MapPost("/api/wmi/cmd", (WmiInterface wmi, WmiCmdRequest req) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { ok = false, error = ex.Message });
+        return ApiProblem.From(ex, "wmi/cmd");
     }
 });
-// ---- 日志导出（供用户反馈问题时使用）----
 app.MapGet("/api/logs/export", () =>
 {
     var logFile = Path.Combine(_logDir, "app.log");
