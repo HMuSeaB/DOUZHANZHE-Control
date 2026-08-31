@@ -5,6 +5,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.1] — 2026-08-29
+
+Fork 实机测试版：修复 v2.0 长时间运行内存/句柄泄漏，并收紧 API 暴露面。
+
+> 基于 `feature/v2.0`，供已安装用户在实机验证；上游正式版尚未合并。
+
+### 🔧 修复
+
+- **WMI 句柄泄漏**: `WmiInterface` 复用 `ManagementObject`，`CallMethod` 的 `inParams`/`outParams` 正确 `Dispose`，避免 COM 对象累积
+- **遥测 WMI 风暴**: FnLock、散热模式、触控板锁、GPU 模式等慢变状态改为 2 秒缓存，COM 调用从约 16 次/秒降至约 2 次/秒
+- **API 安全**: 新增 `LocalAccessGuard`，限制 `/api` 与 `/ws` 仅本机 WebView2/Shell 来源访问；移除 CORS；`AllowedHosts` 限回环
+- **调试端点**: `ec-scan`、`wmi/cmd`、`fan/test-write` 等裸硬件端点默认关闭，需设置 `DZZ_UNSAFE_TOOLS=1` 才启用
+
+### 🛠 工程
+
+- **CI**: 分支与 PR 跑构建测试，仅 tag 触发打包发布
+- **测试**: 前端参数钳位/风扇区间测试 + API `LocalAccessGuard`/`ApiProblem` 单元测试
+- **构建**: 移除 MSBuild 构建后自动 git 提交 Target
+
 ## [2.0.0-pre.1] — 2026-08-06
 
 v2.0 预发布版本：全新界面、架构迁移与稳定修复
