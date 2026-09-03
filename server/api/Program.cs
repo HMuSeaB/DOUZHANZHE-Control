@@ -1462,6 +1462,7 @@ app.MapGet("/api/fan-curve/route-info", (FanCurveService svc) =>
         lastLargeTarget = svc.LastLargeTarget,
         lastSmallTarget = svc.LastSmallTarget,
         itsmDeviationCount = svc.ItsmDeviationCount,
+        itsmConsecutiveMismatch = svc.ItsmConsecutiveMismatch,
         // EC 读回诊断
         actualCpuFanRpm = svc.ActualCpuFanRpm,
         actualGpuFanRpm = svc.ActualGpuFanRpm,

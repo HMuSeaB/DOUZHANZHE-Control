@@ -38,11 +38,19 @@ public sealed class FanCurveService : IDisposable
     private byte _savedThermalMode;           // 启动时保存的 ITSM 值，停止时恢复
     private byte _itsmCurveMode;              // 曲线目标对应的 ITSM 模式（RouteMode 计算，仅目标变化时更新）
     private int _itsmDeviationCount;          // 统计：ITSM 读回 ≠ 目标模式 的累计次数
+    private int _itsmConsecutiveMismatch;     // 连续不一致计数（重写后仍被固件抢走时递增）
+    private int _itsmRewriteCooldown;         // ITSM 重写冷却剩余 tick 数（防止与固件逐 tick 写入战）
 
     // ── 偏离检测（页面告警 + 分级自动恢复）──
     private const int DeviationRpmThreshold = 500;
     private const int DeviationAlertThreshold = 3;
     private int _consecutiveDeviation;        // 连续偏离 tick 计数
+
+    // ITSM 重写冷却：读回不一致时最多每 ~15s 重写一次（tick 数随 intervalMs 自适应）
+    private const int ItsmRewriteCooldownMs = 15000;
+
+    private int ItsmRewriteCooldownTicks() =>
+        Math.Max(2, ItsmRewriteCooldownMs / Math.Max(_intervalMs, 1));
 
     public bool Active => _active;
     public int IntervalMs => _intervalMs;
@@ -61,6 +69,8 @@ public sealed class FanCurveService : IDisposable
         DeviationAlert = false;
         LargeDeviationRpm = 0;
         SmallDeviationRpm = 0;
+        _itsmConsecutiveMismatch = 0;
+        _itsmRewriteCooldown = 0;
         // 立即写一次 ITSM，不依赖 Tick 的 targetChanged 判断
         _hal.WriteEcPort(0xE4, _itsmCurveMode);
         _log.LogInformation("[FanCurve] 睡眠恢复: 已强制重发 ITSM={Mode}, 重置 ShouldWrite 状态", _itsmCurveMode);
@@ -72,6 +82,7 @@ public sealed class FanCurveService : IDisposable
     public int LastLargeTarget => _lastLargeTarget;
     public int LastSmallTarget => _lastSmallTarget;
     public int ItsmDeviationCount => _itsmDeviationCount;
+    public int ItsmConsecutiveMismatch => _itsmConsecutiveMismatch;
 
     // ── EC 读回诊断 (供 Debug 页面使用) ──
     public int ActualCpuFanRpm { get; private set; }     // 实际 CPU 风扇 RPM (EC 0x9D/0x9E)
@@ -340,13 +351,45 @@ public sealed class FanCurveService : IDisposable
             // 4. ITSM 读回诊断
             byte currentItsm = _hal.ReadEcPort(0xE4);
             CurrentItsm = currentItsm;
-            if (currentItsm != _itsmCurveMode) _itsmDeviationCount++;
+            if (currentItsm != _itsmCurveMode)
+            {
+                _itsmDeviationCount++;
+                _itsmConsecutiveMismatch++;
+            }
+            else
+            {
+                _itsmConsecutiveMismatch = 0;
+                _itsmRewriteCooldown = 0;
+            }
             RoutedMode = _itsmCurveMode;
 
-            // 5. ITSM 仅在目标变化时写入（避免频繁触发 ACPI 链）
+            // 5. ITSM 写入：目标变化时写；读回 ≠ 路由模式时按冷却重写。
+            //    EC 固件会自行改写 0xE4（高温时倾向 gaming），只在目标变化时写
+            //    会让模式漂移长时间得不到纠正；逐 tick 硬写又会与固件形成写入战，
+            //    故冷却间隔 ~15s。连续多次重写仍被抢走时记日志供排查。
             if (targetChanged)
             {
                 _hal.WriteEcPort(0xE4, _itsmCurveMode);
+                _itsmRewriteCooldown = ItsmRewriteCooldownTicks();
+            }
+            else if (currentItsm != _itsmCurveMode)
+            {
+                if (_itsmRewriteCooldown == 0)
+                {
+                    _hal.WriteEcPort(0xE4, _itsmCurveMode);
+                    _itsmRewriteCooldown = ItsmRewriteCooldownTicks();
+                    if (_itsmConsecutiveMismatch >= 3)
+                    {
+                        _log.LogWarning(
+                            "[FanCurve] ITSM 被固件抢占 x{N}: EC={Current} 期望={Routed}, 已重写(冷却 {Sec}s)",
+                            _itsmConsecutiveMismatch, currentItsm, _itsmCurveMode,
+                            _itsmRewriteCooldown * Math.Max(_intervalMs, 1) / 1000);
+                    }
+                }
+                else
+                {
+                    _itsmRewriteCooldown--;
+                }
             }
 
             // 6. 每个 Tick 都刷新 SetFanManual + SetFanSpeed + EC 寄存器
