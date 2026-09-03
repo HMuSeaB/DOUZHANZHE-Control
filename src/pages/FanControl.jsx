@@ -1,15 +1,16 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useControlState } from "../hooks/useControlState";
 import FanCurvePanel from "../components/panels/FanCurvePanel";
-import { fetchFanCurveStatus, fetchRouteInfo, getFanRange, MODE_FAN_DEFAULTS } from "../services/uxtuAdapter";
+import { fetchFanCurveStatus, fetchRouteInfo, getFanRange, MODE_FAN_DEFAULTS, resolvePerfMode } from "../services/uxtuAdapter";
 
 export default function FanControl() {
-  const { telemetry, settings, overrides } = useControlState();
+  const { telemetry, settings, overrides, profiles } = useControlState();
   const [curveActive, setCurveActive] = useState(false);
-  const mode = settings.mode;
-  const fanRange = getFanRange(mode);
-  const [fan1TargetRpm, setFan1TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent).fanLargeRpmTarget);
-  const [fan2TargetRpm, setFan2TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent).fanSmallRpmTarget);
+  // 风扇区间/默认按「性能模式」取，配置 id 先解包成性能模式裸名
+  const perfMode = resolvePerfMode(settings.mode, profiles);
+  const fanRange = getFanRange(perfMode);
+  const [fan1TargetRpm, setFan1TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.silent).fanLargeRpmTarget);
+  const [fan2TargetRpm, setFan2TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.silent).fanSmallRpmTarget);
   const [routeInfo, setRouteInfo] = useState(null);
 
   const fan1Rpm = telemetry?.fanLargeRpm ?? 0;
@@ -18,13 +19,13 @@ export default function FanControl() {
   const fan2Pct = telemetry?.fanSmallMax ? Math.min(100, (fan2Rpm / telemetry.fanSmallMax) * 100) : 0;
 
   useEffect(() => {
-    const def = MODE_FAN_DEFAULTS[mode] || MODE_FAN_DEFAULTS.silent;
+    const def = MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.silent;
     const timer = setTimeout(() => {
       setFan1TargetRpm(def.fanLargeRpmTarget);
       setFan2TargetRpm(def.fanSmallRpmTarget);
     }, 0);
     return () => clearTimeout(timer);
-  }, [mode]);
+  }, [perfMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -44,7 +45,7 @@ export default function FanControl() {
   const setFanTarget = async (fanIdx, rpm) => {
     try {
       const body = fanIdx === 0 ? { largeRpm: rpm } : { smallRpm: rpm };
-      await fetch(`/api/fan/set-target?mode=${encodeURIComponent(mode)}`, {
+      await fetch(`/api/fan/set-target?mode=${encodeURIComponent(settings.mode)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -110,7 +111,7 @@ export default function FanControl() {
       {/* 自定义风扇曲线 */}
       <div className="section-title">自定义风扇曲线<span className="line"></span></div>
       <div className="card reveal enter" style={{ animationDelay: ".1s" }}>
-        <FanCurvePanel mode={mode} overrides={overrides} onCurveActiveChange={setCurveActive} />
+        <FanCurvePanel mode={settings.mode} overrides={overrides} onCurveActiveChange={setCurveActive} />
       </div>
     </section>
   );

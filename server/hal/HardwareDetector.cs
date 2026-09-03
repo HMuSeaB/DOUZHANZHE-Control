@@ -72,16 +72,20 @@ public sealed class HardwareDetector
         {
             using var searcher = new ManagementObjectSearcher(
                 "SELECT Manufacturer, Name FROM Win32_Processor");
-            foreach (var obj in searcher.Get())
+            using var processors = searcher.Get();
+            foreach (ManagementObject obj in processors)
             {
-                var mfr = obj["Manufacturer"]?.ToString() ?? "";
-                var name = obj["Name"]?.ToString() ?? "";
-                if (mfr.Contains("AMD", StringComparison.OrdinalIgnoreCase))
-                    vendor = "AMD";
-                else if (mfr.Contains("Intel", StringComparison.OrdinalIgnoreCase))
-                    vendor = "Intel";
-                model = name;
-                break;
+                using (obj)
+                {
+                    var mfr = obj["Manufacturer"]?.ToString() ?? "";
+                    var name = obj["Name"]?.ToString() ?? "";
+                    if (mfr.Contains("AMD", StringComparison.OrdinalIgnoreCase))
+                        vendor = "AMD";
+                    else if (mfr.Contains("Intel", StringComparison.OrdinalIgnoreCase))
+                        vendor = "Intel";
+                    model = name;
+                    break;
+                }
             }
         }
         catch (Exception ex)
@@ -93,18 +97,22 @@ public sealed class HardwareDetector
         {
             using var searcher = new ManagementObjectSearcher(
                 "SELECT Manufacturer, Product FROM Win32_BaseBoard");
-            foreach (var obj in searcher.Get())
+            using var boards = searcher.Get();
+            foreach (ManagementObject obj in boards)
             {
-                var mfr = obj["Manufacturer"]?.ToString() ?? "";
-                var product = obj["Product"]?.ToString() ?? "";
-                // OEM 检测: 品牌名可能出现在 Manufacturer 或 Product 字段
-                if (mfr.Contains("Bellator", StringComparison.OrdinalIgnoreCase) ||
-                    product.Contains("Bellator", StringComparison.OrdinalIgnoreCase))
+                using (obj)
                 {
-                    oem = OemVendor.Bellator;
+                    var mfr = obj["Manufacturer"]?.ToString() ?? "";
+                    var product = obj["Product"]?.ToString() ?? "";
+                    // OEM 检测: 品牌名可能出现在 Manufacturer 或 Product 字段
+                    if (mfr.Contains("Bellator", StringComparison.OrdinalIgnoreCase) ||
+                        product.Contains("Bellator", StringComparison.OrdinalIgnoreCase))
+                    {
+                        oem = OemVendor.Bellator;
+                    }
+                    oemBoard = product;
+                    break;
                 }
-                oemBoard = product;
-                break;
             }
         }
         catch (Exception ex)

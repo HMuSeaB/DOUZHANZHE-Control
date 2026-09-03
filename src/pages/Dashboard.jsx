@@ -1,6 +1,7 @@
 import { useControlState } from '../hooks/useControlState';
 import { Skeleton, OfflineCard, EmptyState } from '../components/ui/PageState';
 import { useStall } from '../hooks/useStall';
+import { sortBuiltinProfiles } from '../services/uxtuAdapter';
 
 const C = 207; // ring circumference
 
@@ -93,7 +94,7 @@ export default function Dashboard({ onNavigate }) {
   const stalled = useStall(!hasAnyTelemetry);
   const isOffline = useStall(!backendOnline, 1500);
 
-  const builtinProfiles = profiles.filter(p => p.builtIn);
+  const builtinProfiles = sortBuiltinProfiles(profiles.filter(p => p.builtIn));
 
   const gpuModeNum = s.gpuMode != null ? Number(s.gpuMode) : null;
   const memUsedGb = (s.memoryTotalGB ?? 32) * (s.memoryUsage ?? 0) / 100;
@@ -162,12 +163,12 @@ export default function Dashboard({ onNavigate }) {
               >
                 <span className="ico">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="17" height="17">
-                    <path d={MODE_ICONS[p.id] || MODE_ICONS.office} />
+                    <path d={MODE_ICONS[p.thermalMode] || MODE_ICONS.office} />
                   </svg>
                 </span>
                 <span className="txt">
                   <b>{p.name}</b>
-                  <small>{MODE_DESCS[p.id] || ''}</small>
+                  <small>{MODE_DESCS[p.thermalMode] || ''}</small>
                 </span>
               </button>
             ))}

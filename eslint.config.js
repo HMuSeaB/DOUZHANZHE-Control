@@ -30,4 +30,17 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  // 测试文件：暴露 vitest 全局（describe/it/expect/vi/beforeEach 等），
+  // 并复用 node + browser 内置全局
+  {
+    files: ['src/**/*.{test,spec}.{js,jsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        __APP_VERSION__: 'readonly',
+        __APP_BUILD__: 'readonly',
+      },
+    },
+  },
 ])

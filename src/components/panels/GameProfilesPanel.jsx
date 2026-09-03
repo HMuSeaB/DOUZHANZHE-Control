@@ -70,30 +70,32 @@ function GameSkeleton() {
 }
 
 export default function GameProfilesPanel() {
-  const [config, setConfig] = useState({ enabled: true, defaultMode: "gaming" });
+  const [config, setConfig] = useState({ enabled: true, defaultMode: "cfg-gaming" });
   const [profiles, setProfiles] = useState([]);
   const [configProfiles, setConfigProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
 
   const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ name: "", exePath: "", targetMode: "gaming" });
+  const [addForm, setAddForm] = useState({ name: "", exePath: "", targetMode: "cfg-gaming" });
 
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ name: "", exePath: "", targetMode: "gaming", enabled: true });
+  const [editForm, setEditForm] = useState({ name: "", exePath: "", targetMode: "cfg-gaming", enabled: true });
 
   const [scanning, setScanning] = useState(false);
   const [showScan, setShowScan] = useState(false);
   const [scanResults, setScanResults] = useState([]);
   const [selectedGames, setSelectedGames] = useState(new Set());
-  const [batchTargetMode, setBatchTargetMode] = useState("gaming");
+  const [batchTargetMode, setBatchTargetMode] = useState("cfg-gaming");
   const [scanTab, setScanTab] = useState("steam");
   const [switchStatus, setSwitchStatus] = useState(null);
   const [launchingId, setLaunchingId] = useState(null);
 
   const resolveProfile = (id) =>
     configProfiles.find(p => p.id === id) ||
-    (MODE_MAP[id] ? { id, name: MODE_MAP[id].label, builtIn: true, thermalMode: id } : null);
+    (MODE_MAP[id] ? { id, name: MODE_MAP[id].label, builtIn: true, thermalMode: id } : null) ||
+    // 兼容 cfg- 前缀的内置配置 id 回退（MODE_MAP 以裸性能模式名做 key）
+    (MODE_MAP[(id || "").replace(/^cfg-/, "")] ? { id, name: MODE_MAP[(id || "").replace(/^cfg-/, "")].label, builtIn: true, thermalMode: (id || "").replace(/^cfg-/, "") } : null);
 
   const targetLabel = (id) => resolveProfile(id)?.name || id;
   const targetColor = (id) => {

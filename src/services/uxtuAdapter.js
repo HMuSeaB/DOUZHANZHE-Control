@@ -47,6 +47,44 @@ export const powerPlanHALMap = {
   performance: 1,
 };
 
+// 反向映射：HAL 整数 → 前端字符串 id（flattenBackendOverrides 用它把后端下发的
+// powerPlan 整数归一成 id，避免 uxtuParams.cpuPowerPlan 变成整数导致选中不高亮）
+const _halToPowerPlanId = Object.entries(powerPlanHALMap).reduce((acc, [id, hal]) => {
+  acc[hal] = id;
+  return acc;
+}, {});
+
+// 内置配置显式展示顺序（用于 Dashboard 配置 dock / 控制面板配置下拉）。
+// 注意：这些是「配置 id」（cfg- 前缀），与 EC 性能模式裸名(silent/office/…) 区分。
+// 后端 /api/profiles 的顺序由被持久化的 .index.json 决定、改源码不生效，
+// 所以前端用这里的固定顺序渲染，确保「斗战(功耗最高)排在最后」在界面稳定一致。
+export const BUILTIN_MODE_ORDER = ['cfg-silent', 'cfg-office', 'cfg-beast', 'cfg-gaming'];
+
+// 配置 id → 性能模式裸名（唯一解包点，供 MODE_FAN_DEFAULTS/FAN_RANGES 等按性能模式取值）
+export function perfModeOf(profile) {
+  return profile?.thermalMode || 'office';
+}
+
+// 由「配置 id（或裸性能模式名，兼容旧值）」解析出性能模式裸名。
+// profileList 用于把 cfg- 配置 id 查成其 thermalMode；裸名则原样返回。
+export function resolvePerfMode(mode, profiles) {
+  if (!mode) return 'office';
+  if (mode === 'silent' || mode === 'office' || mode === 'beast' || mode === 'gaming') return mode;
+  const pf = (profiles || []).find(p => p.id === mode);
+  return pf?.thermalMode || 'office';
+}
+
+// 按 BUILTIN_MODE_ORDER 排序内置配置（未知 id 置末尾，保持稳定）
+export function sortBuiltinProfiles(profiles) {
+  return [...profiles].sort((a, b) => {
+    const ia = BUILTIN_MODE_ORDER.indexOf(a.id);
+    const ib = BUILTIN_MODE_ORDER.indexOf(b.id);
+    const va = ia === -1 ? BUILTIN_MODE_ORDER.length : ia;
+    const vb = ib === -1 ? BUILTIN_MODE_ORDER.length : ib;
+    return va - vb;
+  });
+}
+
 // C# HAL 硬件控制 (kb_light, fn_lock, num_lock, caps_lock, thermal_mode)
 export async function applyHardwareControl(target, value, mode) {
   const url = mode ? `/api/control?mode=${mode}` : `/api/control`;
@@ -388,7 +426,12 @@ export function flattenBackendOverrides(nested, maxCores = 16) {
   }
 
   // Power Plan
-  if (nested.powerPlan != null) flat.cpuPowerPlan = nested.powerPlan;
+  // 后端存的是 HAL 整数(0/1/2)，前端按钮比的是字符串 id(balance/performance/efficiency)。
+  // 这里归一成 id，保证切 tab 重新拉取后 uxtuParams.cpuPowerPlan 仍是 id → 选中项能正确高亮显示。
+  if (nested.powerPlan != null) {
+    const id = _halToPowerPlanId[nested.powerPlan];
+    flat.cpuPowerPlan = id ?? nested.powerPlan;
+  }
 
   return flat;
 }
@@ -487,7 +530,9 @@ export async function resetToFactoryDefaults(mode) {
   await syncOverrides(mode, {});
 
   // 2. 重发 thermal_mode (EC 重新加载出厂值，包括 CPU PPT/温度/风扇预设)
-  const tv = thermalModeMap[mode];
+  // 配置 id(cfg-…) 需先解出性能模式裸名再查 thermal 字节；裸名则直接查
+  const perfName = mode?.startsWith('cfg-') ? mode.slice(4) : mode;
+  const tv = thermalModeMap[perfName];
   if (tv !== null && tv !== undefined) {
     await applyHardwareControl("thermal_mode", tv, mode);
   }

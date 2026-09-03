@@ -5,6 +5,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.2] — 2026-09-03
+
+合并上游 `feature/v2.0`(v2.0.1-pre.1)全部改动,保留 fork 内存修复。
+
+### 🔀 合并
+
+- **上游 v2.0.1-pre.1 合入**: 配置模型 `cfg-` 迁移(ProfileService 统一配置服务)、powerPlan 高亮修复、`useControlState` 重构与单元测试、HAL 调整、切换压测脚本(上游 2026-08-06 至 08-19 共 33 个提交)
+- **WmiInterface 冲突裁决**: 上游以"每次调用新建 `ManagementObject` 并释放"方式修复泄漏,与 fork 方案(复用单例 + 释放参数 + 调用锁)意图相同;保留 fork 版本以维持更低的 COM 调用频率
+- **版本策略**: fork 版本号推进为 `2.0.1-memory-fix.2`,依赖取上游较新侧(vitest 4.1.11)
+
 ## [2.0.1-memory-fix.1] — 2026-08-29
 
 Fork 实机测试版：修复 v2.0 长时间运行内存/句柄泄漏，并收紧 API 暴露面。
@@ -23,6 +33,39 @@ Fork 实机测试版：修复 v2.0 长时间运行内存/句柄泄漏，并收�
 - **CI**: 分支与 PR 跑构建测试，仅 tag 触发打包发布
 - **测试**: 前端参数钳位/风扇区间测试 + API `LocalAccessGuard`/`ApiProblem` 单元测试
 - **构建**: 移除 MSBuild 构建后自动 git 提交 Target
+
+## [2.0.1-pre.1] — 2026-08-19
+
+v2.0 第二个预发布版本：配置模型重构、模式切换正确性修复与测试覆盖
+
+> 本版本相对 2.0.0-pre.1 主要是配置存储模型的统一重构与若干正确性修复，未引入大的新功能。
+> 预发布版本可能存在不稳定，建议先在备用环境测试。
+
+### 🛠 配置存储模型
+
+- **统一配置服务（ProfileService）**: 用 `cfg-` 前缀 ID（cfg-silent / cfg-office / cfg-beast / cfg-gaming）替代旧的 `overrides-{mode}.json` 多文件方案，配置读写统一收敛到单一服务，减少文件碎片与状态不一致
+- **配置同步/导入接口**: 新增 `POST /api/overrides/sync` 与 `POST /api/overrides/import`
+
+### 🔧 修复
+
+- **性能模式高亮错位**: `uxtuAdapter` 将 `cpuPowerPlan` 整数值归一成配置 id，修复切换 Tab 重新拉取后性能模式选中项不高亮的问题
+- **CPU 控制**: 新增 `CpuPowerController.ApplyCpuAsync`，统一频率限制 / 睿频 / 核心数限制的应用入口
+
+### ⚙️ 后端与硬件控制
+
+- **后端重构**: `Program.cs` 路由注册与生命周期整理（519 处调整）
+- **硬件探测与监控**: `HardwareDetector` / `HardwareAbstractionLayer` / `ProcessMonitorService` / `GameProfileService` / `WmiInterface` 等组件代码调整，涉及机型探测、进程监控与配置分流逻辑
+
+### 🧪 测试与工具
+
+- **单元测试**: 新增 `useControlState`、`uxtuAdapter` 扁平化等单元测试，可运行 `npm run test`
+- **切换稳定性测试**: 新增 `server/tools/switch-stability-test.ps1`，用于模式切换稳定性压测
+- **前端状态管理**: `useControlState` 大幅重构，统一各页面控制状态来源；`vitest` / `eslint` 配置同步更新
+
+### 📋 注意事项
+
+- 本版本为预发布版本，可能存在不稳定，建议先在备用环境测试
+- 老版本既有功能（自定义风扇曲线、游戏自动切换、快捷键、应用内更新、自定义壁纸等）均已迁移保留
 
 ## [2.0.0-pre.1] — 2026-08-06
 

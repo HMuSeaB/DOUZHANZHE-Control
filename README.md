@@ -30,33 +30,87 @@ A full-featured alternative to Lenovo Vantage.
 
 ---
 
-## 功能 Features
+## 功能 Features（按标签页）
 
-**实时监控** — CPU/GPU 温度、频率、占用率、功耗、风扇转速、显存、内存与磁盘，
-WebSocket 每秒推送全量遥测，含 5 条负载历史曲线。
+### 仪表盘 Dashboard
 
-**性能调优（AMD）** — CPU 功耗墙/温度墙/Curve Optimizer 降压 (PawnIO RyzenSMU.bin)、
-GPU 超频偏移/锁频/温度限制 (NVAPI P/Invoke + nvidia-smi)，
-四档模式预设一键切换（安静/均衡/野兽/斗战）。
+实时硬件监控与系统状态总览。
 
-**性能调优（Intel）** — PL1/PL2 功耗限制 (PawnIO IntelMSR.bin)，
-CPU 频率限制/睿频/核心数限制 (powercfg)。
+- 顶部“当前配置”卡片：安静 / 均衡 / 野兽 / 斗战 四档性能模式一键切换，切换状态由全局动画提示。
+- CPU / GPU / 内存·硬盘 三块核心监控卡：温度、频率、占用率、功耗、显存、内存与磁盘占用，WebSocket 每秒推送全量遥测。
+- 风扇信息卡：大/小风扇实时 RPM、转速百分比、EC 寄存器直读。
+- 系统状态栏：当前散热模式、GPU 模式、电源计划、键盘背光等级聚合显示。
+- 支持 @dnd-kit 拖拽排序与卡片隐藏/显示，打造个人专属仪表盘。
 
-**全平台通用** — CPU 频率限制、睿频开关、核心数限制、电源计划管理（powercfg 跨平台通用）。
+![仪表盘](screenshots/dashboard.png)
 
-**自定义风扇曲线** — 独立标签页，SVG 可视化温度-转速曲线编辑器，
-支持 12 点拖拽、保存/加载/启停/恢复，后台 FanCurveService 定时写入。
+### 控制面板 Control
 
-**GPU 模式** — 混合/集显/独显三档切换 (WMI MiInterface)，用户选择持久化到配置文件。
+CPU / GPU 性能调优与配置管理。
 
-**系统控制** — 键盘背光亮度 (0-3)、FnLock/CapsLock/NumLock/触摸板锁定、
-风扇目标转速直写、自定义背景图片、热键自定义。
+- **CPU 频率控制**：频率上限、限制核心数、睿频加速、电源管理三档（最高能效 / 平衡 / 最佳性能）。
+- **CPU 功耗与温度（AMD）**：功耗墙 PL1/PL2、温度墙、Curve Optimizer 降压，通过 PawnIO RyzenSMU.bin 直接写入。
+- **Intel 机型**：PL1/PL2 功耗限制（PawnIO IntelMSR.bin）+ 频率/睿频/核心数限制（powercfg）。
+- **GPU 频率与超频**：NVAPI P/Invoke + nvidia-smi 实现超频偏移、锁频、温度限制。
+- 配置系统：切换配置、另存为新配置、管理配置，调节项实时保存到当前配置。
 
-**游戏自动切换** — 检测游戏进程自动切换性能模式，支持 Steam/Epic 游戏扫描和批量添加。
+![控制面板](screenshots/control.png)
 
-**个性化** — @dnd-kit 拖拽排序仪表盘、模块隐藏/显示、24 套主题皮肤。
+### 风扇控制 Fan
 
-**桌面集成** — WinForms + WebView2 原生桌面壳，系统托盘、开机自启（计划任务）。
+自定义风扇散热策略，仅斗战者机型可见。
+
+- 实时监控：大/小风扇当前 RPM 与百分比。
+- 手动调速：分别设置大/小风扇目标转速，范围随当前散热模式自动变化。
+- 自定义温度-转速曲线：双风扇独立 13 控制点 SVG 曲线编辑器，支持预设按散热模式一键切换，后台 FanCurveService 定时写入 EC。
+- 手动调速与自定义曲线互斥，避免策略冲突。
+
+![风扇控制](screenshots/fan.png)
+
+### 平台控制 Platform
+
+机型专属的系统级控制项，仅斗战者机型可见。
+
+- 键盘背光亮度：0–3 档滑块调节，EC 寄存器直写。
+- GPU 模式：集显 / 混合 / 独显三档切换（WMI MiInterface），切换后持久化并提示重启。
+- 键盘锁：Fn 锁、大写锁定、数字小键盘锁、触控板锁，防止游戏中误触。
+- EC 信息：只读展示 CPU / GPU 传感器原始值（EC 0x1C / 0x0D 直读）。
+
+![平台控制](screenshots/platform.png)
+
+### 游戏 Games
+
+游戏进程感知与性能配置自动切换。
+
+- 游戏海报墙：为每个已添加的游戏生成海报卡片，直观展示绑定配置。
+- 自动切换：检测到绑定游戏进程启动时自动切换到对应配置，退出后恢复当前配置。
+- 规则管理：扫描已安装游戏、手动添加规则、批量管理启用/禁用。
+- 运行中游戏计数与生效状态实时展示。
+
+![游戏](screenshots/games.png)
+
+### 系统信息 SysInfo
+
+硬件配置卡片网格化展示。
+
+- 处理器 CPU、显卡 GPU、内存、存储、主板 / BIOS、电池、操作系统、设备概览八大类信息。
+- 关键字段直接可读：型号、核心/线程、显存、容量、BIOS 版本、电池健康度、操作系统版本等。
+- 首次加载后本地缓存，右上角一键刷新。
+
+![系统信息](screenshots/sysinfo.png)
+
+### 设置 Settings
+
+外观、启动、快捷键与备份。
+
+- 外观：浅色 / 深色 / 跟随系统三档，同步影响所有 Fluent 控件与 OSD 提示。
+- 配色：24 套主题皮肤，主色选择后辅助强调色按色彩规则自动派生。
+- 开机自启：登录 Windows 时自动运行，支持最小化到托盘启动。
+- 自定义背景：上传壁纸经高斯模糊后作为 Mica 材质底层纹理。
+- 快捷键：自定义全局热键快速唤起面板或切换模式。
+- 备份与导入：一键导出/导入全部配置；关于页面查看版本与更新。
+
+![设置](screenshots/settings.png)
 
 ## 安装 Installation
 
@@ -111,10 +165,10 @@ dotnet run --urls http://0.0.0.0:3100
 ```
 DOUZHANZHE-Control/
 ├── src/                        # React 前端
-│   ├── App.jsx                 # 5 标签页 + 模式 Dock + 自定义背景
+│   ├── App.jsx                 # 7 标签页 + 主题 Dock + 自定义背景
 │   ├── components/
 │   │   ├── SortableDashboard   # 拖拽仪表盘（11 张卡片内联渲染）
-│   │   ├── panels/             # 7 个面板（含 IntelCpuPanel/IntelPowerPanel）
+│   │   ├── panels/             # 8 个面板（含 IntelCpuPanel/IntelPowerPanel）
 │   │   └── ui/                 # 10 个通用组件
 │   ├── hooks/                  # useCardOrder, useControlState
 │   └── services/               # uxtuAdapter (API 封装 + flattenBackendOverrides)
@@ -134,6 +188,7 @@ DOUZHANZHE-Control/
 ├── docs/                       # 开发文档
 │   ├── dev-api.md, dev-backend.md, dev-frontend.md, ...
 │   └── archive/                # 已归档的历史文档
+├── screenshots/                # README 功能截图
 └── vite.config.js              # Vite 配置
 ```
 

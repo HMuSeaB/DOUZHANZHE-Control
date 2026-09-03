@@ -51,8 +51,10 @@ public sealed class ProcessMonitorService : IDisposable
 
     // 快照模式（列表从空变非空时记录）
     private string? _snapshotMode;
-    // 当前模式（每次 thermal_mode API 调用时更新）
-    private string? _currentMode;
+    // 当前配置获取器：权威来源 = last-mode.json 的 CurrentMode()（启动时 Configure 注入，避免本地副本失同步）
+    private Func<string> _currentConfig = () => "office";
+    // 配置 id → 性能模式裸名（供 Rank 优先级比较）
+    private Func<string, string> _resolveThermal = id => id;
 
     // WebSocket 客户端列表
     private static readonly List<WebSocket> _clients = new();
@@ -68,15 +70,26 @@ public sealed class ProcessMonitorService : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    public ProcessMonitorService(GameProfileService profiles, OsdService osd)
+    public ProcessMonitorService(GameProfileService profiles, OsdService osd,
+        Func<string>? currentConfig = null,
+        Func<string, string>? resolveThermal = null)
     {
         _profiles = profiles;
         _osd = osd;
+        if (currentConfig != null) _currentConfig = currentConfig;
+        if (resolveThermal != null) _resolveThermal = resolveThermal;
 
         SubscribeWmiEvents();
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
         AppLog.Write("ProcessMonitor", "Service started");
+    }
+
+    /// <summary>启动后注入配置解析依赖（指向 last-mode.json 与配置→性能模式解包点）</summary>
+    public void Configure(Func<string>? currentConfig, Func<string, string>? resolveThermal)
+    {
+        if (currentConfig != null) _currentConfig = currentConfig;
+        if (resolveThermal != null) _resolveThermal = resolveThermal;
     }
 
     // ── WebSocket 客户端管理 ─────────────────────────────────
@@ -89,13 +102,6 @@ public sealed class ProcessMonitorService : IDisposable
     public static void RemoveClient(WebSocket ws)
     {
         lock (_clientLock) _clients.Remove(ws);
-    }
-
-    // ── 当前模式跟踪 ─────────────────────────────────────────
-
-    public void UpdateCurrentMode(string mode)
-    {
-        _currentMode = mode;
     }
 
     // ── 状态查询 ─────────────────────────────────────────────
@@ -209,10 +215,10 @@ public sealed class ProcessMonitorService : IDisposable
                     AppLog.Write("ProcessMonitor", $"CANCEL_EXIT: {processName} restarted");
                 }
 
-                // 列表从空变非空时记录快照
+                // 列表从空变非空时记录快照（权威当前配置）
                 if (_activeGames.Count == 0)
                 {
-                    _snapshotMode = _currentMode;
+                    _snapshotMode = _currentConfig();
                     AppLog.Write("ProcessMonitor", $"SNAPSHOT: {_snapshotMode}");
                 }
 
@@ -223,9 +229,10 @@ public sealed class ProcessMonitorService : IDisposable
 
                 // 计算是否需要切换
                 var newMode = GetEffectiveMode();
-                if (newMode != null && newMode != _currentMode)
+                var curCfg = _currentConfig();
+                if (newMode != null && newMode != curCfg)
                 {
-                    AppLog.Write("ProcessMonitor", $"SWITCH: {processName} (PID {processId}) → {newMode} (from {_currentMode})");
+                    AppLog.Write("ProcessMonitor", $"SWITCH: {processName} (PID {processId}) → {newMode} (from {curCfg})");
                     NotifyModeSwitch(newMode);
                 }
             }
@@ -296,8 +303,9 @@ public sealed class ProcessMonitorService : IDisposable
 
             if (_activeGames.Count == 0)
             {
-                // 列表为空，恢复快照模式
-                if (_snapshotMode != null && _snapshotMode != _currentMode)
+                // 列表为空，恢复快照（切回启动前的配置 id）
+                var curCfg = _currentConfig();
+                if (_snapshotMode != null && _snapshotMode != curCfg)
                 {
                     AppLog.Write("ProcessMonitor", $"RESTORE: {processName} exited → {_snapshotMode} (snapshot)");
                     NotifyModeSwitch(_snapshotMode);
@@ -307,7 +315,8 @@ public sealed class ProcessMonitorService : IDisposable
             {
                 // 还有游戏在运行，检查是否需要降级
                 var newMode = GetEffectiveMode();
-                if (newMode != null && Rank(newMode) < Rank(_currentMode ?? "office"))
+                var curCfg = _currentConfig();
+                if (newMode != null && RankOf(newMode) < RankOf(curCfg))
                 {
                     AppLog.Write("ProcessMonitor", $"DOWNGRADE: {processName} exited → {newMode}");
                     NotifyModeSwitch(newMode);
@@ -318,7 +327,7 @@ public sealed class ProcessMonitorService : IDisposable
 
     // ── 模式优先级 ───────────────────────────────────────────
 
-    private static int Rank(string mode) => mode switch
+    private static int Rank(string thermalModeName) => thermalModeName switch
     {
         "silent" => 0,
         "office" => 1,
@@ -327,11 +336,14 @@ public sealed class ProcessMonitorService : IDisposable
         _ => 1
     };
 
+    // 配置 id → 优先级（先解包成性能模式裸名再排名，适配 cfg- 前缀配置 id）
+    private int RankOf(string cfgId) => Rank(_resolveThermal(cfgId));
+
     private string? GetEffectiveMode()
     {
         if (_activeGames.Count == 0) return null;
         return _activeGames
-            .OrderByDescending(g => Rank(g.TargetMode))
+            .OrderByDescending(g => RankOf(g.TargetMode))
             .First()
             .TargetMode;
     }

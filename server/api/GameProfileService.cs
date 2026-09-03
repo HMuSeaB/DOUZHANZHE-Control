@@ -199,7 +199,7 @@ public class GameProfile
     public string Name { get; set; } = "";
     public string ExePath { get; set; } = "";
     public string ExeName { get; set; } = "";
-    public string TargetMode { get; set; } = "gaming";
+    public string TargetMode { get; set; } = "cfg-gaming";
     public bool Enabled { get; set; } = true;
     public string Source { get; set; } = "manual"; // manual, steam, epic
 }
@@ -207,7 +207,7 @@ public class GameProfile
 public class GameProfilesData
 {
     public bool Enabled { get; set; } = true;
-    public string DefaultMode { get; set; } = "gaming";
+    public string DefaultMode { get; set; } = "cfg-gaming";
     public List<GameProfile> Profiles { get; set; } = new();
 }
 

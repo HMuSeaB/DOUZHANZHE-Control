@@ -1,4 +1,4 @@
-﻿using Douzhanzhe.HAL;
+using Douzhanzhe.HAL;
 using Douzhanzhe.API;
 using System.Net.WebSockets;
 using System.Net.Http;
@@ -67,6 +67,9 @@ builder.Services.AddSingleton<FanCurveService>(sp => new FanCurveService(
 builder.Services.AddHostedService(sp => new BackgroundRotationService(configDir));
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.IncludeFields = true);
+// last-mode.json：记录当前选中配置 id 的唯一权威持久化文件。
+// 提早在 builder.Build() 前声明，供启动初始化 ProcessMonitor（CurrentMode()）使用。
+var _lastModeFile = "last-mode.json";
 var app = builder.Build();
 var _devMode = app.Environment.IsDevelopment();
 var osdService = app.Services.GetRequiredService<OsdService>();
@@ -93,8 +96,7 @@ app.UseWebSockets();
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
-    OnPrepareResponse = ctx =>
-    {
+    OnPrepareResponse = ctx => {
         // index.html 禁止缓存（确保更新后前端 JS bundle 立即生效）
         if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
         {
@@ -135,7 +137,6 @@ catch (Exception ex)
 // ---- 性能设置持久化 (按模式存储) ----
 var _perfLock = new object();
 var _jsonWriteLock = new object();
-var _lastModeFile = "last-mode.json";
 bool _pgSuppress = false; // ParameterGuard 睡眠期间暂停标志
 
 string CurrentMode()
@@ -153,6 +154,33 @@ void SetCurrentMode(string mode)
 var _modeToThermal = new Dictionary<string, byte> { ["silent"] = 2, ["office"] = 0, ["beast"] = 1, ["gaming"] = 3 };
 var _ecWriteWhitelist = new HashSet<byte> { 0x5A, 0x5E, 0xE4 };
 
+// 唯一解包点：配置 id（cfg-…）→ 性能模式裸名(silent/office/beast/gaming)。
+// 供 switch / clear / Rank / resetToFactoryDefaults 统一调用，避免各处硬编码。
+// 优先查 ProfileEntry.ThermalMode；若是裸性能模式名则原样返回；否则回退 office。
+string ResolveConfigThermal(string cfgId)
+{
+    if (_modeToThermal.ContainsKey(cfgId)) return cfgId;
+    try
+    {
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        var entry = svc.GetById(cfgId);
+        if (entry != null && !string.IsNullOrEmpty(entry.Value.Entry.ThermalMode)
+            && _modeToThermal.ContainsKey(entry.Value.Entry.ThermalMode))
+            return entry.Value.Entry.ThermalMode;
+    }
+    catch { /* 后端/DI 未就绪时走回退 */ }
+    return "office";
+}
+
+// 统一内置配置判定：内置 id 固定为 cfg-silent/office/beast/gaming（或旧裸性能模式名兼容）。
+bool IsBuiltinConfig(string cfgId)
+    => cfgId is "cfg-silent" or "cfg-office" or "cfg-beast" or "cfg-gaming"
+       || _modeToThermal.ContainsKey(cfgId);
+
+// 启动注入 ProcessMonitor 的配置解析依赖（必须在上述局部函数已声明后调用）
+app.Services.GetRequiredService<ProcessMonitorService>().Configure(
+    () => CurrentMode(), ResolveConfigThermal);
+
 void ApplyThermalMode(string mode)
 {
     if (!_modeToThermal.TryGetValue(mode, out var thermalVal)) return;
@@ -162,33 +190,33 @@ void ApplyThermalMode(string mode)
     else
         hal.ThermalMode = thermalVal;
     osdService.Show(mode);
-    app.Services.GetRequiredService<ProcessMonitorService>().UpdateCurrentMode(mode);
 }
 
 PerformanceOverrides LoadPerfOverrides()
-    => JsonRead($"overrides-{CurrentMode()}.json", new PerformanceOverrides());
+    => ProfileLoadOverrides(CurrentMode());
+
+PerformanceOverrides ProfileLoadOverrides(string cfgId)
+{
+    try
+    {
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        return svc.GetById(cfgId)?.Overrides ?? new PerformanceOverrides();
+    }
+    catch { return new PerformanceOverrides(); }
+}
 
 void SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
 {
     lock (_perfLock)
     {
-        var file = $"overrides-{mode ?? CurrentMode()}.json";
-        var o = JsonRead(file, new PerformanceOverrides());
+        var id = mode ?? CurrentMode();
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        var o = svc.GetById(id)?.Overrides ?? new PerformanceOverrides();
         mutate(o);
-        JsonWrite(file, o);
-        // 用户自建配置同时写回 profiles/{id}.json，避免切换配置后编辑丢失
-        if (mode != null && !_modeToThermal.ContainsKey(mode))
-        {
-            try
-            {
-                app.Services.GetRequiredService<ProfileService>().SaveOverrides(mode, o);
-            }
-            catch (Exception ex)
-            {
-                Log($"[overrides] profile sync failed: {ex.Message}");
-            }
-        }
-        Log($"[overrides] ✓ saved → {file}{(mode != null ? " (pinned)" : "")}");
+        // 单一存储：内置/用户统一写 ProfileService（profiles/），不再写 overrides-*.json
+        try { svc.SaveOverrides(id, o); }
+        catch (Exception ex) { Log($"[overrides] save failed: {ex.Message}"); }
+        Log($"[overrides] ✓ saved → config '{id}'");
     }
 }
 
@@ -326,158 +354,189 @@ async System.Threading.Tasks.Task RestoreComputeSettings(string tag)
     try
     {
         var o = LoadPerfOverrides();
-        int restored = 0;
 
-        // --- CPU (powercfg) ---
-        if (o.Cpu.FreqLimitMhz.HasValue)
-        {
-            try { await app.Services.GetRequiredService<CpuPowerController>().SetFreqLimitAsync(o.Cpu.FreqLimitMhz.Value); restored++; Log($"[{tag}] CPU freq limit → {o.Cpu.FreqLimitMhz.Value} MHz"); }
-            catch (Exception ex) { Log($"[{tag}] CPU freq limit failed: {ex.Message}"); }
-        }
-        if (o.Cpu.TurboEnabled.HasValue)
-        {
-            try { await app.Services.GetRequiredService<CpuPowerController>().SetTurboAsync(o.Cpu.TurboEnabled.Value); restored++; Log($"[{tag}] CPU turbo → {o.Cpu.TurboEnabled.Value}"); }
-            catch (Exception ex) { Log($"[{tag}] CPU turbo failed: {ex.Message}"); }
-        }
-        if (o.Cpu.CoreLimitPercent.HasValue && o.Cpu.CoreLimitPercent.Value > 0)
-        {
-            try { await app.Services.GetRequiredService<CpuPowerController>().SetCoreLimitAsync(o.Cpu.CoreLimitPercent.Value); restored++; Log($"[{tag}] CPU core limit → {o.Cpu.CoreLimitPercent.Value}%"); }
-            catch (Exception ex) { Log($"[{tag}] CPU core limit failed: {ex.Message}"); }
-        }
+        //  并行化说明（优化 overrides/switch 延迟，实测 2.5~3s → 目标 ~1~1.3s）：
+        //  CPU/powercfg、SMU(PawnIO 邮箱)、GPU(nvidia-smi)+NVAPI 是三个互相独立的硬件/OS 通道，
+        //  原本串行执行；现各自保持内部原有串行顺序（避免破坏硬件写入），仅跨通道并行。
+        //  ⚠️ 保持串行边界（防竞态）：
+        //    - CPU 与电源计划同组：两者都操作「当前电源方案」SCHEME_CURRENT，不能与其它 powercfg 并发；
+        //    - SMU 单设备，串行；GPU+nvapi 共享 gpuMode 判定，同组串行；
+        //    - 跨通道不做任何共享可变状态写（restored 只在各自通道内 + 汇总）。
+        var cpuTask = System.Threading.Tasks.Task.Run(() => RestoreCpuAndPowerPlan(tag, o));
+        var smuTask = System.Threading.Tasks.Task.Run(() => RestoreSmu(tag, o));
+        var gpuTask = System.Threading.Tasks.Task.Run(() => RestoreGpuAndNvapi(tag, o));
+        await System.Threading.Tasks.Task.WhenAll(cpuTask, smuTask, gpuTask);
 
-        // --- SMU (AmdSmuController) ---
-        Action<uint?, uint?, uint?, uint?, int?> applySmu = (stapmMw, fastMw, slowMw, tempC, coAll) =>
-        {
-            var ctrl = _newSmu.Value;
-            if (ctrl == null) return;
-            if (stapmMw.HasValue) ctrl.SetPowerLimit(stapmMw.Value);
-            if (fastMw.HasValue) ctrl.SetShortPowerLimit(fastMw.Value, slowMw ?? fastMw.Value);
-            if (tempC.HasValue) ctrl.SetTempLimit(tempC.Value);
-            if (coAll.HasValue) ctrl.SetCurveOptimizer(coAll.Value);
-        };
-
-        {
-            var stapmMw = o.Smu.StapmLimitW.HasValue ? (uint?)(o.Smu.StapmLimitW.Value * 1000) : null;
-            var fastMw = o.Smu.ShortPowerLimitW.HasValue ? (uint?)(o.Smu.ShortPowerLimitW.Value * 1000) : null;
-            var slowMw = fastMw;
-            var tempC = o.Smu.TempLimitC.HasValue ? (uint?)o.Smu.TempLimitC.Value : null;
-            var coAll = o.Smu.CoAll.HasValue ? (int?)o.Smu.CoAll.Value : null;
-
-            if (stapmMw.HasValue || fastMw.HasValue || tempC.HasValue || coAll.HasValue)
-            {
-                try
-                {
-                    applySmu(stapmMw, fastMw, slowMw, tempC, coAll);
-                    int smuCount = 0;
-                    if (stapmMw.HasValue) { smuCount++; Log($"[{tag}] SMU stapm → {o.Smu.StapmLimitW!.Value}W"); }
-                    if (fastMw.HasValue) { smuCount++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
-                if (slowMw.HasValue) { smuCount++; Log($"[{tag}] SMU slow power → {o.Smu.ShortPowerLimitW!.Value}W"); }
-                    if (tempC.HasValue) { smuCount++; Log($"[{tag}] SMU temp → {o.Smu.TempLimitC!.Value}°C"); }
-                    if (coAll.HasValue) { smuCount++; Log($"[{tag}] SMU CO → {o.Smu.CoAll!.Value}"); }
-                    restored += smuCount;
-                }
-                catch (Exception ex) { Log($"[{tag}] SMU BatchApply failed: {ex.Message}"); }
-            }
-        }
-
-        // --- GPU mode 检测: 优先读保存的目标模式(gpu-mode.json)，回退到 EC 当前值 ---
-        byte gpuMode = 1; // 默认独显
-        try
-        {
-            var gpuModeFile = JsonRead<Dictionary<string, int>>("gpu-mode.json", new Dictionary<string, int>());
-            if (gpuModeFile.TryGetValue("gpuMode", out int savedMode) && savedMode >= 0 && savedMode <= 2)
-                gpuMode = (byte)savedMode;
-            else
-                gpuMode = app.Services.GetRequiredService<WmiInterface>().GetGpuMode();
-        }
-        catch { }
-
-        // --- GPU (nvidia-smi) ---
-        // 混合模式(0): 跳过时钟锁定，避免干扰 Optimus P-state 管理
-        // 集显模式(2): 跳过所有 GPU 命令（独显不可用）
-        var gpu = app.Services.GetRequiredService<GpuController>();
-        if (gpuMode != 2 && o.Gpu.CoreFreqMhz.HasValue && o.Gpu.CoreFreqMhz.Value > 0)
-        {
-            try
-            {
-                if (gpuMode == 0)
-                {
-                    Log($"[{tag}] GPU core skipped (hybrid mode, gpuMode=0)");
-                }
-                else
-                {
-                    gpu.SetMaxGpuClock(o.Gpu.CoreFreqMhz.Value);
-                    if (o.Gpu.FreqLocked == true) gpu.SetExactGpuClock(o.Gpu.CoreFreqMhz.Value);
-                    restored++;
-                    Log($"[{tag}] GPU core → {o.Gpu.CoreFreqMhz.Value} MHz (locked={o.Gpu.FreqLocked})");
-                }
-            }
-            catch (Exception ex) { Log($"[{tag}] GPU core failed: {ex.Message}"); }
-        }
-        if (gpuMode != 2 && o.Gpu.MemFreqLevel.HasValue && o.Gpu.MemFreqLevel.Value > 0)
-        {
-            try
-            {
-                if (gpuMode == 0)
-                {
-                    Log($"[{tag}] GPU mem skipped (hybrid mode, gpuMode=0)");
-                }
-                else
-                {
-                    var memMap = new int[] { 0, 9001, 11001, 12001 };
-                    var idx = Math.Clamp(o.Gpu.MemFreqLevel.Value, 0, 3);
-                    if (idx > 0) gpu.SetMaxMemoryClock(memMap[idx]);
-                    restored++;
-                    Log($"[{tag}] GPU mem level → {idx} ({memMap[idx]} MHz)");
-                }
-            }
-            catch (Exception ex) { Log($"[{tag}] GPU mem failed: {ex.Message}"); }
-        }
-
-        // --- NVAPI ---
-        // 集显模式(2): 跳过所有 NVAPI（独显不可用）
-        // 混合模式(0): NVAPI 偏移/温度正常下发（不干扰 Optimus）
-        var nv = app.Services.GetRequiredService<NvapiGpuController>();
-        if (gpuMode != 2 && (o.Nvapi.OcCoreOffsetMhz.HasValue || o.Nvapi.OcMemOffsetMhz.HasValue))
-        {
-            try
-            {
-                var rc = nv.SetP0Offset(o.Nvapi.OcCoreOffsetMhz ?? 0, o.Nvapi.OcMemOffsetMhz ?? 0);
-                restored++;
-                Log($"[{tag}] NVAPI OC → core={o.Nvapi.OcCoreOffsetMhz ?? 0}, mem={o.Nvapi.OcMemOffsetMhz ?? 0} (rc={rc})");
-            }
-            catch (Exception ex) { Log($"[{tag}] NVAPI OC failed: {ex.Message}"); }
-        }
-        if (gpuMode != 2 && o.Nvapi.PowerLimitW.HasValue)
-        {
-            try { nv.SetPowerLimit((uint)(o.Nvapi.PowerLimitW.Value * 1000)); restored++; Log($"[{tag}] NVAPI power → {o.Nvapi.PowerLimitW.Value}W"); }
-            catch (Exception ex) { Log($"[{tag}] NVAPI power failed: {ex.Message}"); }
-        }
-        if (gpuMode != 2 && o.Nvapi.ThermalLimitC.HasValue)
-        {
-            try { nv.SetThermalLimit(o.Nvapi.ThermalLimitC.Value); restored++; Log($"[{tag}] NVAPI thermal → {o.Nvapi.ThermalLimitC.Value}°C"); }
-            catch (Exception ex) { Log($"[{tag}] NVAPI thermal failed: {ex.Message}"); }
-        }
-
-        // --- 电源计划 ---
-        if (o.PowerPlan.HasValue)
-        {
-            try
-            {
-                var hal2 = app.Services.GetRequiredService<HardwareAbstractionLayer>();
-                hal2.PowerPlan = o.PowerPlan.Value;
-                restored++;
-                var planNames = new[] { "平衡", "高性能", "节能" };
-                var idx = Math.Clamp(o.PowerPlan.Value, 0, 2);
-                Log($"[{tag}] Power plan → {planNames[idx]} ({idx})");
-            }
-            catch (Exception ex) { Log($"[{tag}] Power plan failed: {ex.Message}"); }
-        }
-
-        if (restored > 0) Log($"[{tag}] Compute settings restored: {restored} applied");
+        int restored = cpuTask.Result + smuTask.Result + gpuTask.Result;
+        if (restored > 0) Log($"[{tag}] Compute settings restored: {restored} applied (parallel)");
         else Log($"[{tag}] No compute settings to restore");
     }
     catch (Exception ex) { Log($"[{tag}] Compute settings restore failed: {ex.Message}"); }
+}
+
+// CPU (powercfg) + 电源计划 —— 两者都操作当前活动电源方案，保持串行
+int RestoreCpuAndPowerPlan(string tag, PerformanceOverrides o)
+{
+    int restored = 0;
+    var cpu = app.Services.GetRequiredService<CpuPowerController>();
+
+    // --- CPU (powercfg) ---
+    // 批量化：3 个参数合并为一次 ApplyCpuAsync（单个电源方案往返），
+    // 去掉 2 次多余的 GetActiveScheme/DisableOverlay/SetActiveScheme 子进程开销。
+    {
+        int? freq = o.Cpu.FreqLimitMhz.HasValue ? o.Cpu.FreqLimitMhz.Value : (int?)null;
+        bool? turbo = o.Cpu.TurboEnabled.HasValue ? o.Cpu.TurboEnabled.Value : (bool?)null;
+        int? core = (o.Cpu.CoreLimitPercent.HasValue && o.Cpu.CoreLimitPercent.Value > 0) ? o.Cpu.CoreLimitPercent.Value : (int?)null;
+        if (freq.HasValue || turbo.HasValue || core.HasValue)
+        {
+            try
+            {
+                cpu.ApplyCpuAsync(freq, turbo, core).GetAwaiter().GetResult();
+                if (freq.HasValue) { restored++; Log($"[{tag}] CPU freq limit → {freq.Value} MHz"); }
+                if (turbo.HasValue) { restored++; Log($"[{tag}] CPU turbo → {turbo.Value}"); }
+                if (core.HasValue) { restored++; Log($"[{tag}] CPU core limit → {core.Value}%"); }
+            }
+            catch (Exception ex) { Log($"[{tag}] CPU apply failed (batched): {ex.Message}"); }
+        }
+    }
+
+    // --- 电源计划 ---
+    if (o.PowerPlan.HasValue)
+    {
+        try
+        {
+            var hal2 = app.Services.GetRequiredService<HardwareAbstractionLayer>();
+            hal2.PowerPlan = o.PowerPlan.Value;
+            restored++;
+            var planNames = new[] { "平衡", "高性能", "节能" };
+            var idx = Math.Clamp(o.PowerPlan.Value, 0, 2);
+            Log($"[{tag}] Power plan → {planNames[idx]} ({idx})");
+        }
+        catch (Exception ex) { Log($"[{tag}] Power plan failed: {ex.Message}"); }
+    }
+    return restored;
+}
+
+// SMU (AmdSmuController) —— PawnIO 邮箱单设备，保持原有单次调用串行
+int RestoreSmu(string tag, PerformanceOverrides o)
+{
+    int restored = 0;
+    Action<uint?, uint?, uint?, uint?, int?> applySmu = (stapmMw, fastMw, slowMw, tempC, coAll) =>
+    {
+        var ctrl = _newSmu.Value;
+        if (ctrl == null) return;
+        if (stapmMw.HasValue) ctrl.SetPowerLimit(stapmMw.Value);
+        if (fastMw.HasValue) ctrl.SetShortPowerLimit(fastMw.Value, slowMw ?? fastMw.Value);
+        if (tempC.HasValue) ctrl.SetTempLimit(tempC.Value);
+        if (coAll.HasValue) ctrl.SetCurveOptimizer(coAll.Value);
+    };
+
+    var stapmMw = o.Smu.StapmLimitW.HasValue ? (uint?)(o.Smu.StapmLimitW.Value * 1000) : null;
+    var fastMw = o.Smu.ShortPowerLimitW.HasValue ? (uint?)(o.Smu.ShortPowerLimitW.Value * 1000) : null;
+    var slowMw = fastMw;
+    var tempC = o.Smu.TempLimitC.HasValue ? (uint?)o.Smu.TempLimitC.Value : null;
+    var coAll = o.Smu.CoAll.HasValue ? (int?)o.Smu.CoAll.Value : null;
+
+    if (stapmMw.HasValue || fastMw.HasValue || tempC.HasValue || coAll.HasValue)
+    {
+        try
+        {
+            applySmu(stapmMw, fastMw, slowMw, tempC, coAll);
+            if (stapmMw.HasValue) { restored++; Log($"[{tag}] SMU stapm → {o.Smu.StapmLimitW!.Value}W"); }
+            if (fastMw.HasValue) { restored++; Log($"[{tag}] SMU short power → {o.Smu.ShortPowerLimitW!.Value}W"); }
+            if (slowMw.HasValue) { restored++; Log($"[{tag}] SMU slow power → {o.Smu.ShortPowerLimitW!.Value}W"); }
+            if (tempC.HasValue) { restored++; Log($"[{tag}] SMU temp → {o.Smu.TempLimitC!.Value}°C"); }
+            if (coAll.HasValue) { restored++; Log($"[{tag}] SMU CO → {o.Smu.CoAll!.Value}"); }
+        }
+        catch (Exception ex) { Log($"[{tag}] SMU BatchApply failed: {ex.Message}"); }
+    }
+    return restored;
+}
+
+// GPU (nvidia-smi) + NVAPI —— 共享 gpuMode 判定，同组串行
+int RestoreGpuAndNvapi(string tag, PerformanceOverrides o)
+{
+    int restored = 0;
+
+    // --- GPU mode 检测: 优先读保存的目标模式(gpu-mode.json)，回退到 EC 当前值 ---
+    byte gpuMode = 1; // 默认独显
+    try
+    {
+        var gpuModeFile = JsonRead<Dictionary<string, int>>("gpu-mode.json", new Dictionary<string, int>());
+        if (gpuModeFile.TryGetValue("gpuMode", out int savedMode) && savedMode >= 0 && savedMode <= 2)
+            gpuMode = (byte)savedMode;
+        else
+            gpuMode = app.Services.GetRequiredService<WmiInterface>().GetGpuMode();
+    }
+    catch { }
+
+    // --- GPU (nvidia-smi) ---
+    // 混合模式(0): 跳过时钟锁定，避免干扰 Optimus P-state 管理
+    // 集显模式(2): 跳过所有 GPU 命令（独显不可用）
+    var gpu = app.Services.GetRequiredService<GpuController>();
+    if (gpuMode != 2 && o.Gpu.CoreFreqMhz.HasValue && o.Gpu.CoreFreqMhz.Value > 0)
+    {
+        try
+        {
+            if (gpuMode == 0)
+            {
+                Log($"[{tag}] GPU core skipped (hybrid mode, gpuMode=0)");
+            }
+            else
+            {
+                gpu.SetMaxGpuClock(o.Gpu.CoreFreqMhz.Value);
+                if (o.Gpu.FreqLocked == true) gpu.SetExactGpuClock(o.Gpu.CoreFreqMhz.Value);
+                restored++;
+                Log($"[{tag}] GPU core → {o.Gpu.CoreFreqMhz.Value} MHz (locked={o.Gpu.FreqLocked})");
+            }
+        }
+        catch (Exception ex) { Log($"[{tag}] GPU core failed: {ex.Message}"); }
+    }
+    if (gpuMode != 2 && o.Gpu.MemFreqLevel.HasValue && o.Gpu.MemFreqLevel.Value > 0)
+    {
+        try
+        {
+            if (gpuMode == 0)
+            {
+                Log($"[{tag}] GPU mem skipped (hybrid mode, gpuMode=0)");
+            }
+            else
+            {
+                var memMap = new int[] { 0, 9001, 11001, 12001 };
+                var idx = Math.Clamp(o.Gpu.MemFreqLevel.Value, 0, 3);
+                if (idx > 0) gpu.SetMaxMemoryClock(memMap[idx]);
+                restored++;
+                Log($"[{tag}] GPU mem level → {idx} ({memMap[idx]} MHz)");
+            }
+        }
+        catch (Exception ex) { Log($"[{tag}] GPU mem failed: {ex.Message}"); }
+    }
+
+    // --- NVAPI ---
+    // 集显模式(2): 跳过所有 NVAPI（独显不可用）
+    // 混合模式(0): NVAPI 偏移/温度正常下发（不干扰 Optimus）
+    var nv = app.Services.GetRequiredService<NvapiGpuController>();
+    if (gpuMode != 2 && (o.Nvapi.OcCoreOffsetMhz.HasValue || o.Nvapi.OcMemOffsetMhz.HasValue))
+    {
+        try
+        {
+            var rc = nv.SetP0Offset(o.Nvapi.OcCoreOffsetMhz ?? 0, o.Nvapi.OcMemOffsetMhz ?? 0);
+            restored++;
+            Log($"[{tag}] NVAPI OC → core={o.Nvapi.OcCoreOffsetMhz ?? 0}, mem={o.Nvapi.OcMemOffsetMhz ?? 0} (rc={rc})");
+        }
+        catch (Exception ex) { Log($"[{tag}] NVAPI OC failed: {ex.Message}"); }
+    }
+    if (gpuMode != 2 && o.Nvapi.PowerLimitW.HasValue)
+    {
+        try { nv.SetPowerLimit((uint)(o.Nvapi.PowerLimitW.Value * 1000)); restored++; Log($"[{tag}] NVAPI power → {o.Nvapi.PowerLimitW.Value}W"); }
+        catch (Exception ex) { Log($"[{tag}] NVAPI power failed: {ex.Message}"); }
+    }
+    if (gpuMode != 2 && o.Nvapi.ThermalLimitC.HasValue)
+    {
+        try { nv.SetThermalLimit(o.Nvapi.ThermalLimitC.Value); restored++; Log($"[{tag}] NVAPI thermal → {o.Nvapi.ThermalLimitC.Value}°C"); }
+        catch (Exception ex) { Log($"[{tag}] NVAPI thermal failed: {ex.Message}"); }
+    }
+    return restored;
 }
 
 // ---- 恢复所有性能设置 (启动 + 睡眠恢复共用, 含风扇) ----
@@ -1676,13 +1735,14 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
 {
     Log($"[overrides/switch] ← mode={req.Mode}");
     SetCurrentMode(req.Mode);
-    ApplyThermalMode(req.Mode);
-    await System.Threading.Tasks.Task.Delay(500); // 等 EC 完成模式预设加载
+    // thermal 先：用唯一解包点把配置 id → 性能模式裸名，再下发 EC（用户配置也能正确下发生效散热模式）
+    ApplyThermalMode(ResolveConfigThermal(req.Mode));
+    await System.Threading.Tasks.Task.Delay(250); // 等 EC 完成模式预设加载（500→250，配合并行 after 缩短延迟）
 
     var overrides = LoadPerfOverrides();
     // 用户自建 profile: 从 ProfileService 加载配置（内置模式使用 overrides-{mode}.json）
     var profileSvc = app.Services.GetRequiredService<ProfileService>();
-    var isBuiltin = new[] { "silent", "office", "gaming", "beast" }.Contains(req.Mode);
+    var isBuiltin = IsBuiltinConfig(req.Mode);
     if (!isBuiltin)
     {
         var profileData = profileSvc.GetById(req.Mode);
@@ -1698,49 +1758,51 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     // 非覆盖通道: 直接调用硬件控制器重置（绕过 SavePerfOverrides，避免并发模式切换写错文件）
     var gpuCtrl = app.Services.GetRequiredService<GpuController>();
     var nvCtrl = app.Services.GetRequiredService<NvapiGpuController>();
+    var cpuReset = app.Services.GetRequiredService<CpuPowerController>();
 
-    // GPU 核心/显存时钟: 先清理再让 RestoreComputeSettings 重新应用
-    if (!overrides.Gpu.CoreFreqMhz.HasValue && !overrides.Gpu.FreqLocked.HasValue)
+    // 重置阶段并行化（与 RestoreComputeSettings 相同的通道独立性原则）：
+    //  GPU+nvapi 一组（共享 GPU），CPU powercfg+电源计划一组（都操作当前电源方案），互不依赖 → 并行。
+    var gpuResetTask = System.Threading.Tasks.Task.Run(() =>
     {
-        try { gpuCtrl.ResetGpuClocks(); } catch { }
-    }
-    if (!overrides.Gpu.MemFreqLevel.HasValue)
-    {
-        try { gpuCtrl.ResetMemoryClocks(); } catch { }
-    }
-
-    // NVAPI: 超频偏移和温度限制恢复默认
-    if (!overrides.Nvapi.OcCoreOffsetMhz.HasValue && !overrides.Nvapi.OcMemOffsetMhz.HasValue)
-    {
-        try { nvCtrl.SetP0Offset(0, 0); } catch { }
-    }
-    if (!overrides.Nvapi.ThermalLimitC.HasValue)
-    {
-        try { nvCtrl.SetThermalLimit(87); } catch { }
-    }
-
-    // CPU 功率配置: 无覆盖时恢复默认（直接写文件，绕过 ResetAllAsync 的 SavePerfOverrides 竞争）
-    if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
-    {
-        var cpu = app.Services.GetRequiredService<CpuPowerController>();
-        try { await cpu.SetFreqLimitAsync(0); } catch { }
-        try { await cpu.SetTurboAsync(true); } catch { }
-        try { await cpu.SetCoreLimitAsync(100); } catch { }
-        // 直接写入新模式文件（CurrentMode 已切换，不受并发 setter 影响）
-        lock (_perfLock)
+        // GPU 核心/显存时钟: 先清理再让 RestoreComputeSettings 重新应用
+        if (!overrides.Gpu.CoreFreqMhz.HasValue && !overrides.Gpu.FreqLocked.HasValue)
         {
-            var file = $"overrides-{req.Mode}.json";
-            var o = JsonRead<PerformanceOverrides>(file, new PerformanceOverrides());
-            o.Cpu.FreqLimitMhz = null; o.Cpu.TurboEnabled = null; o.Cpu.CoreLimitPercent = null;
-            JsonWrite(file, o);
+            try { gpuCtrl.ResetGpuClocks(); } catch { }
         }
-    }
+        if (!overrides.Gpu.MemFreqLevel.HasValue)
+        {
+            try { gpuCtrl.ResetMemoryClocks(); } catch { }
+        }
+        // NVAPI: 超频偏移和温度限制恢复默认
+        if (!overrides.Nvapi.OcCoreOffsetMhz.HasValue && !overrides.Nvapi.OcMemOffsetMhz.HasValue)
+        {
+            try { nvCtrl.SetP0Offset(0, 0); } catch { }
+        }
+        if (!overrides.Nvapi.ThermalLimitC.HasValue)
+        {
+            try { nvCtrl.SetThermalLimit(87); } catch { }
+        }
+    });
 
-    // 电源计划: 无覆盖时恢复平衡
-    if (!overrides.PowerPlan.HasValue)
+    var cpuResetTask = System.Threading.Tasks.Task.Run(() =>
     {
-        try { app.Services.GetRequiredService<HardwareAbstractionLayer>().PowerPlan = 0; } catch { }
-    }
+        // CPU 功率配置: 无覆盖时恢复默认（写入当前配置，CurrentMode 已切换不受并发影响）
+        if (!overrides.Cpu.FreqLimitMhz.HasValue && !overrides.Cpu.TurboEnabled.HasValue && !overrides.Cpu.CoreLimitPercent.HasValue)
+        {
+            try { cpuReset.ApplyCpuAsync(0, true, 100).GetAwaiter().GetResult(); } catch { }
+            SavePerfOverrides(o =>
+            {
+                o.Cpu.FreqLimitMhz = null; o.Cpu.TurboEnabled = null; o.Cpu.CoreLimitPercent = null;
+            }, req.Mode);
+        }
+        // 电源计划: 无覆盖时恢复平衡
+        if (!overrides.PowerPlan.HasValue)
+        {
+            try { app.Services.GetRequiredService<HardwareAbstractionLayer>().PowerPlan = 0; } catch { }
+        }
+    });
+
+    await System.Threading.Tasks.Task.WhenAll(gpuResetTask, cpuResetTask);
 
     // 应用新模式的全部覆盖设置（CPU/SMU/GPU/NVAPI/电源计划 + 风扇）
     await RestoreAllPerfSettings("switch");
@@ -1748,11 +1810,11 @@ app.MapPost("/api/overrides/switch", async (SwitchModeRequest req) =>
     return Results.Json(new { overrides });
 });
 
-app.MapPost("/api/overrides/sync", (SyncOverridesRequest req) =>
+app.MapPost("/api/overrides/sync", (SyncOverridesRequest req, ProfileService profileSvc) =>
 {
     Log($"[overrides/sync] ← mode={req.Mode}, clearing overrides");
-    var file = $"overrides-{req.Mode}.json";
-    lock (_perfLock) JsonWrite(file, new PerformanceOverrides());
+    try { profileSvc.ResetToDefaults(req.Mode); }
+    catch (Exception ex) { Log($"[overrides/sync] failed: {ex.Message}"); return Results.BadRequest(); }
     return Results.Ok();
 });
 
@@ -1868,12 +1930,12 @@ app.MapPost("/api/overrides/clear", async (ClearOverridesRequest req, ProfileSer
     }
 });
 
-app.MapPost("/api/overrides/import", (SyncOverridesRequest req) =>
+app.MapPost("/api/overrides/import", (SyncOverridesRequest req, ProfileService profileSvc) =>
 {
     if (req.Overrides == null) return Results.BadRequest("overrides required");
-    var file = $"overrides-{req.Mode}.json";
-    lock (_perfLock) JsonWrite(file, req.Overrides);
-    Log($"[overrides/import] ← mode={req.Mode}, imported from localStorage migration");
+    try { profileSvc.SaveOverrides(req.Mode, req.Overrides); }
+    catch (Exception ex) { Log($"[overrides/import] failed: {ex.Message}"); return Results.BadRequest(); }
+    Log($"[overrides/import] ← mode={req.Mode}");
     return Results.Ok();
 });
 
@@ -1959,7 +2021,7 @@ app.MapPost("/api/notify", async (HttpContext ctx) =>
 // ---- 配置备份/恢复 ----
 var backupCategories = new Dictionary<string, string[]>
 {
-    ["config"] = new[] { "overrides-office.json", "overrides-beast.json", "overrides-silent.json", "overrides-gaming.json", "custom-params.json", "fan-curve.json", "gpu-mode.json", "profiles/.index.json" },
+    ["config"] = new[] { "custom-params.json", "fan-curve.json", "gpu-mode.json", "profiles/.index.json" },
     ["games"] = new[] { "game-profiles.json" },
     ["hotkeys"] = new[] { "hotkey-config.json", "hotkey-status.json" },
     ["appearance"] = new[] { "ui-state.json" },
@@ -2802,22 +2864,62 @@ profileSvc.EnsureInitialized(configDir);
 var validProfileIds = new HashSet<string>(profileSvc.GetAll().Select(p => p.Id));
 if (!validProfileIds.Contains(CurrentMode()))
 {
-    Log($"[Profiles] 当前模式 {CurrentMode()} 不存在，回退到 office");
-    SetCurrentMode("office");
+    Log($"[Profiles] 当前模式 {CurrentMode()} 不存在，回退到 cfg-office");
+    SetCurrentMode("cfg-office");
 }
-foreach (var orphanFile in Directory.GetFiles(configDir, "overrides-*.json"))
+
+// ---- 旧配置一次性迁移（1.6.x overrides-*.json → 用户配置，幂等） ----
+// 只导入 PerformanceOverrides 嵌套结构的 overrides-*.json；扁平文件(custom-params 等)不导入。
+void MigrateLegacyOverrides(string cfgDir, ProfileService svc)
 {
-    var orphanId = Path.GetFileNameWithoutExtension(orphanFile)["overrides-".Length..];
-    if (!validProfileIds.Contains(orphanId))
+    var marker = Path.Combine(cfgDir, "legacy-migration-done.json");
+    if (File.Exists(marker)) return;
+
+    var files = Directory.GetFiles(cfgDir, "overrides-*.json").OrderBy(f => f, StringComparer.Ordinal).ToList();
+    int imported = 0;
+    foreach (var file in files)
     {
+        var bare = Path.GetFileNameWithoutExtension(file)["overrides-".Length..];
+        if (bare.StartsWith("cfg-", StringComparison.OrdinalIgnoreCase)) continue; // 新内置残留，跳过
         try
         {
-            File.Delete(orphanFile);
-            Log($"[Profiles] 清理孤立 overrides 文件: {Path.GetFileName(orphanFile)}");
+            var ov = JsonRead<PerformanceOverrides>(file, new PerformanceOverrides());
+            if (!HasAnyOverride(ov)) { continue; } // 空/非法跳过
+            var thermal = bare switch { "silent" or "office" or "beast" or "gaming" => bare, _ => "office" };
+            var created = svc.Create($"旧版-{bare}", thermal);
+            if (created == null) continue;
+            svc.SaveOverrides(created.Id, ov);
+            imported++;
+            Log($"[MigrateLegacy] 导入旧配置 → 用户配置 '{created.Id}' (from {Path.GetFileName(file)})");
         }
-        catch (Exception ex) { Log($"[Profiles] 清理孤立 overrides 失败: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            Log($"[MigrateLegacy] 跳过 {Path.GetFileName(file)}: {ex.Message}");
+        }
+    }
+    if (imported > 0) Log($"[MigrateLegacy] 完成：导入 {imported} 个旧配置");
+    // 无论是否导入都写标记，避免每次启动重复扫描；导入成功的源文件一并清理
+    try { JsonWrite(marker, new { done = true }); } catch { }
+    foreach (var file in files)
+    {
+        var bare = Path.GetFileNameWithoutExtension(file)["overrides-".Length..];
+        if (!bare.StartsWith("cfg-", StringComparison.OrdinalIgnoreCase))
+        {
+            try { File.Delete(file); Log($"[MigrateLegacy] 已清理旧源文件: {Path.GetFileName(file)}"); }
+            catch (Exception ex) { Log($"[MigrateLegacy] 清理失败: {ex.Message}"); }
+        }
     }
 }
+
+bool HasAnyOverride(PerformanceOverrides o)
+    => o.PowerPlan != null
+       || o.Cpu.FreqLimitMhz != null || o.Cpu.TurboEnabled != null || o.Cpu.CoreLimitPercent != null
+       || o.Gpu.CoreFreqMhz != null || o.Gpu.FreqLocked != null || o.Gpu.MemFreqLevel != null
+       || o.Nvapi.OcCoreOffsetMhz != null || o.Nvapi.OcMemOffsetMhz != null || o.Nvapi.PowerLimitW != null || o.Nvapi.ThermalLimitC != null
+       || o.Smu.StapmLimitW != null || o.Smu.ShortPowerLimitW != null || o.Smu.TempLimitC != null || o.Smu.CoAll != null
+       || o.Fan.LargeRpm != null || o.Fan.SmallRpm != null;
+
+MigrateLegacyOverrides(configDir, profileSvc);
 
 // ---- Profiles API ----
 app.MapGet("/api/profiles", (ProfileService svc) =>
@@ -2893,10 +2995,6 @@ app.MapDelete("/api/profiles/{id}", (string id, ProfileService svc, GameProfileS
     if (boundGames.Count > 0)
         return Results.BadRequest(new { error = $"有 {boundGames.Count} 条游戏规则绑定此配置，请先解除绑定再删除" });
 
-    // 清理用户配置的 overrides 缓存，避免删除后继续被 current mode 使用
-    var orphanPath = Path.Combine(configDir, $"overrides-{id}.json");
-    if (File.Exists(orphanPath)) File.Delete(orphanPath);
-
     if (!svc.Delete(id))
         return Results.BadRequest(new { error = "删除失败" });
     return Results.Ok(new { ok = true });
@@ -2915,25 +3013,18 @@ app.MapPost("/api/profiles/{id}/rename", async (string id, HttpContext ctx, Prof
 
 app.MapPost("/api/profiles/{id}/copy", (string id, ProfileService svc) =>
 {
+    // svc.Copy 已从 ProfileService 复制参数（profiles/），无需再同步 overrides-*.json
     var created = svc.Copy(id);
     if (created == null)
         return Results.BadRequest(new { error = "复制失败" });
-    // 内置配置的实际参数在 overrides-{id}.json，复制后同步写入新配置
-    if (new[] { "silent", "office", "gaming", "beast" }.Contains(id))
-    {
-        var srcOverrides = JsonRead<PerformanceOverrides>($"overrides-{id}.json", new PerformanceOverrides());
-        svc.SaveOverrides(created.Id, srcOverrides);
-    }
     return Results.Json(created);
 });
 
 app.MapPost("/api/profiles/{id}/reset", (string id, ProfileService svc) =>
 {
+    // ResetToDefaults 已清空 ProfileService 参数（保留 thermalMode），无需再清 overrides-*.json
     if (!svc.ResetToDefaults(id))
         return Results.BadRequest(new { error = "重置失败" });
-    // 内置配置的实际生效源是 overrides-{id}.json，必须同步清空，否则重置不生效
-    if (new[] { "silent", "office", "gaming", "beast" }.Contains(id))
-        JsonWrite($"overrides-{id}.json", new PerformanceOverrides());
     return Results.Ok(new { ok = true });
 });
 

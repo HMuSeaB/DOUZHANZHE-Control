@@ -64,7 +64,7 @@ public sealed class CpuPowerController : IDisposable
         await DisableOverlayAsync();
         // 直接写入 AC + DC
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_FREQ_LIMIT, mhz.ToString());
-        await Task.Delay(100);
+        await Task.Delay(50);
         // 重新激活方案使设置生效
         await SetActiveSchemeAsync(scheme);
     }
@@ -96,7 +96,7 @@ public sealed class CpuPowerController : IDisposable
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
             await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PERF_BOOST, "2");
         }
-        await Task.Delay(100);
+        await Task.Delay(50);
         await SetActiveSchemeAsync(scheme);
     }
 
@@ -115,7 +115,7 @@ public sealed class CpuPowerController : IDisposable
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_THROTTLE_MAX, val);
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, val);
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_HW_THREADING, val);
-        await Task.Delay(100);
+        await Task.Delay(50);
         await SetActiveSchemeAsync(scheme);
     }
 
@@ -135,7 +135,46 @@ public sealed class CpuPowerController : IDisposable
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_THROTTLE_MAX, "100");
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
         await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_HW_THREADING, "100");
-        await Task.Delay(100);
+        await Task.Delay(50);
+        await SetActiveSchemeAsync(scheme);
+    }
+
+    /// <summary>
+    /// 批量应用 CPU 三个参数（频率限制 / 睿频 / 核心数）在单个电源方案往返内完成。
+    /// 相比逐一调用 SetFreqLimitAsync/SetTurboAsync/SetCoreLimitAsync，只做一次
+    /// GetActiveScheme + DisableOverlay + SetActiveScheme，减少模式切换时 ~8 次多余的
+    /// powercfg 子进程与两次固定延时。仅写入传值非空的参数，语义与逐一调用完全一致。
+    /// </summary>
+    public async Task ApplyCpuAsync(int? freqLimitMhz, bool? turboEnabled, int? coreLimitPercent)
+    {
+        if (freqLimitMhz.HasValue && freqLimitMhz.Value < 0) throw new ArgumentOutOfRangeException(nameof(freqLimitMhz));
+        if (coreLimitPercent.HasValue && (coreLimitPercent.Value < 0 || coreLimitPercent.Value > 100)) throw new ArgumentOutOfRangeException(nameof(coreLimitPercent));
+
+        var scheme = GetActiveScheme();
+        await DisableOverlayAsync();
+
+        if (freqLimitMhz.HasValue)
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_FREQ_LIMIT, freqLimitMhz.Value.ToString());
+
+        if (turboEnabled.HasValue)
+        {
+            // 同 SetTurboAsync：启用=min5/max100/boost2；禁用(锁频)=min100/max100/boost2
+            var min = turboEnabled.Value ? "5" : "100";
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MIN_STATE, min);
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, "100");
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PERF_BOOST, "2");
+        }
+
+        if (coreLimitPercent.HasValue)
+        {
+            // 同 SetCoreLimitAsync：蛟龙同款 3 参数同设
+            var val = coreLimitPercent.Value.ToString();
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_THROTTLE_MAX, val);
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_MAX_STATE, val);
+            await SetPowerValueAsync(scheme, SUB_PROCESSOR, SET_PROC_HW_THREADING, val);
+        }
+
+        await Task.Delay(50);
         await SetActiveSchemeAsync(scheme);
     }
 
