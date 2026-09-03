@@ -171,3 +171,15 @@ postcss.config.js
 
 # Design prototypes (private repo)
 canvas-workspace/
+canvas-workspace.zip
+
+# Root debug logs (local only)
+dev-start-log.txt
+full-debug-log.txt
+
+# git bundle exports
+*.bundle
+
+# Local AI-tool docs and editor config
+.antigravity_docs/
+.cursorignore
