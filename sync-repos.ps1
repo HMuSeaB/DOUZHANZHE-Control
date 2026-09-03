@@ -11,7 +11,8 @@
 
 param(
     [switch]$Quiet,
-    [switch]$SkipPush
+    [switch]$SkipPush,
+    [string]$PushRemote = ""
 )
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -133,11 +134,22 @@ function Sync-MainRepo {
     if ($committedAny -and -not $SkipPush) {
         $branch = git branch --show-current
         if ($branch) {
-            git push origin $branch 2>&1 | Out-Null
+            # 推回当前分支的上游 remote，避免在 fork 工作区误推到上游；
+            # 无上游或检测失败时回退 origin，可用 -PushRemote 显式指定
+            $remote = $PushRemote
+            if (-not $remote) {
+                $upstream = git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null
+                if ($LASTEXITCODE -eq 0 -and $upstream -match '^([^/]+)/') {
+                    $remote = $Matches[1]
+                } else {
+                    $remote = 'origin'
+                }
+            }
+            git push $remote $branch 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
-                Write-Log "已推送至 origin/$branch"
+                Write-Log "已推送至 $remote/$branch"
             } else {
-                Write-Err "推送 origin/$branch 失败"
+                Write-Err "推送 $remote/$branch 失败"
                 $script:hasError = $true
             }
         }
