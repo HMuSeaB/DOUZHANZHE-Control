@@ -5,15 +5,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
-## [2.0.1-memory-fix.2] — 2026-09-03
+## [2.0.1-memory-fix.2] — 2026-09-04
 
-合并上游 `feature/v2.0`(v2.0.1-pre.1)全部改动,保留 fork 内存修复。
+合并上游 `feature/v2.0`(v2.0.1-pre.1)全部改动,保留 fork 内存修复;修复风扇 ITSM 被固件抢占问题。
+
+### 🔧 修复
+
+- **风扇 ITSM 被固件抢占**: 读回 0xE4 ≠ 路由模式时按 ~15s 冷却重写(原逻辑仅在目标变化时写,EC 固件高温时自行改走 gaming,39% 时间模式漂移得不到纠正,表现为风扇达不到目标转速触发偏离告警);连续 3 次以上被抢占记 Warning 日志;`route-info` 新增 `itsmConsecutiveMismatch` 诊断字段
+- **CI 构建**: Node 20 → 22,适配上游合入的 jsdom 30(需 Node ≥22.13 的 `util.markAsUncloneable`)
 
 ### 🔀 合并
 
 - **上游 v2.0.1-pre.1 合入**: 配置模型 `cfg-` 迁移(ProfileService 统一配置服务)、powerPlan 高亮修复、`useControlState` 重构与单元测试、HAL 调整、切换压测脚本(上游 2026-08-06 至 08-19 共 33 个提交)
 - **WmiInterface 冲突裁决**: 上游以"每次调用新建 `ManagementObject` 并释放"方式修复泄漏,与 fork 方案(复用单例 + 释放参数 + 调用锁)意图相同;保留 fork 版本以维持更低的 COM 调用频率
-- **版本策略**: fork 版本号推进为 `2.0.1-memory-fix.2`,依赖取上游较新侧(vitest 4.1.11)
+
+### 🛠 工程
+
+- **sync-repos.ps1**: push 目标改为跟随当前分支上游 remote(避免 fork 工作区误推上游),支持 `-PushRemote` 覆盖
+- **依赖**: TaskScheduler 2.12.2;npm range 内刷新(vite 8.2.2 / eslint 10.9.1 等)
+- **仓库清理**: 解跟踪 canvas-workspace.zip / 调试日志,补 ignore 规则
 
 ## [2.0.1-memory-fix.1] — 2026-08-29
 
