@@ -5,6 +5,20 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.5] — 2026-09-05
+
+系统信息页内存卡片补全频率数据(额定 vs 实跑),为解锁 BIOS 调内存频率提供验证手段。
+
+### ✨ 新增
+
+- **内存频率显示**: 内存卡片频率行显示"实跑 · 额定"两值(WMI SMBIOS type 17: `Speed`=条体额定, `ConfiguredClockSpeed`=实跑),不一致时如"5200 MT/s · 额定 5600";解锁 BIOS 改到 5600 后应显示"5600 MT/s"即验证生效
+- **采集补全**: `sysinfo-ext.ps1` 新增输出 memoryType(DDR4/DDR5 识别)、memorySlots、每条 partNumber 与 speedRated;修复前端 memorySpeed/memoryType 字段后端从未输出、频率行恒为"—"的问题
+
+### 📋 说明
+
+- 实机验证(Bellator N176 / R9 8940HX): 两条 16GB(镁光 + Sinker)额定 5600、实跑 5200,8940HX 官方支持 DDR5-5600,改频在规格内
+- 本地缓存版本 bump(cache_ver 2→3),更新后首次打开系统信息页会强制重新拉取
+
 ## [2.0.1-memory-fix.4] — 2026-09-05
 
 实机校准风扇曲线:钳位超限目标,避开固件接管的斗战档。
