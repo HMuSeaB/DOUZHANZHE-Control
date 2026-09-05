@@ -35,13 +35,36 @@ Get-CimInstance Win32_DiskDrive | ForEach-Object {
 }
 
 # Memory sticks (per DIMM)
+# SMBIOS type 17: Speed = 条体额定频率, ConfiguredClockSpeed = 实跑频率
 $sticks = @()
+$memoryType = ''
 Get-CimInstance Win32_PhysicalMemory | ForEach-Object {
     $sizeGB = [math]::Round($_.Capacity / 1GB)
-    $speed = $_.ConfiguredClockSpeed
-    if (-not $speed) { $speed = $_.Speed }
-    $sticks += @{ sizeGB = $sizeGB; speed = $speed; manufacturer = $_.Manufacturer }
+    $speedActual = $_.ConfiguredClockSpeed
+    if (-not $speedActual) { $speedActual = $_.Speed }
+    $sticks += @{
+        sizeGB       = $sizeGB
+        speed        = $speedActual
+        speedRated   = $_.Speed
+        manufacturer = ([string]$_.Manufacturer).Trim()
+        partNumber   = ([string]$_.PartNumber).Trim()
+    }
+    if (-not $memoryType) {
+        $memoryType = switch ($_.SMBIOSMemoryType) {
+            34 { 'DDR5' }
+            26 { 'DDR4' }
+            24 { 'DDR3' }
+            default { '' }
+        }
+    }
 }
+$memorySpeed = 0
+$memorySpeedRated = 0
+foreach ($s in $sticks) {
+    if ($s.speed -gt $memorySpeed) { $memorySpeed = $s.speed }
+    if ($s.speedRated -gt $memorySpeedRated) { $memorySpeedRated = $s.speedRated }
+}
+$memorySlots = (Get-CimInstance Win32_PhysicalMemoryArray | Measure-Object -Property MemoryDevices -Sum).Sum
 
 # Battery (wear from powercfg battery report)
 $batt = Get-CimInstance Win32_Battery
@@ -73,6 +96,10 @@ try {
     nvVbios      = $nvVbios
     disks        = $disks
     sticks       = $sticks
+    memoryType       = $memoryType
+    memorySlots      = $memorySlots
+    memorySpeed      = $memorySpeed
+    memorySpeedRated = $memorySpeedRated
     battPercent  = $battPercent
     battDesign   = $battDesign
     battFull     = $battFull
