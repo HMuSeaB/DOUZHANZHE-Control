@@ -5,6 +5,15 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.3] — 2026-09-05
+
+修复从 memory-fix.1 升级后配置栏重复渲染的问题。
+
+### 🔧 修复
+
+- **配置栏重复**: memory-fix.1 以裸名(silent/office/beast/gaming)种内置档,v2.0.1 改用 `cfg-` 前缀后旧条目未回收,索引里两套内置并存 → 仪表盘出现 8 张模式卡片,且当前模式仍指旧档导致参数分叉。现 `EnsureInitialized` 一次性回收:cfg 侧未定制时继承旧档参数,已定制则仅注销旧条目;用户自建同名档不受影响
+- **配套**: `PerformanceOverrides` 模型从 `Program.cs` 抽至独立文件;新增 4 个 ProfileService 单元测试
+
 ## [2.0.1-memory-fix.2] — 2026-09-04
 
 合并上游 `feature/v2.0`(v2.0.1-pre.1)全部改动,保留 fork 内存修复;修复风扇 ITSM 被固件抢占问题。
