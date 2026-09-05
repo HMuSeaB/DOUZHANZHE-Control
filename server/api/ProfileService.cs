@@ -84,9 +84,48 @@ public sealed class ProfileService
             }
             _index.Profiles = deduped;
 
+            RetireLegacyBareBuiltins();
+
             SaveIndex();
         }
     }
+
+    // fork 升级路径: memory-fix.1 曾以裸名(silent/office/beast/gaming)种内置档,
+    // v2.0.1 起改用 cfg- 前缀。裸名条目与新内置并存会让配置栏渲染重复,
+    // 且当前模式可能仍指向裸名档(参数分叉两份)。一次性回收:
+    // cfg 侧为空时先继承裸名档参数, 再从索引注销并删除裸名档文件。
+    private static readonly string[] LegacyBareBuiltins = ["silent", "office", "beast", "gaming"];
+
+    private void RetireLegacyBareBuiltins()
+    {
+        foreach (var bare in LegacyBareBuiltins)
+        {
+            var entry = _index.Profiles.FirstOrDefault(p => p.Id == bare && p.BuiltIn);
+            if (entry == null) continue;
+            if (!_index.Profiles.Any(p => p.Id == Prefix + bare)) continue; // cfg 侧未就绪, 保守跳过
+
+            var bareFile = ProfilePath(bare);
+            if (File.Exists(bareFile))
+            {
+                var cfgOv = ReadProfileJson(Prefix + bare) ?? new PerformanceOverrides();
+                if (!IsEmpty(cfgOv))
+                {
+                    // cfg 侧已被用户改过, 不覆盖; 裸名档仅删除(旧值已在 旧版-* 迁移品中有副本)
+                    try { File.Delete(bareFile); } catch { /* 留待下次启动重试 */ }
+                }
+                else
+                {
+                    var bareOv = ReadProfileJson(bare);
+                    WriteProfileJson(Prefix + bare, bareOv ?? new PerformanceOverrides());
+                    try { File.Delete(bareFile); } catch { /* 留待下次启动重试 */ }
+                }
+            }
+            _index.Profiles.Remove(entry);
+        }
+    }
+
+    private bool IsEmpty(PerformanceOverrides o)
+        => JsonSerializer.Serialize(o, JsonOpts) == JsonSerializer.Serialize(new PerformanceOverrides(), JsonOpts);
 
     public List<ProfileEntry> GetAll()
     {

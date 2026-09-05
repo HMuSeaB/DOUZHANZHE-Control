@@ -3128,12 +3128,7 @@ public record FanCurveStartRequest(
 );
 
 // ---- 性能设置持久化模型 ----
-public class CpuOverrides { public int? FreqLimitMhz; public bool? TurboEnabled; public int? CoreLimitPercent; }
-public class GpuOverrides { public int? CoreFreqMhz; public bool? FreqLocked; public int? MemFreqLevel; }
-public class NvapiOverrides { public int? OcCoreOffsetMhz; public int? OcMemOffsetMhz; public int? PowerLimitW; public float? ThermalLimitC; }
-public class SmuOverrides { public int? StapmLimitW; public int? ShortPowerLimitW; public int? TempLimitC; public int? CoAll; }
-public class FanOverrides { public int? LargeRpm; public int? SmallRpm; }
-public class PerformanceOverrides { public CpuOverrides Cpu = new(); public GpuOverrides Gpu = new(); public NvapiOverrides Nvapi = new(); public SmuOverrides Smu = new(); public FanOverrides Fan = new(); public int? PowerPlan; }
+// 性能设置持久化模型已移至 PerformanceOverrides.cs
 public record SwitchModeRequest([property: JsonPropertyName("mode")] string Mode);
 public record SyncOverridesRequest([property: JsonPropertyName("mode")] string Mode, [property: JsonPropertyName("overrides")] PerformanceOverrides? Overrides);
 public record ClearOverridesRequest([property: JsonPropertyName("mode")] string Mode, [property: JsonPropertyName("fields")] List<string>? Fields);

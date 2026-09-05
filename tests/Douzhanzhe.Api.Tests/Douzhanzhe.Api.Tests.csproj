@@ -17,6 +17,8 @@
     <Compile Include="..\..\server\api\LocalAccessGuard.cs" Link="Subjects\LocalAccessGuard.cs" />
     <Compile Include="..\..\server\api\ApiProblem.cs" Link="Subjects\ApiProblem.cs" />
     <Compile Include="..\..\server\hal\AppLog.cs" Link="Subjects\AppLog.cs" />
+    <Compile Include="..\..\server\api\PerformanceOverrides.cs" Link="Subjects\PerformanceOverrides.cs" />
+    <Compile Include="..\..\server\api\ProfileService.cs" Link="Subjects\ProfileService.cs" />
   </ItemGroup>
 
 </Project>
