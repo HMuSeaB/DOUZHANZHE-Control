@@ -5,10 +5,10 @@ const LS_SYS_INFO = "douzhanzhe_sys_info";
 const LS_SYS_EXT  = "douzhanzhe_sys_info_ext";
 const LS_CACHE_VER = "douzhanzhe_cache_ver";
 
-if (localStorage.getItem(LS_CACHE_VER) !== "2") {
+if (localStorage.getItem(LS_CACHE_VER) !== "3") {
   localStorage.removeItem(LS_SYS_INFO);
   localStorage.removeItem(LS_SYS_EXT);
-  localStorage.setItem(LS_CACHE_VER, "2");
+  localStorage.setItem(LS_CACHE_VER, "3");
 }
 
 const ICONS = {
@@ -94,6 +94,13 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
 
   const battHealth = e.battDesign > 0 ? (e.battFull / e.battDesign * 100) : 0;
 
+  // 实跑低于额定说明 BIOS 没跑满(如 5200/5600),解锁 BIOS 改频后两值一致
+  const memSpeed = e.memorySpeed;
+  const memRated = e.memorySpeedRated;
+  const memSpeedText = memSpeed
+    ? (memRated && memRated !== memSpeed ? `${memSpeed} MT/s · 额定 ${memRated}` : `${memSpeed} MT/s`)
+    : "—";
+
   const cards = [
     {
       id: "cpu",
@@ -126,7 +133,7 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
       icon: ICONS.ram,
       rows: [
         { k: "总容量", v: i.memoryTotalGB ? `${i.memoryTotalGB} GB` : "—" },
-        { k: "频率", v: e.memorySpeed ? `${e.memorySpeed} MHz` : "—" },
+        { k: "频率", v: memSpeedText },
         { k: "插槽占用", v: e.sticks ? `${e.sticks.length} / ${e.memorySlots || e.sticks.length}` : "—" },
         { k: "时序", v: e.memoryTiming || "—" },
       ],
