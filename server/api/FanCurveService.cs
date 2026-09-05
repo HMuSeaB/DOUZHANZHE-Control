@@ -40,6 +40,8 @@ public sealed class FanCurveService : IDisposable
     private int _itsmDeviationCount;          // 统计：ITSM 读回 ≠ 目标模式 的累计次数
     private int _itsmConsecutiveMismatch;     // 连续不一致计数（重写后仍被固件抢走时递增）
     private int _itsmRewriteCooldown;         // ITSM 重写冷却剩余 tick 数（防止与固件逐 tick 写入战）
+    private bool _lastLargeClamped;           // 上 tick 大扇是否被物理上限钳位（用于状态变化日志）
+    private bool _lastSmallClamped;
 
     // ── 偏离检测（页面告警 + 分级自动恢复）──
     private const int DeviationRpmThreshold = 500;
@@ -48,6 +50,14 @@ public sealed class FanCurveService : IDisposable
 
     // ITSM 重写冷却：读回不一致时最多每 ~15s 重写一次（tick 数随 intervalMs 自适应）
     private const int ItsmRewriteCooldownMs = 15000;
+
+    // 实机校准(2026-09-05, 24h 偏离日志统计):
+    // - 大风扇物理上限 ~3000 RPM —— CPU 88°C 时 EC 自动模式也仅 2921, 拉满即上限
+    // - 小风扇手动跟随上限 7200 —— 均衡/野兽档实测可跟到 6900, 斗战档 7500+ 无效
+    // - 斗战档(ITSM=3)固件全权接管风扇, 手动写入 163 样本 0 跟随
+    // 超限目标在 Tick 中钳位, 使路由落在均衡/野兽档(手动可控区), 避免斗战档失效。
+    private const int LargeRpmPhysicalMax = 3000;
+    private const int SmallRpmPhysicalMax = 7200;
 
     private int ItsmRewriteCooldownTicks() =>
         Math.Max(2, ItsmRewriteCooldownMs / Math.Max(_intervalMs, 1));
@@ -83,6 +93,7 @@ public sealed class FanCurveService : IDisposable
     public int LastSmallTarget => _lastSmallTarget;
     public int ItsmDeviationCount => _itsmDeviationCount;
     public int ItsmConsecutiveMismatch => _itsmConsecutiveMismatch;
+    public bool CurveClamped { get; private set; }   // 曲线目标触及物理上限(本 tick)
 
     // ── EC 读回诊断 (供 Debug 页面使用) ──
     public int ActualCpuFanRpm { get; private set; }     // 实际 CPU 风扇 RPM (EC 0x9D/0x9E)
@@ -320,8 +331,23 @@ public sealed class FanCurveService : IDisposable
                 return;
             }
 
-            // 1. 曲线查找 → 原始 RPM 值
+            // 1. 曲线查找 → 原始 RPM 值, 并按实机物理上限钳位
             var (largeRpm, smallRpm) = LookupTarget(hotspot);
+            bool largeClamped = largeRpm > LargeRpmPhysicalMax;
+            bool smallClamped = smallRpm > SmallRpmPhysicalMax;
+            if (largeClamped) largeRpm = LargeRpmPhysicalMax;
+            if (smallClamped) smallRpm = SmallRpmPhysicalMax;
+            if (largeClamped != _lastLargeClamped || smallClamped != _lastSmallClamped)
+            {
+                _log.LogInformation(
+                    "[FanCurve] 曲线目标超物理上限钳位状态变化: 大扇{L} 小扇{s} (上限 {LMax}/{SMax} RPM)",
+                    largeClamped ? "钳位" : "-", smallClamped ? "钳位" : "-",
+                    LargeRpmPhysicalMax, SmallRpmPhysicalMax);
+            }
+            _lastLargeClamped = largeClamped;
+            _lastSmallClamped = smallClamped;
+            CurveClamped = largeClamped || smallClamped;
+
             int largeTarget = largeRpm / 100;  // RPM → RPM/100 (Bellator 协议)
             int smallTarget = smallRpm / 100;
 
