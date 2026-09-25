@@ -12,11 +12,17 @@ $Root = $PSScriptRoot
 # ── 1. 构建 ──
 if (-not $SkipBuild) {
     Write-Host "Generating build-info.json..." -ForegroundColor Cyan
-    & (Join-Path $Root "tools\gen-build-info.ps1")
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "build-info generation failed!" -ForegroundColor Red
-        Pop-Location
-        exit 1
+    # build-info.json 只是设置页显示的版本标签，不是构建必需品 —— 失败只警告不中断。
+    # 旧写法用 `if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }`：既会在 git 不在 PATH 时
+    # 误判失败（$LASTEXITCODE 继承了脚本内最后一条原生命令的返回值），
+    # 又在没有配对 Push-Location 的情况下调 Pop-Location（位置栈为空会直接抛错）。
+    try {
+        & (Join-Path $Root "tools\gen-build-info.ps1")
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  build-info generation failed (exit $LASTEXITCODE), continuing without it" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "  build-info generation threw: $($_.Exception.Message), continuing without it" -ForegroundColor Yellow
     }
     Write-Host "[1/4] Vite build..." -ForegroundColor Cyan
     Push-Location $Root

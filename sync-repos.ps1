@@ -110,6 +110,7 @@ function Sync-MainRepo {
 
     $groups = $files | Group-Object { Get-Scope $_ } | Sort-Object Name
     $committedAny = $false
+    $headBefore = git rev-parse HEAD 2>$null
 
     foreach ($g in $groups) {
         $scope = $g.Name
@@ -129,6 +130,15 @@ function Sync-MainRepo {
         } else {
             Write-Warn "$scope`: 提交失败或被跳过"
         }
+    }
+
+    # 提交后校验分支指针是否真的前进了。
+    # 某些环境下 git 的 ref 写入会被静默吞掉：commit 返回 0，但 .git/refs/heads/<branch>
+    # 没落盘，HEAD 不动，甚至生成无父的 root commit。这里主动报错，别让问题无声无息。
+    $headAfter = git rev-parse HEAD 2>$null
+    if ($committedAny -and $headBefore -and $headAfter -eq $headBefore) {
+        Write-Err "异常: 已报告提交成功，但 HEAD 未前进 ($headBefore)。ref 写入可能被拦截，请检查 .git/refs/heads。"
+        $script:hasError = $true
     }
 
     if ($committedAny -and -not $SkipPush) {
