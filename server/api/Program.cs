@@ -221,14 +221,33 @@ void SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
 }
 
 // ---- 风扇转速写入辅助方法 (WMI + EC 寄存器直写) ----
-(int LargeMin, int LargeMax, int SmallMin, int SmallMax) FanRpmRange(string? mode) => mode switch
+// 解出性能模式裸名（silent/office/beast/gaming）；无法判定时返回 null，
+// 调用方走宽松兜底区间 —— 宁可不钳位，也不要把未知配置错钳成 office。
+string? ResolveThermalKeyOrNull(string? mode)
 {
-    "silent" => (1900, 2900, 1700, 6400),
-    "office" => (2600, 3500, 5900, 6900),
-    "gaming" => (4000, 4400, 7500, 8200),
-    "beast" => (3200, 3800, 6400, 7200),
-    _ => (0, 4400, 0, 8200)
-};
+    if (string.IsNullOrWhiteSpace(mode)) return null;
+    if (_modeToThermal.ContainsKey(mode)) return mode;
+    try
+    {
+        var entry = app.Services.GetRequiredService<ProfileService>().GetById(mode);
+        var tm = entry?.Entry.ThermalMode;
+        return !string.IsNullOrEmpty(tm) && _modeToThermal.ContainsKey(tm) ? tm : null;
+    }
+    catch { return null; }
+}
+
+// 兼容配置 id（cfg-office）与裸性能模式名（office）两种入参：
+// 旧实现只认裸名，前端传 cfg-* 时静默落到兜底区间 (0,4400,0,8200)，
+// 导致「可调范围随散热模式变化」的模式钳位实际从未生效。
+(int LargeMin, int LargeMax, int SmallMin, int SmallMax) FanRpmRange(string? mode) =>
+    ResolveThermalKeyOrNull(mode) switch
+    {
+        "silent" => (1900, 2900, 1700, 6400),
+        "office" => (2600, 3500, 5900, 6900),
+        "gaming" => (4000, 4400, 7500, 8200),
+        "beast" => (3200, 3800, 6400, 7200),
+        _ => (0, 4400, 0, 8200)
+    };
 
 void ApplyFanSpeed(WmiInterface wmi, HardwareAbstractionLayer hal, int? largeRpm, int? smallRpm, string? mode = null)
 {
@@ -552,7 +571,9 @@ async System.Threading.Tasks.Task RestoreAllPerfSettings(string tag)
         {
             var wmi = app.Services.GetRequiredService<WmiInterface>();
             var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
-            ApplyFanSpeed(wmi, hal, o.Fan.LargeRpm, o.Fan.SmallRpm);
+            // 传当前模式：与 /api/fan/set-target 的保存路径用同一套模式钳位，
+            // 保证「重发」下发的值与用户设定时被接受的值一致
+            ApplyFanSpeed(wmi, hal, o.Fan.LargeRpm, o.Fan.SmallRpm, CurrentMode());
             Log($"[{tag}] Fan target → large={o.Fan.LargeRpm ?? 0} small={o.Fan.SmallRpm ?? 0}");
         }
     }
@@ -590,7 +611,7 @@ _ = System.Threading.Tasks.Task.Run(async () =>
                     {
                         var wmi = app.Services.GetRequiredService<WmiInterface>();
                         var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
-                        ApplyFanSpeed(wmi, hal, o.Fan.LargeRpm, o.Fan.SmallRpm);
+                        ApplyFanSpeed(wmi, hal, o.Fan.LargeRpm, o.Fan.SmallRpm, CurrentMode());
                         fanGuardActive = true;
                     }
                 }
