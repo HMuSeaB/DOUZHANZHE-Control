@@ -53,8 +53,18 @@ node tools\probe-fan.js --no-switch         # 写入验证，跳过会重置调�
 | `start-dev.ps1` | 起开发实例（3101） |
 | `sync-repos.ps1` | 分组提交并 push。**注意它可能触发 git ref 丢失，见下方"已知坑"** |
 
-版本号约定：要沿用 `2.0.1-memory-fix.N` 系列，**先把 `package.json` 与 CHANGELOG 顶部都改成目标号，
-再显式传 `-Version`**。不传时脚本用正则只截 `\d+\.\d+\.\d+`，会丢掉 `-memory-fix.N` 后缀。
+版本号约定：沿用 `2.0.1-memory-fix.N` 系列，**显式传 `-Version 2.0.1-memory-fix.N`**。
+不传时脚本从 `package.json` 探测，虽然能读出预发布后缀，但保险起见还是显式传。
+
+> 2026-09-25 修好的坑：脚本里三处版本号正则的字符类原是 `[A-Za-z0-9.]`，**不含 `-`**，
+> 于是 `-memory-fix.N` 遇到第二个连字符就匹配失败 —— `package.json` 静默不更新，
+> `deploy.ps1` 接着用旧号覆盖 `version.txt` 并构建出旧前端，最后在 `[5.5/6]`
+> 报"前端版本号与预期不一致"。旧 README 让手工先改 `package.json` 正是被它逼出来的绕法，
+> 现在不必了（详见 `installer/build-installer.ps1` 里的注释）。
+
+构建失败的排查顺序：`[5.5/6]` 报版本号不一致 → 先看 `package.json` 是否真的被改成目标号，
+没改就是上面这条；`build-installer.ps1` 中途退出且报错信息是"无法识别 Write-Warn" →
+`sync-repos.ps1` 缺失分支的 cmdlet 名写错了（已修）。
 
 ---
 
