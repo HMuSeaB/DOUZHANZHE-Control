@@ -254,9 +254,7 @@ const hit = buf.includes(Buffer.from('未知配置 id', 'utf16le'));
 **别用 `grep -c` 数压缩后的 bundle**（整个 bundle 只有 8 行，`-c` 永远返回 1）；
 要数出现次数用 `grep -o <pat> <file> | wc -l`。
 
-## 相关技能：`douzhanzhe-fix-verify`（用户级，2026-09-25 建立）
-
-验证本项目的修复是否在真机生效时**先加载它**：
+## 相关技能：`douzhanzhe-fix-verify`（用户级，2026-09-25 建立）验证本项目的修复是否在真机生效时**先加载它**：
 `C:\Users\36230\.workbuddy-ai\skills\douzhanzhe-fix-verify\SKILL.md`
 （`references/api-contract.md` 是 API/字段名/EC 寄存器契约，`references/log-taxonomy.md` 是日志判定指标。
 打包副本：`dist\skills\douzhanzhe-fix-verify.zip`）
@@ -268,3 +266,43 @@ Shell 反复重启后端、403 死循环、overrides 没落盘、要跑 3100/310
 用它自带的 `scripts/init_skill.py` / `quick_validate.py` / `package_skill.py`。
 注意技能实际路径是 `~/.workbuddy-ai/skills/`（不是文档里写的 `~/.workbuddy/skills/`），
 且 frontmatter 必须带 `agent_created: true`。技能在项目外，`git status` 看不到。
+
+## 脚本索引（2026-09-25 建立）
+
+**写任何新脚本前先读 `tools/README.md`** —— 登记了所有工具的适用场景与已知坑。
+`AGENTS.md` 的「开发约定」下也有「工具脚本索引（tools/）」小节指向它。
+
+| 脚本 | 作用 |
+|---|---|
+| `tools/watch-applog.ps1` | 日志观察台；`-Summary [-Since <时刻>]` 出统计与判定 |
+| `tools/verify-build-strings.js` + `build-manifest.json` | 验证改动真编进了二进制 |
+| `tools/regression-api.js` | 7 项断言式回归测试，自带备份/恢复 |
+| `tools/probe-fan.js` | 调速设定探查/写入 |
+
+**不要往 `logs/` 放脚本** —— 它在 `.gitignore` 里（等同临时目录），放那儿等于没沉淀。
+
+## 已确认的缺陷与弱点（待修）
+
+1. **`/api/fan/set-target` 被拒请求仍写硬件**：先 `ApplyFanSpeed` 再校验 mode id，
+   导致无效 mode 的值以兜底区间 (0,4400) 落到硬件、**绕过模式钳位**。
+   修法：把校验提到下发之前。`regression-api.js` 的 [3b] 会 WARN 检出。
+2. **温度读取没有上界校验**：`CpuTemperature` 只判 `>0 && <128` 就当摄氏度返回，
+   而 RPM 路径有 `ReadValidatedFanRpm` 的物理上限守卫。EC 0x1C 若脏读会被放行。
+3. **EC 事务缺 ACPI IBF/OBF 握手**；WMI ACPI 通道与 `0x62/0x66` 端口事务不互斥。
+4. **守护重放路径与 API 写入路径钳位不一致**：`ApplyFanSpeed(..., mode=null)` 时
+   `FanRpmRange(null)` 落兜底区间。
+
+## CPU 温度排查结论（2026-09-25）
+
+用户报 CPU 97°C。已用数据排除：**非本次改动导致**（09-24 起就是 77–99°C）、
+**非负载**（进程合计约 7%）、**非电源计划**（最小状态 5%）、**非风扇停转**（转速随设定变化）。
+
+指向 **CPU 硅脂干化**的三条证据：
+1. 8 小时数据最低温 **70°C**；CPU 仅 2.79GHz 时也 75°C（健康机器应 50–65°C）
+2. 风扇 3100→3850 RPM 温度无变化，相关系数 **r≈0.08** → 热量传不到鳍片
+3. GPU 空闲 59°C vs CPU 97°C，同机箱差 38°C → CPU 散热路径专属问题
+
+排查要点：**`% Processor Utility` 会因睿频虚高**（实测报 33%，进程合计仅 7%），
+判断负载要用 `Get-Process` 的 `.CPU` 差值法。
+PowerShell 工具里跑 `powercfg` 无输出 → 改用 **bash 调 `/c/Windows/System32/powercfg.exe`**
+并补 `PATHEXT`/`SystemRoot`。

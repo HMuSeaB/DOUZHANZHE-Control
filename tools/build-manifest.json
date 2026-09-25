@@ -1,0 +1,51 @@
+{
+  "$comment": "verify-build-strings.js 的检索清单。改代码后若新增了关键的日志/错误字面量，在这里补一条，构建完跑一次就能确认改动真的编进了二进制。",
+  "root": "dist/publish/api",
+  "targets": [
+    {
+      "file": "Douzhanzhe.API.dll",
+      "label": "API 后端",
+      "method": [
+        "ResolveListenPort",
+        "ResolveThermalKeyOrNull"
+      ],
+      "literal": [
+        "未知配置 id",
+        "已拒绝写入（未落盘）",
+        "保存失败：ProfileService 未接受 id",
+        "session-"
+      ],
+      "note": "session.token 仍会残留（InitToken 无端口时的 fallback 分支），属预期，不列入 mustNot"
+    },
+    {
+      "file": "Douzhanzhe.HAL.dll",
+      "label": "HAL 硬件抽象层",
+      "method": [
+        "ReadEcPair",
+        "ReadValidatedFanRpm",
+        "LogFanGarbage"
+      ],
+      "literal": [
+        "读数超出物理上限已丢弃"
+      ]
+    },
+    {
+      "file": "Douzhanzhe.Shell.dll",
+      "label": "Shell 宿主",
+      "literal": [
+        "http://127.0.0.1:3100/api/health"
+      ],
+      "note": "看门狗探活必须指向 /api/health（该端点豁免同源守卫）；若改回 GET / 会重新触发重启循环"
+    }
+  ],
+  "frontend": {
+    "dir": "dist/publish/api/wwwroot/assets",
+    "file": "index-*.js",
+    "must": [
+      "fanLargeRpmTarget",
+      "fanSmallRpmTarget",
+      "v2.0.1-memory-fix.6"
+    ],
+    "note": "压缩后整个 bundle 只有几行，必须用出现次数统计，不能用 grep -c（那是数行数）"
+  }
+}

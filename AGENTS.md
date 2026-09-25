@@ -76,6 +76,36 @@ CC-Switch 的协议转换层完整支持 Responses API 工具注册。
 - docs/ 作为私有子仓库同步到 main 分支；canvas-workspace/ 已移入 docs/v2.0/，随 docs 子仓库一起同步
 - 手动运行：`powershell -NoProfile -File sync-repos.ps1`
 
+### 工具脚本索引（tools/）
+
+**写任何新脚本前先读 `tools/README.md`** —— 里面登记了所有现成工具、适用场景与已知坑，
+避免重复造轮子。
+
+验证修复是否真机生效的标准流程（前两步零风险）：
+
+```powershell
+.\tools\watch-applog.ps1 -Summary -Since "<新版本启动时刻>"   # 日志判定（-Since 必需）
+node tools\verify-build-strings.js                            # 确认改动编进了二进制
+node tools\regression-api.js --port 3100 --mode cfg-office    # API 回归（自带备份/恢复）
+node tools\probe-fan.js --readonly                            # 探查当前设定
+```
+
+| 脚本 | 作用 |
+|---|---|
+| `tools/watch-applog.ps1` | 日志观察台。实时 tail `app.log` 并高亮关键事件；`-Summary` 出统计与判定 |
+| `tools/verify-build-strings.js` | 检索构建产物里的方法名(UTF-8)/字面量(UTF-16LE)，确认改动真编进去了 |
+| `tools/regression-api.js` | 5 项既有缺陷的断言式回归测试，退出码非 0 即失败 |
+| `tools/probe-fan.js` | 调速设定探查/写入，验证落盘、模式钳位、切换后不丢失 |
+| `tools/soak-monitor.ps1` | 长时采样进程内存/句柄 |
+| `tools/gen-build-info.ps1` | 生成 `build-info.json` |
+
+配套技能 `douzhanzhe-fix-verify`（用户级）含完整 API 契约与日志判定指标。
+
+**三条最容易踩的**：
+- `app.log` **不随升级清空** → 判定修复必须用 `-Since` 过滤，否则会把旧版本的病态数据算进去
+- 打 API **必须带 `Origin: http://127.0.0.1:<port>`**，除 `/api/health` 外不带一律 403
+- 会改用户配置的脚本**必须自带备份/恢复**，跑完要向用户报告已恢复
+
 ### UI 迁移进度（2026-08-01 更新）
 
 #### 已完成
