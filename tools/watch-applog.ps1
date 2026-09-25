@@ -11,7 +11,11 @@
 #   .\tools\watch-applog.ps1                 # 打印最近 40 行后实时跟踪
 #   .\tools\watch-applog.ps1 -Tail 200       # 先回看 200 行
 #   .\tools\watch-applog.ps1 -Summary        # 只统计关键事件次数，不跟踪
+#   .\tools\watch-applog.ps1 -Summary -Since "2026-09-25 13:26"   # 只统计该时刻之后
 #   .\tools\watch-applog.ps1 -LogPath D:\x\app.log
+#
+# -Since 很重要：app.log 不随升级清空，升级后直接看总数会把旧版本的病态数据算进去。
+# 用 -Since 传「新版本启动的时刻」，才能判定修复是否真的生效。
 #
 # 退出：Ctrl+C
 
@@ -19,6 +23,7 @@ param(
     [string]$LogPath = "",
     [int]$Tail = 40,
     [switch]$Summary,
+    [string]$Since = "",
     [switch]$NoColor
 )
 
@@ -57,15 +62,31 @@ function Get-LineColor([string]$line) {
 
 # ---- Summary 模式 ----
 if ($Summary) {
-    $all = Get-Content $LogPath
+    $allRaw = Get-Content $LogPath
+    $all = $allRaw
+    $scope = "全部"
+    if ($Since) {
+        # 日志行格式：[yyyy-MM-dd HH:mm:ss.fff] [标签] 消息
+        # 按前 16 字符（yyyy-MM-dd HH:mm）做前缀比较即可，无需解析日期
+        $key = $Since.Trim()
+        $all = @($allRaw | Where-Object { $_.Length -gt 17 -and $_.Substring(1, 16) -ge $key })
+        $scope = "自 $key 起"
+        if ($all.Count -eq 0) {
+            Write-Host ""
+            Write-Host "自 $key 起没有任何日志。检查时间格式（应为 'yyyy-MM-dd HH:mm'）。" -ForegroundColor Yellow
+            exit 1
+        }
+    }
+
     $total = $all.Count
     $first = if ($total) { ($all[0] -split '\]')[0].TrimStart('[') } else { "-" }
     $last = if ($total) { ($all[-1] -split '\]')[0].TrimStart('[') } else { "-" }
 
     Write-Host ""
     Write-Host "日志：$LogPath" -ForegroundColor Cyan
-    Write-Host "总行数：$total" -ForegroundColor Gray
-    Write-Host "时间范围：$first  →  $last" -ForegroundColor Gray
+    Write-Host "范围：$scope" -ForegroundColor Cyan
+    if ($Since) { Write-Host "（文件总行数 $($allRaw.Count)，其中范围内 $total 行）" -ForegroundColor DarkGray }
+    Write-Host "时间跨度：$first  →  $last" -ForegroundColor Gray
     Write-Host ""
     Write-Host ("{0,-24} {1,6}" -f "关键事件", "次数") -ForegroundColor White
     Write-Host ("{0,-24} {1,6}" -f ("-" * 24), ("-" * 6)) -ForegroundColor DarkGray
@@ -90,9 +111,28 @@ if ($Summary) {
 
     Write-Host ""
     Write-Host "解读：" -ForegroundColor White
-    Write-Host "  · 「Shell 重启后端」= 0  → 403 死循环已消除（修复前是每 16s 一次）" -ForegroundColor Gray
-    Write-Host "  · 「overrides 保存成功」> 0 且失败 = 0 → 调速已真正落盘" -ForegroundColor Gray
-    Write-Host "  · 「风扇脏读被丢弃」偶尔出现属正常；关键是 UI 上不再显示 25249" -ForegroundColor Gray
+    $restartN = ($all | Select-String -Pattern '重启后端').Count
+    $ovOk = ($all | Select-String -Pattern '\[overrides\]\s*✓').Count
+    $ovBad = ($all | Select-String -Pattern '\[overrides\]\s*✗').Count
+    $dirty = ($all | Select-String -Pattern '读数超出物理上限已丢弃').Count
+
+    if ($restartN -le 2) {
+        Write-Host "  ✓ 「Shell 重启后端」= $restartN → 403 死循环已消除（修复前每 16s 一次，8 分钟就有 30 次）" -ForegroundColor Green
+    } else {
+        Write-Host "  ✗ 「Shell 重启后端」= $restartN → 仍在循环，检查 /api/health 是否被守卫拒绝" -ForegroundColor Red
+    }
+    if ($ovOk -gt 0 -and $ovBad -eq 0) {
+        Write-Host "  ✓ 「overrides 保存成功」= $ovOk 且失败 = 0 → 设定已真正落盘" -ForegroundColor Green
+    } elseif ($ovBad -gt 0) {
+        Write-Host "  ✗ 「overrides 保存失败」= $ovBad → 有写入被拒（看是否是未知配置 id）" -ForegroundColor Red
+    } else {
+        Write-Host "  · 「overrides 保存成功」= 0 → 这段时间没人改过设定" -ForegroundColor Gray
+    }
+    if ($dirty -eq 0) {
+        Write-Host "  · 「风扇脏读被丢弃」= 0 → 未捕获到脏读（25249 是偶发的，没抓到不代表不会出现）" -ForegroundColor Gray
+    } else {
+        Write-Host "  · 「风扇脏读被丢弃」= $dirty → 抓到脏读，但已被丢弃并回退上次有效值" -ForegroundColor DarkYellow
+    }
     exit 0
 }
 
