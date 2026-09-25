@@ -5,6 +5,27 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.6] — 2026-09-25
+
+修复"手动调速过一会儿恢复默认"，加固风扇转速脏数据防护，并顺带修掉 4 处既有缺陷。
+
+### 🐛 修复
+
+- **手动调速被静默重置**: 风扇控制页滑块值原先只存在前端本地 state，初值取自当前模式默认值，且有一个 `useEffect([perfMode])` 在模式变化时重置 —— 游戏自动切换、热键切档、切配置、重开应用、切 Tab 重挂载都会冲掉用户设定。现在唯一权威源是后端 overrides（`overrides.X ?? 模式默认值`），拖动时防抖 250ms 写 `/api/fan/set-target`，并新增"恢复模式默认"按钮与"自定义"标记
+- **风扇转速显示 25249 RPM（物理上限 4400）**: 16 位 RPM 由两次独立 EC 事务拼接，中间会被遥测轮询、风扇曲线 Tick、ParameterGuard 插入，可能拼出跨固件刷新的残缺值。现在同一把 EC 锁内成对读取（`DriverBridge.ReadEcPair`），并做上界校验 + 重试 3 次 + 回退 Last Known Good；前端超限时显示"—/读数无效"
+- **模式钳位失效**: `FanRpmRange()` 只认性能模式裸名（`office`），而前端传的是配置 id（`cfg-office`），于是静默落到兜底区间 (0,4400,0,8200)，"可调范围随散热模式变化"实际从未生效
+- **Shell 每 16 秒刷"重启后端"**: Shell 的原生 health check 不带 `Origin`/令牌，被同源守卫拒成 403，被误判为后端已死（实际后端一直活着，日志里已 2386 次）。`/api/health` 现豁免来源校验（该端点只回 `{ok, timestamp}`）
+- **会话令牌多实例冲突**: 安装版(3100)与开发实例(3101)共用 `%LOCALAPPDATA%\Douzhanzhe Console`，都写 `session.token` 时后启动者会覆盖文件，导致先启动者对所有带令牌请求一律 403。现按端口隔离（`session-<port>.token`）
+- **overrides 静默成功**: 传入未知配置 id 时值根本没落盘，接口却返回 `ok:true`、日志照打"✓ saved"。现校验 id 存在性，未知时返回 400 并打 `✗` 日志
+
+### 🔧 其他
+
+- `start-dev.ps1` 改用 `bin\build`（原指向 `bin\run` 里 8 月 29 日的陈旧二进制），并在启动前校验产物不比源码旧，避免静默起旧后端
+
+### 📋 说明
+
+- EC 事务仍未做 ACPI IBF/OBF 握手，WMI ACPI 通道与 0x62/0x66 端口事务也未互斥 —— 这两点是脏读的深层来源，改动面覆盖所有 EC 读写，留待实机验证后再动
+
 ## [2.0.1-memory-fix.5] — 2026-09-05
 
 系统信息页内存卡片补全频率数据(额定 vs 实跑),为解锁 BIOS 调内存频率提供验证手段。
@@ -82,7 +103,7 @@ Fork 实机测试版：修复 v2.0 长时间运行内存/句柄泄漏，并收�
 - **测试**: 前端参数钳位/风扇区间测试 + API `LocalAccessGuard`/`ApiProblem` 单元测试
 - **构建**: 移除 MSBuild 构建后自动 git 提交 Target
 
-## [2.0.1-pre.1] — 2026-08-19
+## [2.0.1-memory-fix.6] — 2026-08-19
 
 v2.0 第二个预发布版本：配置模型重构、模式切换正确性修复与测试覆盖
 
