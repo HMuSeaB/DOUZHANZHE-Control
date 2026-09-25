@@ -19,6 +19,19 @@
 - **配置 id 与性能模式裸名必须解包**：后端 `FanRpmRange()` / `ResolveConfigThermal()` 一套；前端
   `resolvePerfMode()` / `perfModeOf()` 一套。前端传的是 `cfg-office` 这类配置 id，后端若只 switch 裸名会静默走兜底分支。
 
+## 部署目标：deploy.ps1 不会更新"正在运行的安装版"（2026-09-25 实测）
+
+- 本机正在运行的实例（3100 端口，`Douzhanzhe.Shell.exe` + `Douzhanzhe.API.exe`）跑的是**安装版**，
+  目录在 **`D:\Tools\Douzhanzhe Console\`**（不是 `{autopf}\Douzhanzhe Console`；`C:\Program Files (x86)\斗战者控制台`
+  是联想原厂工具，与本项目无关）。
+- `deploy.ps1` 只同步 3~5 个**开发树**目录（`server/api/wwwroot`、`bin/run/wwwroot`、`bin/build/wwwroot`、
+  shell 的 Debug/Release wwwroot），**不包含安装目录**。所以只跑 deploy.ps1 后，安装版界面不会变。
+  要验证方法：`curl -s http://127.0.0.1:3100/ | grep -o 'index-[A-Za-z0-9]*\.css'`，与 `dist/assets/` 比对哈希。
+- 让改动真正生效的路径：① `installer/build-installer.ps1` 重打安装包再安装；② `start-dev.ps1` 起 3101 开发实例
+  （`server/api/bin/run/Douzhanzhe.API.exe --urls=http://127.0.0.1:3101`）用浏览器验证；③ 手工同步安装目录（违反
+  AGENTS.md「禁止手动复制文件」约定，不推荐）。
+- `installer/build-installer.ps1` 只做 publish + ISCC 编译，**不会自动安装**；产物在 `dist/installer/`。
+
 ## 环境坑：Bash 工具里 git ref 写入被静默吞掉（2026-09-25）
 
 - 症状：`git commit` / `git update-ref` 返回 0，但 `.git/refs/heads/<branch>` 不落盘 → 产生无父 root commit，
@@ -26,5 +39,20 @@
 - 可用做法：`git commit-tree <tree> -p <parent> -m <msg>` 造提交对象 → 用普通 shell 重定向
   `printf '%s\n' <sha> > .git/refs/heads/<branch>` 写 ref → `git push`（push 正常）。
   索引复位用 `git read-tree <sha>`（不碰 ref）。**不要用 `git update-ref`**。
+- ref 文件必须写**完整 40 位 SHA**，写短 SHA 会得到 "your current branch appears to be broken"。
 - `deploy.ps1` 在 PowerShell 工具会话里调不到 `git`，`gen-build-info.ps1` 失败导致第 1 步就 abort；
   需要时手工执行其 1~3 步（bash 复制 dist → wwwroot + 写 version.txt/build-info.json）。
+- **PowerShell 工具会话无法启动任何外部 exe**（`git`、`dotnet` 都返回空输出且 `$LASTEXITCODE` 为空），
+  所以 `deploy.ps1` / `start-dev.ps1` / `build-installer.ps1` / `sync-repos.ps1` 在这里都跑不了；
+  但 `[Parser]::ParseFile` 可以做语法校验，`Get-CimInstance` / `Get-Command` 可做探测。
+  需要输出时把结果 `Out-File` 到 `$env:TEMP`，再用 Read/cat 读（工具不捕获 stdout）。
+
+## 风扇转速脏数据防护（2026-09-25）
+
+- EC 0x9D/0x9E（大扇）、0x96/0x97（小扇）是 16 位 RPM，固件异步刷新，且与 WMI ACPI 共用 EC 缓冲。
+  实机出现过 25249 RPM（大扇上限 4400）。
+- 读取必须：**同一把锁内成对读**（`DriverBridge.ReadEcPair`）+ **上界校验**（用 `FanLargeMax`/`FanSmallMax`，
+  不是曲线里那个 ~3000 的「手动可控上限」）+ 重试 + 回退 Last Known Good（`HAL.ReadValidatedFanRpm`）。
+  前端也要有显示层兜底（超限显示 `—` / `读数无效`）。
+- 仍未做：DriverBridge 的 EC 事务没有 ACPI IBF/OBF 握手（只靠固定 Sleep），且 WMI 通道与 0x62/0x66
+  端口事务不互斥 —— 这是脏读的深层来源，改动影响所有 EC 读写，须实机验证后再动。
