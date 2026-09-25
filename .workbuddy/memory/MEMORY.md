@@ -27,10 +27,31 @@
 - `deploy.ps1` 只同步 3~5 个**开发树**目录（`server/api/wwwroot`、`bin/run/wwwroot`、`bin/build/wwwroot`、
   shell 的 Debug/Release wwwroot），**不包含安装目录**。所以只跑 deploy.ps1 后，安装版界面不会变。
   要验证方法：`curl -s http://127.0.0.1:3100/ | grep -o 'index-[A-Za-z0-9]*\.css'`，与 `dist/assets/` 比对哈希。
-- 让改动真正生效的路径：① `installer/build-installer.ps1` 重打安装包再安装；② `start-dev.ps1` 起 3101 开发实例
-  （`server/api/bin/run/Douzhanzhe.API.exe --urls=http://127.0.0.1:3101`）用浏览器验证；③ 手工同步安装目录（违反
+- 让改动真正生效的路径：① `installer/build-installer.ps1` 重打安装包再安装；② 起 3101 开发实例用浏览器验证
+  （见下方「bin/run 是陈旧目录」——`start-dev.ps1` 目前会起错后端）；③ 手工同步安装目录（违反
   AGENTS.md「禁止手动复制文件」约定，不推荐）。
 - `installer/build-installer.ps1` 只做 publish + ISCC 编译，**不会自动安装**；产物在 `dist/installer/`。
+
+## bin/run 是陈旧目录，最新产物在 bin/build（2026-09-25 实测）
+
+- `server/api/bin/run/` 里的二进制停留在 **2026-08-29**，`server/api/bin/build/` 才是 `dotnet build` 的输出。
+- **`start-dev.ps1` 第 6 行 `$DevApiPath` 指向 `server\api\bin\run\Douzhanzhe.API.exe`** →
+  照现状跑 `start-dev.ps1` 起的是 8/29 的陈旧后端，改动完全不生效。**（已发现，尚未修）**
+- 判断 DLL 是否含新代码**不要只看 mtime**（源码与产物可能同一分钟），用元数据字符串最可靠：
+  `grep -a -o -E "方法名A|方法名B" xxx.dll`（.NET 元数据 #Strings 堆是 UTF-8，方法名可直接 grep）。
+
+## 本地 API 同源守卫（探测接口必读，2026-09-25）
+
+- `LocalAccessGuard.IsAllowed` 的放行条件：`Host` 是回环 + 满足任一：
+  `Sec-Fetch-Site` 为 `same-origin`/`none`，或 `Origin` 在白名单，或带正确令牌。
+- **非浏览器请求（node/curl 脚本）必须自己带 `Origin` + `Referer`（同端口）**，
+  或带 `X-Douzhanzhe-Token: <session.token 内容>`；否则一律
+  `403 {"ok":false,"error":"请求来源不被信任"}`。
+- **`session.token` 是共享文件但比对的是进程内存值**：路径
+  `%LOCALAPPDATA%\Douzhanzhe Console\session.token`，每次 API 启动重新生成。
+  两个实例共存时后启动者会改写文件 → 先启动的那个对所有令牌请求一律 403。
+  （浏览器直连不受影响。）**排查 403 时先想到这一点。**
+- `/api/fan/curve`、`/api/perf/settings` **不存在**，会落到 SPA fallback 返回 index.html，别把 HTML 当 JSON。
 
 ## 环境坑：Bash 工具里 git ref 写入被静默吞掉（2026-09-25）
 
@@ -56,3 +77,58 @@
   前端也要有显示层兜底（超限显示 `—` / `读数无效`）。
 - 仍未做：DriverBridge 的 EC 事务没有 ACPI IBF/OBF 握手（只靠固定 Sleep），且 WMI 通道与 0x62/0x66
   端口事务不互斥 —— 这是脏读的深层来源，改动影响所有 EC 读写，须实机验证后再动。
+
+## 在本机启动常驻进程 / 探测端口（2026-09-25 实测）
+
+- **`./Douzhanzhe.API.exe` 直接执行 → `Permission denied`；改用 `dotnet Douzhanzhe.API.dll --urls=...` 可以。**
+- **`nohup ... &` 起的进程会在该条 Bash 命令结束时被回收**（日志停在启动完成、没有 shutdown 记录）。
+  常驻服务必须用 Bash 工具的 `run_in_background: true`（受管后台任务）。
+- **`curl` 会走系统代理**（本机 `http_proxy=http://127.0.0.1:3597`），对 127.0.0.1 报
+  `upstream connect failed: ... (os error 10061)`，`--noproxy '*'` 也无效 → **用 node 的 `fetch` 探测本地端口**。
+- 本项目 `package.json` 含 `"type":"module"`，`logs/*.js` 探针脚本要用 ESM 写法（`import fs from "fs"`）。
+- **从 Bash 工具起的进程拿不到 PawnIO 设备节点**（沙箱拦截设备路径；node 直接 `open('\\.\PawnIO','r+')` 也是 `EPERM`）。
+  表现：`[PawnIO] [Detection] status=InstalledNoDevice` → `[HAL] 硬件驱动不可用，所有硬件读取将返回安全默认值`，
+  遥测里 `cpuTemp`/`fanLargeRpm` 等 EC 项全为 0。
+  → **沙箱内起的开发实例只能验证前端 UI 与后端持久化逻辑，不能验证任何硬件读写。**
+  注意 `PawnIoDetection` 把「被占用 / 权限不足 / 沙箱拦截」统一报成 `InstalledNoDevice`（文案「可能需要重启」），
+  排查时不要被这句误导。
+- 安装版（3100）与开发实例（3101）的 AppLog **写在同一个文件** `%LOCALAPPDATA%\Douzhanzhe Console\logs\app.log`，
+  多进程混写，看日志时要靠上下文区分是哪个实例（如 `API starting, BaseDir=...` 可区分）。
+
+## 既有缺陷：Shell ↔ API 健康检查 403 死循环（2026-09-25 发现，未修）
+
+- 现象：`[Guard] 拒绝 GET /api/health — 缺少或错误的会话令牌` →
+  `[Shell] 健康检查连续失败 2 次，重启后端` → `[Shell] 后端重启成功 (1s)，刷新 WebView2`，每 ~16s 循环一次。
+- 成因：Shell 的原生 health check 不带 `X-Douzhanzhe-Token`，也不带 `Origin`/`Sec-Fetch-Site`，
+  被 `LocalAccessGuard` 拒。**实际并未真重启后端**（3100 API 的 PID 一直没变）→ Shell 看门狗形同失效，只刷日志。
+- 该循环在 2026-09-24 之前就存在（app.log 里 2386 次），**与 2026-09-25 的风扇修复无关**。
+
+## 本工具环境无法执行任何需要 NuGet 的 dotnet 操作（2026-09-25 实测，重要）
+
+- 症状：`dotnet restore`、`dotnet publish -r <rid>`（**即使带 `--no-restore`**）、`dotnet nuget list source`
+  一律报 `Value cannot be null. (Parameter 'path1')`；堆栈是
+  `NuGet.Configuration.XPlatMachineWideSetting..ctor()` → `NuGet.Common.NuGetEnvironment.GetFolderPath()`
+  → `Path.Combine(null, ...)`。连读取**已存在**的 `obj/project.assets.json` 都会报（`NETSDK1060`）。
+- 已排除的嫌疑：沙箱（`dangerouslyDisableSandbox` 下能成功写 `C:\ProgramData`，NuGet 依旧失败）、
+  环境变量（补齐 `APPDATA`/`ProgramData`/`ALLUSERSPROFILE`/`TEMP` 等仍失败，且已用 node 验证变量确实传进了子进程）、
+  仓库配置（仓库根无 `global.json`/`Directory.Build.props`；在 `C:\` 下执行同样失败）→ **环境级问题**。
+- **`dotnet build --no-restore`（不带 RID）是可用的**，因为这条路径不经过 NuGet 设置求值。
+  → 所以「验证 C# 改动能否编译」可以用它，但**发布（publish）不行**。
+- 后果：`installer/build-installer.ps1` 的 `[3/6]`/`[4/6]` 两次 `dotnet publish -r win-x64` 跑不了
+  → **在本工具里无法重打安装包**。需让用户在自己的终端里跑该脚本。
+- 相关：`microsoft.web.webview2` 不在本地 NuGet 缓存（Shell 项目从未还原过，其 `obj/project.assets.json` 不存在）；
+  VS2022 Community 的 `MSBuild.exe` 存在，但**被安全策略按 LOLBin 拦截**，不能当替代方案。
+- **订正**：不要把 `--no-restore` 当成这个报错的「解法」记 —— 那只是绕过 restore，真实原因是 NuGet 初始化失败。
+
+## 同源守卫 / 会话令牌 / overrides 持久化（2026-09-25 修复）
+
+- **`/api/health` 必须豁免同源守卫**：Shell 看门狗用原生 `HttpClient` 探活，既无 `Origin`/`Sec-Fetch-Site`
+  也无令牌，不豁免就会被拒成 403，触发「每 16s 重启后端」的死循环。该端点只回 `{ok, timestamp}`，无敏感数据。
+- **令牌文件必须按端口隔离**：`%LOCALAPPDATA%\Douzhanzhe Console\` 是安装版(3100)与开发实例(3101)共享的目录，
+  而 `LocalAccessGuard` 校验用的是**进程内存里的令牌**。文件名带端口（`session-<port>.token`）才能让两实例共存；
+  否则后启动者覆盖文件，先启动者对所有「带令牌」请求一律 403。
+- **`SavePerfOverrides(mutate, mode)` 必须校验 mode id 存在**：未知 id 时旧实现会新建空 overrides 交给
+  `SaveOverrides`，后者查 index 找不到就 `return false` 不落盘 —— 但调用处照样打 `✓ saved` 并返回 `ok:true`。
+  现在返回 `bool`，未知 id 打 `✗` 且由调用方（如 `/api/fan/set-target`）转成 400。
+- 前端 `settings.mode` 传的是**配置 id**（`cfg-office`），不是裸性能模式名（`office`）。
+  用裸名调 `/api/fan/set-target?mode=...` 会命中「未知 id」分支 —— 排查时先确认这一点。
