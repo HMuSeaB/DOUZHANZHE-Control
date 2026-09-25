@@ -10,7 +10,8 @@ param(
     [string]$Version,
     [switch]$SkipFrontend,
     [switch]$SkipPublish,
-    [string]$ISCC = "C:\Users\liufe\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+    # 留空则自动探测 ISCC.exe（PATH → 常见安装位置）。不再硬编码某一台机器的路径。
+    [string]$ISCC = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -75,9 +76,27 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── 1. 环境检查 ──
 Write-Host "[1/6] 检查环境..." -ForegroundColor Cyan
-if (-not (Test-Path $ISCC)) {
+
+# ISCC.exe 自动探测（显式 -ISCC 优先）
+if (-not $ISCC) {
+    $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { $ISCC = $cmd.Source }
+}
+if (-not $ISCC) {
+    $roots = @($env:LOCALAPPDATA, ${env:ProgramFiles(x86)}, $env:ProgramFiles)
+    foreach ($r in $roots) {
+        if (-not $r) { continue }
+        $cand = [System.IO.Path]::Combine($r, "Programs\Inno Setup 6\ISCC.exe")
+        if (Test-Path $cand) { $ISCC = $cand; break }
+        $cand = [System.IO.Path]::Combine($r, "Inno Setup 6\ISCC.exe")
+        if (Test-Path $cand) { $ISCC = $cand; break }
+    }
+}
+if ($ISCC) { Write-Host "  ISCC: $ISCC" -ForegroundColor DarkGray }
+
+if (-not $ISCC -or -not (Test-Path $ISCC)) {
     Write-Host "错误: 未找到 Inno Setup 6 编译器！" -ForegroundColor Red
-    Write-Host "请安装 https://jrsoftware.org/isdl.php" -ForegroundColor Yellow
+    Write-Host "请安装 https://jrsoftware.org/isdl.php ，或用 -ISCC <ISCC.exe 路径> 显式指定" -ForegroundColor Yellow
     exit 1
 }
 if (-not (Test-Path "C:\Program Files\dotnet\dotnet.exe")) {
