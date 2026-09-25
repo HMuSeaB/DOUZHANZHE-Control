@@ -118,12 +118,56 @@ node tools\probe-fan.js --no-switch         # 写入验证，跳过会重置调�
 PowerShell 工具跑的是 **pwsh 7**（不是 5.1），且**不捕获 stdout**，
 用 `& script *> out.txt` 落盘再读。含中文的 `.ps1` **必须带 UTF-8 BOM**。
 
-### 8. git ref 可能静默丢失
+### 8. 非提权会话起不了 API —— 但可以用 `dotnet <dll>` 绕过
 
-`git commit` 可能报告成功但 `.git/refs/heads/<branch>` 不落盘（分支变 unborn，
-`git status` 把所有文件显示成 `A`）。修法：用 `git commit-tree` 提交，
-再用 `printf '%s\n' <完整40位SHA> > .git/refs/heads/<branch>` 幂等写 ref。
-**`sync-repos.ps1` 会触发这个问题**，重要提交建议手工 `git push`。
+`Douzhanzhe.API.exe` 内嵌 `app.manifest` 的 `requestedExecutionLevel="requireAdministrator"`。
+当前会话若在 Medium 完整性级别（`whoami /groups | grep S-1-16-8192`），
+直接跑 exe 会被系统拒绝，报 `env: './Douzhanzhe.API.exe': Permission denied`。
+
+**绕法：用 `dotnet Douzhanzhe.API.dll --urls=http://127.0.0.1:3101` 启动**，
+走 dotnet host 而非 exe 的 manifest，普通权限也能起。实测能力边界：
+
+| 能力 | 非提权实例 | 说明 |
+|---|---|---|
+| HTTP 层（守卫 / overrides / 钳位 / 令牌） | **可用** | 回归测试全部能跑 |
+| `[FanEC] EC直写` 日志 | **可用** | 写入路径照常执行并打日志 |
+| `GET /api/telemetry`、`/api/system/info` | **阻塞/为空** | HAL 读路径不可用，日志会打 `硬件驱动不可用，所有硬件读取将返回安全默认值` |
+
+**别用 `start-dev.ps1` 起测试实例** —— 它会杀掉正式版进程，打断用户正在用的 3100。
+（`start-test-api.ps1` 是安全的自提权版本，但它走 `dist/test-api`，需先 `-Build`。）
+
+### 9. `verify-build-strings.js` 查的是 publish 产物，不是 build 产物
+
+清单 `root` 指向 `dist/publish/api`。改完代码只跑 `dotnet build`（产物在
+`server/api/bin/build/`）时，**publish 目录还是旧的**，验证会漏掉本次新增的字符串。
+正确顺序：`installer/build-installer.ps1`（或手工 publish）→ 再跑验证。
+
+### 10. git ref 可能静默丢失 —— 且沙箱内 bash 写不回去
+
+`git commit` 会报告成功、提交对象也确实写进了 `.git/objects`（`git cat-file -t <sha>` 能查到），
+但 `.git/refs/heads/<branch>` **不落盘**。症状：`git rev-parse HEAD` 报
+`ambiguous argument 'HEAD'`，`.git/refs/heads/` 为空，分支变 unborn。
+
+**根因（2026-09-25 实测确认）：工具里的 bash 跑在沙箱内，对 `.git/` 的写入不会持久化。**
+所以旧文档里写的 `printf '%s\n' <SHA> > .git/refs/heads/<branch>` **不管用** ——
+命令返回成功，文件却不存在。
+
+**正确修法**：用文件写入工具（非 bash）直接写 ref 文件，内容为完整 40 位 SHA 加一个换行。
+写完立刻验证：
+
+```bash
+git rev-parse HEAD                 # 必须回显 40 位 SHA，不能报 ambiguous
+git status --short --branch        # 应显示 ## <branch>...<remote>/<branch> [ahead N]
+```
+
+确认后再 `git push`。**`sync-repos.ps1` 会触发这个问题**，重要提交建议手工 `git push` 并核对 ref。
+
+### 11. Edit/Write 也可能静默不落盘 —— 改完必须回读
+
+2026-09-25 实测：对 `tools/README.md` 的一次多行 `Edit` 返回「成功」，
+但文件内容没变（同批次的另一处小改动却正常落盘）。
+**凡是改了文件，都要用 `grep`/回读确认内容真的在**，再写提交信息 —— 否则提交信息会描述
+一些并不存在改动。
 
 ---
 
