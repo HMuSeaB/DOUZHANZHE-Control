@@ -245,3 +245,18 @@ const hit = buf.includes(Buffer.from('未知配置 id', 'utf16le'));
 
 **别用 `grep -c` 数压缩后的 bundle**（整个 bundle 只有 8 行，`-c` 永远返回 1）；
 要数出现次数用 `grep -o <pat> <file> | wc -l`。
+
+## 相关技能：`douzhanzhe-fix-verify`（用户级，2026-09-25 建立）
+
+验证本项目的修复是否在真机生效时**先加载它**：
+`C:\Users\36230\.workbuddy-ai\skills\douzhanzhe-fix-verify\SKILL.md`
+（`references/api-contract.md` 是 API/字段名/EC 寄存器契约，`references/log-taxonomy.md` 是日志判定指标。
+打包副本：`dist\skills\douzhanzhe-fix-verify.zip`）
+
+触发场景：观察/验证/确认本项目某个修复、风扇调速不持久、恢复默认、25249 RPM 脏读、
+Shell 反复重启后端、403 死循环、overrides 没落盘、要跑 3100/3101 实例或打 `/api/overrides`。
+
+**本环境创建技能的方式**：没有 `SkillManage` 工具 → 加载 `skill-creator` 技能，
+用它自带的 `scripts/init_skill.py` / `quick_validate.py` / `package_skill.py`。
+注意技能实际路径是 `~/.workbuddy-ai/skills/`（不是文档里写的 `~/.workbuddy/skills/`），
+且 frontmatter 必须带 `agent_created: true`。技能在项目外，`git status` 看不到。
