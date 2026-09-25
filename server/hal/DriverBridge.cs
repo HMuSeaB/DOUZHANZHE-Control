@@ -52,6 +52,23 @@ public sealed class DriverBridge : IDisposable
         }
     }
 
+    /// <summary>
+    /// 在同一把 EC 锁内成对读取 16 位寄存器（hi 在 reg、lo 在 reg+1）。
+    /// 单独调用两次 ReadEc 会在两笔事务之间被其它 EC 访问插入（遥测 250ms 轮询、
+    /// FanCurveService Tick、ParameterGuard、/api/fan/status 都会读 EC），
+    /// 于是可能拼出跨固件刷新的残缺值。lock 可重入，ReadEc 里再取同一把锁是安全的。
+    /// </summary>
+    public ushort ReadEcPair(byte reg)
+    {
+        if (!_usePawnIo || _pawnIo == null) return 0;
+        lock (_ecLock)
+        {
+            var hi = ReadEc(reg);
+            var lo = ReadEc((byte)(reg + 1));
+            return (ushort)((hi << 8) | lo);
+        }
+    }
+
     public void WriteEc(byte reg, byte val)
     {
         if (!_usePawnIo || _pawnIo == null) return;

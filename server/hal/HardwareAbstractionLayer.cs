@@ -198,21 +198,51 @@ public sealed class HardwareAbstractionLayer : IDisposable
         }
     }
 
-    /// <summary>CPU 风扇转速 (RPM) — EC IO 协议 (PawnIO LpcACPIEC.bin)</summary>
-    public ushort CpuFanRpm
+    // ================================================================
+    // 风扇转速读取 — 脏数据防护
+    // EC 0x9D/0x9E（大扇）、0x96/0x97（小扇）是 16 位 RPM，由固件异步刷新；
+    // 而 0x62/0x66 端口事务又与 WMI ACPI 通道共用同一个 EC 输入/输出缓冲。
+    // 实机出现过 25249 RPM 这种物理不可能值（大扇上限 4400），成因是：
+    //   1. hi / lo 分两笔独立事务读取，中间被其它 EC 访问插入，拼出残缺值；
+    //   2. 读回的其实是上一笔事务残留在输出缓冲里的数据。
+    // 处理：成对读取（同一把锁）+ 上界校验 + 重试，全部无效时回退 Last Known Good，
+    // 保证 UI 不会出现离谱数字。注意用 FanLargeMax/FanSmallMax 作上界而不是曲线里
+    // 那个 ~3000 的“手动可控上限”，避免把合法的更高转速误判成脏数据。
+    // ================================================================
+    private const int FanRpmReadAttempts = 3;
+    private ushort _lkgCpuFanRpm;   // 大扇上次有效值
+    private ushort _lkgGpuFanRpm;   // 小扇上次有效值
+
+    private static DateTime _lastFanGarbageLogAt = DateTime.MinValue;
+
+    private static void LogFanGarbage(string which, ushort raw, ushort maxRpm)
     {
-        get
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                var hi = _io.ReadEc(0x9D);
-                var lo = _io.ReadEc(0x9E);
-                var val = (ushort)((hi << 8) | lo);
-                if (val != 0) return val;
-            }
-            return 0;
-        }
+        var now = DateTime.UtcNow;
+        if ((now - _lastFanGarbageLogAt).TotalSeconds < 30) return; // 250ms 轮询，节流 30s
+        _lastFanGarbageLogAt = now;
+        AppLog.Write("FanRpm", $"{which} 读数超出物理上限已丢弃: raw={raw} RPM (上限 {maxRpm})");
     }
+
+    /// <summary>成对读取风扇 RPM：丢弃 0 与超上限的脏样本，全失败时回退上次有效值</summary>
+    private ushort ReadValidatedFanRpm(byte baseAddr, ushort maxRpm, string which, ref ushort lastGood)
+    {
+        for (int i = 0; i < FanRpmReadAttempts; i++)
+        {
+            var raw = _io.ReadEcPair(baseAddr);
+            if (raw == 0) continue;        // EC 忙 / 未就绪，重试
+            if (raw > maxRpm)              // 物理不可能：torn read 或输出缓冲残留
+            {
+                LogFanGarbage(which, raw, maxRpm);
+                continue;
+            }
+            lastGood = raw;
+            return raw;
+        }
+        return lastGood;
+    }
+
+    /// <summary>CPU 风扇转速 (RPM) — EC IO 协议 (PawnIO LpcACPIEC.bin)</summary>
+    public ushort CpuFanRpm => ReadValidatedFanRpm(0x9D, FanLargeMax, "大风扇", ref _lkgCpuFanRpm);
 
     private static byte _gpuFanRegBase; // 0=未探测
 
@@ -223,13 +253,13 @@ public sealed class HardwareAbstractionLayer : IDisposable
         {
             // 优先走已缓存的寄存器地址
             if (_gpuFanRegBase != 0)
-                return ReadFanPair(_gpuFanRegBase);
+                return ReadValidatedFanRpm(_gpuFanRegBase, FanSmallMax, "小风扇", ref _lkgGpuFanRpm);
 
-            // 首次: 尝试已知可能的寄存器对，取第一个非零值
+            // 首次: 尝试已知可能的寄存器对，取第一个有效值
             byte[] candidates = [0x96, 0x9B, 0x93, 0x98];
             foreach (var baseAddr in candidates)
             {
-                var val = ReadFanPair(baseAddr);
+                var val = ReadValidatedFanRpm(baseAddr, FanSmallMax, "小风扇", ref _lkgGpuFanRpm);
                 if (val != 0)
                 {
                     _gpuFanRegBase = baseAddr;
@@ -238,18 +268,6 @@ public sealed class HardwareAbstractionLayer : IDisposable
             }
             return 0;
         }
-    }
-
-    private ushort ReadFanPair(byte baseAddr)
-    {
-        for (int i = 0; i < 3; i++)
-        {
-            var hi = _io.ReadEc(baseAddr);
-            var lo = _io.ReadEc((byte)(baseAddr + 1));
-            var val = (ushort)((hi << 8) | lo);
-            if (val != 0) return val;
-        }
-        return 0;
     }
 
     // ================================================================
