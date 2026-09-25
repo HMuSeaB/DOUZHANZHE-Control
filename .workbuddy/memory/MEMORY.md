@@ -211,3 +211,37 @@ const hit = buf.includes(Buffer.from('未知配置 id', 'utf16le'));
    所以 Shell 启动等待用 `GET /` 没问题，只有 `GET /api/health` 会被拦。
 2. 令牌文件按端口隔离 → 3100 是 `session-3100.token`；探针脚本用旧名 `session.token` 会读到空令牌。
    （历史上用旧名的 13 次守卫拒绝就是这么来的。）
+
+## overrides 字段名的三套写法（极易搞错，2026-09-25 踩过）
+
+后端模型 `FanOverrides { int? LargeRpm; int? SmallRpm; }`，但**不同接口用的名字不一样**：
+
+| 位置 | 名字 | 例子 |
+|---|---|---|
+| `GET /api/overrides` 响应 | 嵌套 | `overrides.fan.largeRpm` / `.smallRpm` |
+| `POST /api/overrides/clear` 请求 | 扁平 | `fields:["fanLargeRpmTarget","fanSmallRpmTarget"]` |
+| `POST /api/fan/set-target` 请求 | 扁平 | `{ largeRpm, smallRpm }` |
+| 前端 UI state | 扁平 | `overrides.fanLargeRpmTarget`（`flattenBackendOverrides` 映射而来） |
+
+**直接打 API 时看到的是嵌套名；前端 UI 用的是扁平名。写探针/脚本时先 `--readonly` 打一次真实响应，
+照着真实 JSON 写字段名** —— 别凭印象。
+
+## 硬件通道的不一致（排查时别被骗）
+
+- **真正生效的是 EC 直写通道**：`hal.WriteEcPort(0x5E/0x5A, rpm/100)`，日志 `[FanEC] EC直写 ...`。
+- **`/api/fan/status` 读的是 WMI Bellator GET**，实机返回 `manualEnabled:false, largeRpmTarget:0`，
+  即使 overrides 里明明有值、日志也显示写成功了。
+- → **判断「风扇设置是否生效」要看 overrides 或 `[FanEC]` 日志，不要看 `/api/fan/status`。**
+
+## 在用户真机上做写入测试的安全流程（务必遵守）
+
+1. **先备份**：`curl -s -H "Origin: http://127.0.0.1:<port>" http://127.0.0.1:<port>/api/overrides -o logs/overrides-backup-<ts>.json`
+   （**Origin 头必须带**，否则被同源守卫 403）
+2. **先跑只读**：`node tools/probe-fan.js --readonly` 看清现状，并据此写字段名。
+3. **写入时加 `--no-switch`**：`/api/overrides/switch` **即使 mode 没变也会走硬件重置路径**
+   （`SetCurrentMode` → `ApplyThermalMode` → GPU/CPU/NVAPI 重置），会打断用户正在用的调优。
+4. **恢复**：`curl -X POST -d '{"largeRpm":...,"smallRpm":...}' ".../api/fan/set-target?mode=<原模式>"`
+5. **核对**：`diff` 备份与现状，必须逐字节一致，并向用户明确报告已恢复。
+
+**别用 `grep -c` 数压缩后的 bundle**（整个 bundle 只有 8 行，`-c` 永远返回 1）；
+要数出现次数用 `grep -o <pat> <file> | wc -l`。
