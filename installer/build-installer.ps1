@@ -23,7 +23,7 @@ if (-not $Version) {
     $PkgPath = Join-Path $Root "package.json"
     if (Test-Path $PkgPath) {
         $PkgRaw = Get-Content $PkgPath -Raw -Encoding UTF8
-        if ($PkgRaw -match '"version"\s*:\s*"(\d+\.\d+\.\d+)"') {
+        if ($PkgRaw -match '"version"\s*:\s*"(\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)"') {
             $Version = $matches[1]
             Write-Host "[0/6] 从 package.json 读取版本号: $Version" -ForegroundColor Cyan
         }
@@ -45,19 +45,21 @@ if ($Version) {
     # CHANGELOG.md — 仅替换第一个版本标题（最新条目），不动历史版本
     $Changelog = Join-Path $AbsRoot "CHANGELOG.md"
     $ClText = [System.IO.File]::ReadAllText($Changelog, $utf8NoBom)
-    $ClTop = [regex]::Match($ClText, '^## \[(\d+\.\d+(\.\d+)?(-[A-Za-z0-9.]+)?)\] — \d{4}-\d{2}-\d{2}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    $ClTop = [regex]::Match($ClText, '^## \[(\d+\.\d+(\.\d+)?(-[A-Za-z0-9.-]+)?)\] — \d{4}-\d{2}-\d{2}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
     if ($ClTop.Success -and $ClTop.Groups[1].Value -match '-' -and $Version -notmatch '-') {
         Write-Host "  CHANGELOG 顶部是预发布版本（$($ClTop.Groups[1].Value)），稳定版本号不覆盖" -ForegroundColor Yellow
     } else {
-        $ClRegex = [regex]::new('(## \[)\d+\.\d+(\.\d+)?(-[A-Za-z0-9.]+)?(\] — \d{4}-\d{2}-\d{2})')
+        $ClRegex = [regex]::new('(## \[)\d+\.\d+(\.\d+)?(-[A-Za-z0-9.-]+)?(\] — \d{4}-\d{2}-\d{2})')
         $ClText = $ClRegex.Replace($ClText, "`${1}$Version`${4}", 1)
         [System.IO.File]::WriteAllText($Changelog, $ClText, $utf8NoBom)
     }
 
-    # package.json
+    # package.json —— 正则必须含预发布后缀分支(-memory-fix.N)，否则 2.0.1-memory-fix.6
+    # 匹配不上（2.0.1 后面是 '-' 不是 '"'）→ 静默不替换 → deploy.ps1 拿旧号覆盖
+    # version.txt 并构建出旧前端 → [5.5/6] "前端版本号与预期不一致" 失败
     $PkgJson = Join-Path $AbsRoot "package.json"
     $PkgText = [System.IO.File]::ReadAllText($PkgJson, $utf8NoBom)
-    $PkgText = [regex]::Replace($PkgText, '("version":\s*")\d+\.\d+(\.\d+)?(")', "`${1}$Version`${3}")
+    $PkgText = [regex]::Replace($PkgText, '("version":\s*")\d+\.\d+(\.\d+)?(-[A-Za-z0-9.-]+)?(")', "`${1}$Version`${4}")
     [System.IO.File]::WriteAllText($PkgJson, $PkgText, $utf8NoBom)
 
     # server/api/version.txt (后端固定版本文件)
@@ -287,5 +289,5 @@ if (Test-Path $SyncScript) {
     powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
     Write-Host "[6.5/6] Repositories synced." -ForegroundColor Green
 } else {
-    Write-Warn "sync-repos.ps1 not found, skipping repository sync."
+    Write-Warning "sync-repos.ps1 not found, skipping repository sync."
 }

@@ -134,6 +134,19 @@ function checkFrontend(fe) {
         console.log(`  ✗ ${JSON.stringify(n)}  未出现`);
       }
     }
+    // mustMatch：正则匹配。版本号这类"每次发版都会变"的标记用正则，
+    // 否则清单里的字面量会随版本一起漂，每次发版都误报一次失败。
+    for (const pat of fe.mustMatch ?? []) {
+      const m = text.match(new RegExp(pat));
+      if (m) {
+        pass++;
+        console.log(`  ✓ /${pat}/  命中 ${JSON.stringify(m[0])}`);
+      } else {
+        fail++;
+        failures.push(`前端 ${f} 不匹配 /${pat}/`);
+        console.log(`  ✗ /${pat}/  未命中`);
+      }
+    }
   }
 }
 

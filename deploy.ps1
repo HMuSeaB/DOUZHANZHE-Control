@@ -116,5 +116,5 @@ if (Test-Path $SyncScript) {
     powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
     Write-Host "[4/4] Repositories synced." -ForegroundColor Green
 } else {
-    Write-Warn "sync-repos.ps1 not found, skipping repository sync."
+    Write-Warning "sync-repos.ps1 not found, skipping repository sync."
 }

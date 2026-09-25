@@ -49,9 +49,11 @@
     "file": "index-*.js",
     "must": [
       "fanLargeRpmTarget",
-      "fanSmallRpmTarget",
-      "v2.0.1-memory-fix.6"
+      "fanSmallRpmTarget"
     ],
-    "note": "压缩后整个 bundle 只有几行，必须用出现次数统计，不能用 grep -c（那是数行数）"
+    "mustMatch": [
+      "v2\\.0\\.1-memory-fix\\.\\d+"
+    ],
+    "note": "压缩后整个 bundle 只有几行，必须用出现次数统计，不能用 grep -c（那是数行数）。版本号用 mustMatch 正则而非字面量 —— 否则每次发版清单都要跟着改，不改就误报一次失败（版本号是否与 package.json 一致由 build-installer.ps1 的 [5.5/6] 负责）"
   }
 }
