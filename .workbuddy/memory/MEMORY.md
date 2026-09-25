@@ -188,3 +188,26 @@ const hit = buf.includes(Buffer.from('未知配置 id', 'utf16le'));
 日志固定打印 `[HAL] 硬件驱动不可用，所有硬件读取将返回安全默认值`。
 **结论：风扇读写、EC 读数、25249 RPM 之类的脏读问题，只能在真实安装版上验证。**
 不要因为在工具里测不出结果就误判为「修复无效」。
+
+## 运行日志与观察工具（2026-09-25 建立）
+
+**唯一日志文件**（后端与 Shell 共写）：
+`%LOCALAPPDATA%\Douzhanzhe Console\logs\app.log`，按大小轮转为 `app.log.1/.2/.3`。
+日志标签：`[Shell]` `[Guard]` `[HAL]` `[FanEC]` `[FanRpm]` `[Telemetry]` `[ParameterGuard]` `[overrides]`。
+
+- **`tools/watch-applog.ps1`** —— 实时观察台，关键事件上色。
+  `-Summary` 给统计 + 「被拒绝端点 TOP」分布，是**判定修复是否生效的硬指标**。
+- **`tools/probe-fan.js`** —— 调速持久化探针（`--port` / `--mode` / `--rpm` / `--keep`）。
+
+**判定标准（装 fix.6 前后对照）**：
+| 指标 | fix.5 实测（坏） | fix.6 期望 |
+|---|---|---|
+| `Shell 重启后端` | **1417** | 0（或仅启动 1~2 次） |
+| `拒绝 GET /api/health` | **2837** | 0 |
+| `同源守卫拒绝`（总量） | 2850 | ~0 |
+
+**两个易踩的点**：
+1. 同源守卫只作用于 `/api` 与 `/ws` 路径 —— `GET /`（SPA 静态）本来就不受守卫管，
+   所以 Shell 启动等待用 `GET /` 没问题，只有 `GET /api/health` 会被拦。
+2. 令牌文件按端口隔离 → 3100 是 `session-3100.token`；探针脚本用旧名 `session.token` 会读到空令牌。
+   （历史上用旧名的 13 次守卫拒绝就是这么来的。）
