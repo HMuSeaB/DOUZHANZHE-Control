@@ -32,10 +32,16 @@ export default function FanControl() {
   const fan1TargetRpm = clamp(overrides?.fanLargeRpmTarget ?? fanDefaults.fanLargeRpmTarget, fanRange.largeMin, fanRange.largeMax);
   const fan2TargetRpm = clamp(overrides?.fanSmallRpmTarget ?? fanDefaults.fanSmallRpmTarget, fanRange.smallMin, fanRange.smallMax);
 
-  const fan1Rpm = telemetry?.fanLargeRpm ?? 0;
-  const fan2Rpm = telemetry?.fanSmallRpm ?? 0;
-  const fan1Pct = telemetry?.fanLargeMax ? Math.min(100, (fan1Rpm / telemetry.fanLargeMax) * 100) : 0;
-  const fan2Pct = telemetry?.fanSmallMax ? Math.min(100, (fan2Rpm / telemetry.fanSmallMax) * 100) : 0;
+  // 实时转速显示兜底：后端已过滤 EC 脏数据，这里再挡一层，避免旧后端或脏负载把
+  // 物理不可能的读数（实测出现过 25249 RPM，大扇上限 4400）直接摆到界面上。
+  const rawFan1Rpm = telemetry?.fanLargeRpm ?? 0;
+  const rawFan2Rpm = telemetry?.fanSmallRpm ?? 0;
+  const fan1Valid = rawFan1Rpm > 0 && (!telemetry?.fanLargeMax || rawFan1Rpm <= telemetry.fanLargeMax);
+  const fan2Valid = rawFan2Rpm > 0 && (!telemetry?.fanSmallMax || rawFan2Rpm <= telemetry.fanSmallMax);
+  const fan1Rpm = fan1Valid ? rawFan1Rpm : 0;
+  const fan2Rpm = fan2Valid ? rawFan2Rpm : 0;
+  const fan1Pct = fan1Valid && telemetry?.fanLargeMax ? Math.min(100, (fan1Rpm / telemetry.fanLargeMax) * 100) : 0;
+  const fan2Pct = fan2Valid && telemetry?.fanSmallMax ? Math.min(100, (fan2Rpm / telemetry.fanSmallMax) * 100) : 0;
 
   useEffect(() => {
     let disposed = false;
@@ -111,12 +117,12 @@ export default function FanControl() {
         <div className="fan-row">
           <span className="fname"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1.5-5 4-5 1.5 2-.5 5-4 5Zm2.1 3.3c2.6 1.5 3.4 3.7 2.2 5.9-2.4.4-4-2.4-2.2-5.9Zm-6.3.1c-2.6 1.5-4.8.7-5.9-1.6 1.6-1.9 4.7-1 6 1.6Z"/></svg>大风扇</span>
           <div className="bar"><i style={{ width: fan1Pct + "%" }}></i></div>
-          <span className="rpm"><b>{fan1Rpm}</b> RPM<small>实时 {Math.round(fan1Pct)}%</small></span>
+          <span className="rpm"><b>{fan1Valid ? fan1Rpm : "—"}</b> RPM<small>{fan1Valid ? `实时 ${Math.round(fan1Pct)}%` : "读数无效"}</small></span>
         </div>
         <div className="fan-row">
           <span className="fname"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1.5-5 4-5 1.5 2-.5 5-4 5Zm2.1 3.3c2.6 1.5 3.4 3.7 2.2 5.9-2.4.4-4-2.4-2.2-5.9Zm-6.3.1c-2.6 1.5-4.8.7-5.9-1.6 1.6-1.9 4.7-1 6 1.6Z"/></svg>小风扇</span>
           <div className="bar"><i style={{ width: fan2Pct + "%" }}></i></div>
-          <span className="rpm"><b>{fan2Rpm}</b> RPM<small>实时 {Math.round(fan2Pct)}%</small></span>
+          <span className="rpm"><b>{fan2Valid ? fan2Rpm : "—"}</b> RPM<small>{fan2Valid ? `实时 ${Math.round(fan2Pct)}%` : "读数无效"}</small></span>
         </div>
       </div>
 
