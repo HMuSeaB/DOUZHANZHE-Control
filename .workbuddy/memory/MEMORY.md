@@ -167,3 +167,24 @@
   现在返回 `bool`，未知 id 打 `✗` 且由调用方（如 `/api/fan/set-target`）转成 400。
 - 前端 `settings.mode` 传的是**配置 id**（`cfg-office`），不是裸性能模式名（`office`）。
   用裸名调 `/api/fan/set-target?mode=...` 会命中「未知 id」分支 —— 排查时先确认这一点。
+
+## 验证 .NET 二进制里是否真的编进了本次改动（可复用）
+
+**别用 grep 搜中文** —— .NET 里两类字符串放在不同的堆：
+- **方法名 / 类型名** → 元数据 `#Strings` 堆，**UTF-8**，`grep` 能直接命中。
+- **字符串字面量**（代码里的 `"..."`）→ `#US` 堆，**UTF-16LE**，`grep` 搜中文一律假阴性。
+
+正确做法（Node，注意本项目 `package.json` 有 `"type":"module"`，必须用 ESM 不能用 `require`）：
+```js
+import fs from 'node:fs';
+const buf = fs.readFileSync(dllPath);
+const hit = buf.includes(Buffer.from('未知配置 id', 'utf16le'));
+```
+现成脚本：`logs/verify-dll-strings.js`（按 `dist/publish/api/*.dll` 逐条比对）。
+
+## 沙箱里硬件相关功能无法验证（重要）
+
+工具会话被沙箱拦截 **PawnIO 设备节点** → 任何在工具里启动的 API 实例都是 `InstalledNoDevice` 状态，
+日志固定打印 `[HAL] 硬件驱动不可用，所有硬件读取将返回安全默认值`。
+**结论：风扇读写、EC 读数、25249 RPM 之类的脏读问题，只能在真实安装版上验证。**
+不要因为在工具里测不出结果就误判为「修复无效」。
