@@ -1,31 +1,41 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useControlState } from "../hooks/useControlState";
 import FanCurvePanel from "../components/panels/FanCurvePanel";
 import { fetchFanCurveStatus, fetchRouteInfo, getFanRange, MODE_FAN_DEFAULTS, resolvePerfMode } from "../services/uxtuAdapter";
 
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 手动调速滑块的值：唯一权威源 = 后端 overrides（/api/overrides 的稀疏覆盖项）。
+//
+// 旧实现用本地 useState 存滑块值，只从 MODE_FAN_DEFAULTS 取初值，并有一个
+// useEffect([perfMode]) 在模式变化时把滑块重置为模式默认值 —— 从不读回后端
+// 已持久化的 fan.largeRpm/smallRpm。后果：游戏自动切换 / 热键切档 / 配置栏
+// 切配置 / 重开应用 时，滑块都会「刷新并恢复默认」，用户设的转速被冲掉。
+//
+// 现在：后端有覆盖 → 显示覆盖值（带「自定义」标记）；没有覆盖 → 才回落模式
+// 官方默认。拖动时同步写 store + 防抖 POST /api/fan/set-target 落盘。
+// ─────────────────────────────────────────────────────────────────────────────
 export default function FanControl() {
-  const { telemetry, settings, overrides, profiles } = useControlState();
+  const { telemetry, settings, overrides, profiles, saveOverride, clearOverride } = useControlState();
   const [curveActive, setCurveActive] = useState(false);
+  const [routeInfo, setRouteInfo] = useState(null);
+
   // 风扇区间/默认按「性能模式」取，配置 id 先解包成性能模式裸名
   const perfMode = resolvePerfMode(settings.mode, profiles);
   const fanRange = getFanRange(perfMode);
-  const [fan1TargetRpm, setFan1TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.silent).fanLargeRpmTarget);
-  const [fan2TargetRpm, setFan2TargetRpm] = useState(() => (MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.silent).fanSmallRpmTarget);
-  const [routeInfo, setRouteInfo] = useState(null);
+  const fanDefaults = MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.office;
+
+  const fan1IsCustom = overrides?.fanLargeRpmTarget != null;
+  const fan2IsCustom = overrides?.fanSmallRpmTarget != null;
+  // 越界覆盖（改过 profile 的 thermalMode 等场景）只做显示钳位，不主动改写用户配置
+  const fan1TargetRpm = clamp(overrides?.fanLargeRpmTarget ?? fanDefaults.fanLargeRpmTarget, fanRange.largeMin, fanRange.largeMax);
+  const fan2TargetRpm = clamp(overrides?.fanSmallRpmTarget ?? fanDefaults.fanSmallRpmTarget, fanRange.smallMin, fanRange.smallMax);
 
   const fan1Rpm = telemetry?.fanLargeRpm ?? 0;
   const fan2Rpm = telemetry?.fanSmallRpm ?? 0;
   const fan1Pct = telemetry?.fanLargeMax ? Math.min(100, (fan1Rpm / telemetry.fanLargeMax) * 100) : 0;
   const fan2Pct = telemetry?.fanSmallMax ? Math.min(100, (fan2Rpm / telemetry.fanSmallMax) * 100) : 0;
-
-  useEffect(() => {
-    const def = MODE_FAN_DEFAULTS[perfMode] || MODE_FAN_DEFAULTS.silent;
-    const timer = setTimeout(() => {
-      setFan1TargetRpm(def.fanLargeRpmTarget);
-      setFan2TargetRpm(def.fanSmallRpmTarget);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [perfMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -42,16 +52,39 @@ export default function FanControl() {
     return () => { disposed = true; clearInterval(timer); };
   }, []);
 
-  const setFanTarget = async (fanIdx, rpm) => {
-    try {
+  // 每个风扇一条尾随防抖：拖动时 store 立即更新（UI 跟随），硬件写入合并成一次
+  const writeTimers = useRef([null, null]);
+  useEffect(() => () => {
+    writeTimers.current.forEach((t) => t && clearTimeout(t));
+    writeTimers.current = [null, null];
+  }, []);
+
+  const writeFanTarget = useCallback((fanIdx, rpm) => {
+    saveOverride(settings.mode, fanIdx === 0 ? "fanLargeRpmTarget" : "fanSmallRpmTarget", rpm);
+    if (writeTimers.current[fanIdx]) clearTimeout(writeTimers.current[fanIdx]);
+    writeTimers.current[fanIdx] = setTimeout(() => {
+      writeTimers.current[fanIdx] = null;
       const body = fanIdx === 0 ? { largeRpm: rpm } : { smallRpm: rpm };
-      await fetch(`/api/fan/set-target?mode=${encodeURIComponent(settings.mode)}`, {
+      fetch(`/api/fan/set-target?mode=${encodeURIComponent(settings.mode)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      });
-    } catch { /* 调速失败保持当前滑块值 */ }
-  };
+      }).catch(() => { /* 写入失败保持当前值，下次拖动重试 */ });
+    }, 250);
+  }, [settings.mode, saveOverride]);
+
+  const resetFanTargets = useCallback(async () => {
+    writeTimers.current.forEach((t, i) => {
+      if (t) { clearTimeout(t); writeTimers.current[i] = null; }
+    });
+    try {
+      // 后端 /api/overrides/clear 会清掉 fan.largeRpm/smallRpm 并退出 SetFanManual，
+      // 让 EC 回到固件自动控制；store 同步删除覆盖项 → 滑块回落模式默认值
+      await clearOverride(settings.mode, ["fanLargeRpmTarget", "fanSmallRpmTarget"]);
+    } catch { /* 后端离线：保持现值 */ }
+  }, [settings.mode, clearOverride]);
+
+  const anyCustom = fan1IsCustom || fan2IsCustom;
 
   return (
     <section className="page active">
@@ -91,16 +124,33 @@ export default function FanControl() {
       <div className="section-title">手动调速<span className={"tag" + (curveActive ? "" : " hidden")}>曲线运行时禁用</span><span className="line"></span></div>
       <div className="card reveal enter" style={{ padding: "6px 20px 12px", animationDelay: ".06s" }}>
         <div className="param">
-          <span className="pk"><b>大风扇目标</b><small>固定转速 · 当前模式 {fanRange.largeMin}–{fanRange.largeMax} RPM</small></span>
+          <span className="pk">
+            <b>大风扇目标{fan1IsCustom && <i className="fan-tag">自定义</i>}</b>
+            <small>固定转速 · 当前模式 {fanRange.largeMin}–{fanRange.largeMax} RPM · 模式默认 {fanDefaults.fanLargeRpmTarget}</small>
+          </span>
           <input type="range" className="slider fan-manual" min={fanRange.largeMin} max={fanRange.largeMax} step="100" value={fan1TargetRpm} disabled={curveActive}
-            onChange={e => { const v = Number(e.target.value); setFan1TargetRpm(v); setFanTarget(0, v); }} />
+            onChange={e => writeFanTarget(0, Number(e.target.value))} />
           <span className="pv">{fan1TargetRpm} <small>RPM</small></span>
         </div>
         <div className="param">
-          <span className="pk"><b>小风扇目标</b><small>固定转速 · 当前模式 {fanRange.smallMin}–{fanRange.smallMax} RPM</small></span>
+          <span className="pk">
+            <b>小风扇目标{fan2IsCustom && <i className="fan-tag">自定义</i>}</b>
+            <small>固定转速 · 当前模式 {fanRange.smallMin}–{fanRange.smallMax} RPM · 模式默认 {fanDefaults.fanSmallRpmTarget}</small>
+          </span>
           <input type="range" className="slider fan-manual" min={fanRange.smallMin} max={fanRange.smallMax} step="100" value={fan2TargetRpm} disabled={curveActive}
-            onChange={e => { const v = Number(e.target.value); setFan2TargetRpm(v); setFanTarget(1, v); }} />
+            onChange={e => writeFanTarget(1, Number(e.target.value))} />
           <span className="pv">{fan2TargetRpm} <small>RPM</small></span>
+        </div>
+        <div className="fan-manual-actions">
+          <button className="btn ghost" onClick={resetFanTargets} disabled={curveActive || !anyCustom}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/></svg>
+            恢复模式默认
+          </button>
+          <span className="fm-state">
+            {anyCustom
+              ? "当前为自定义固定转速，已持久化到当前配置，切换模式/重开应用后仍会保留"
+              : "当前为模式默认转速，由固件曲线控制"}
+          </span>
         </div>
         <div className="hint">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
