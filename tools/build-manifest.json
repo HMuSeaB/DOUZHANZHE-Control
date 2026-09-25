@@ -7,14 +7,16 @@
       "label": "API 后端",
       "method": [
         "ResolveListenPort",
-        "ResolveThermalKeyOrNull"
+        "ResolveThermalKeyOrNull",
+        "RejectUnknownMode"
       ],
       "literal": [
         "未知配置 id",
         "已拒绝写入（未落盘）",
         "保存失败：ProfileService 未接受 id",
         "session-",
-        "风扇转速未持久化，也未下发硬件"
+        "风扇转速未持久化，也未下发硬件",
+        "，未改动硬件也未持久化"
       ],
       "note": "session.token 仍会残留（InitToken 无端口时的 fallback 分支），属预期，不列入 mustNot。「未下发硬件」是 2026-09-25 修 /api/fan/set-target 顺序缺陷时新增的措辞，它同时证明校验点在下发之前"
     },

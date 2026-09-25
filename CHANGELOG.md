@@ -5,6 +5,29 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.8] — 2026-09-25
+
+同类缺陷排查：修完 `/api/fan/set-target` 后，发现其余调优端点全都有同一个毛病。
+
+### 🐛 修复
+
+- **11 个调优端点「被拒的请求仍会改硬件」**: `/api/control`、`/api/gpu/set`、`/api/smu/set`、
+  `/api/fan/restore`、nvapi 三项、cpu 四项 —— 它们的写法都是**先动硬件、后持久化，
+  且丢弃 `SavePerfOverrides` 的返回值**。于是传入未知配置 id 时硬件照样被改，值却没落盘：
+  用户当下看到设置生效，重启或切模式后又默默恢复默认（正是最初报的那个症状）。
+  现新增 `RejectUnknownMode` 前置守卫，在动硬件之前就拒绝未知 id 并返回 400。
+  传 `mode=null`（= 用当前模式）仍合法，不受影响。
+
+### 📋 说明
+
+- 前端传的一直是 `settings.mode`（`cfg-*` 这类有效配置 id），所以该改动对正常使用
+  **完全无副作用**；只在 mode id 无效时由「静默改硬件 + 静默丢失」变为「明确报 400」
+- 回归套件新增 `[8]`：11 个端点逐一验证拒绝未知 mode，并反向验证合法 mode 不被误拦
+- 顺带修好一个构建环境问题：`build-installer.ps1` 的 `dotnet clean -c Release` 会弄坏
+  `obj/project.assets.json`，后续 `dotnet build` 报 `NETSDK1060`；需先 `dotnet restore`
+  （且工具会话必须补齐 `ProgramFiles`/`APPDATA`/`LOCALAPPDATA` 等环境变量，
+  否则 restore 也会报隐晦的 `Value cannot be null (Parameter 'path1')`）
+
 ## [2.0.1-memory-fix.7] — 2026-09-25
 
 修掉两个"硬件写入路径"缺陷：被拒绝的请求照样改硬件、CPU 温度缺少上界校验。

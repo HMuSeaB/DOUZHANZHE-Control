@@ -212,6 +212,40 @@ if (KEEP) {
   }
 }
 
+// ── [8] 未知 mode 必须在动硬件之前就被拒绝 ──
+// 修完 /api/fan/set-target 后对其余调优端点做了同类排查，发现它们全是
+// 「先动硬件、后持久化，且丢弃 SavePerfOverrides 的返回值」：未知配置 id 时
+// 硬件照样被改、值却没落盘 —— 用户当下看到设置生效，重启/切模式后又恢复默认，
+// 正是最初报的那个症状。现统一由 RejectUnknownMode 在动硬件之前拦截。
+// 这些请求都返回 400，不会碰到硬件，可以放心跑。
+console.log("\n[8] 未知 mode 必须在动硬件之前被拒绝（RejectUnknownMode 守卫）");
+const GUARDED = [
+  ["/api/control",               { target: "kb_light", value: 1 }],
+  ["/api/gpu/set",               { action: "limit-max", value: 1500 }],
+  ["/api/smu/set",               { parameter: "stapm_limit", valueM: 25 }],
+  ["/api/fan/restore",           {}],
+  ["/api/nvapi/overclock",       { coreOffsetMhz: 100, memOffsetMhz: 0 }],
+  ["/api/nvapi/power-limit",     { powerW: 80 }],
+  ["/api/nvapi/thermal-limit",   { tempC: 85 }],
+  ["/api/cpu/freq-limit",        { mhz: 3000 }],
+  ["/api/cpu/turbo",             { enabled: true }],
+  ["/api/cpu/core-limit",        { percent: 100 }],
+  ["/api/cpu/reset",             {}],
+];
+let guardedOk = 0;
+for (const [ep, body] of GUARDED) {
+  const r = await call("POST", `${ep}?mode=__nonexistent__`, body);
+  if (r.status === 400) guardedOk++;
+  else console.log(`  ⚠ ${ep} 未被拦截 → ${r.status} ${r.text.slice(0, 80)}`);
+}
+check(`${GUARDED.length} 个调优端点都在动硬件前拒绝未知 mode`,
+  guardedOk === GUARDED.length, `${guardedOk}/${GUARDED.length} 个返回 400`);
+
+// 反向：合法 mode 不能被误拦 —— 应走到各端点自己的校验逻辑
+const okGpu = await call("POST", `/api/gpu/set?mode=${MODE}`, { action: "__bogus__" });
+check("合法 mode 不被误拦（gpu/set 应走到自己的 action 校验）",
+  /unknown action/.test(okGpu.text), `实际 ${okGpu.status} ${okGpu.text.slice(0, 80)}`);
+
 console.log(`\n${"─".repeat(56)}`);
 if (fails.length === 0) {
   console.log(`全部 PASS ✓  （${pass} 项）`);

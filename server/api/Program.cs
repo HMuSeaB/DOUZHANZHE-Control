@@ -273,6 +273,26 @@ bool SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
     }
 }
 
+// 与 /api/fan/set-target 同一类缺陷的通用前置校验。
+// 多数调优端点的写法是「先动硬件，后持久化」，且丢弃 SavePerfOverrides 的返回值 ——
+// 于是未知配置 id 时硬件照样被改，值却没落盘：用户当下看到设置生效，
+// 重启或切模式后又默默恢复默认（正是最初报的那个症状）。
+// 在动硬件之前先拒绝未知 id，语义就与 set-target 一致了。
+// 传 null（= 用当前模式）是合法的，不拦。
+IResult? RejectUnknownMode(string? mode)
+{
+    if (string.IsNullOrWhiteSpace(mode)) return null;
+    try
+    {
+        var svc = app.Services.GetRequiredService<ProfileService>();
+        if (svc.GetById(mode) != null) return null;
+    }
+    catch { return null; }
+    return Results.Json(
+        new { ok = false, error = $"未知配置 id: {mode}，未改动硬件也未持久化" },
+        statusCode: StatusCodes.Status400BadRequest);
+}
+
 // ---- 风扇转速写入辅助方法 (WMI + EC 寄存器直写) ----
 // 解出性能模式裸名（silent/office/beast/gaming）；无法判定时返回 null，
 // 调用方走宽松兜底区间 —— 宁可不钳位，也不要把未知配置错钳成 office。
@@ -1037,6 +1057,8 @@ app.MapPost("/api/control", (ControlRequest req, HardwareAbstractionLayer hal, W
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         Log($"[control] ← target={req.Target} value={req.Value}");
         switch (req.Target)
         {
@@ -1287,6 +1309,8 @@ app.MapPost("/api/smu/set", (SmuSetRequest req, HardwareDetector detector, strin
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         var platform = detector.Detect();
         Log($"[smu/set] ← {req.Parameter}={req.ValueM} (vendor={platform.Vendor})");
 
@@ -1455,6 +1479,8 @@ app.MapPost("/api/fan/restore", (WmiInterface wmi, string? mode = null) =>
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         wmi.SetFanManual(0, false);
         wmi.SetFanManual(1, false);
         // 清除持久化的风扇转速
@@ -1580,6 +1606,8 @@ app.MapPost("/api/gpu/set", (GpuController gpu, GpuSetRequest req, string? mode 
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         Log($"[gpu/set] ← action={req.Action}, value={req.Value ?? req.Max}, min={req.Min}");
         switch (req.Action)
         {
@@ -1711,6 +1739,8 @@ app.MapGet("/api/nvapi/dump-pstates", (NvapiGpuController nv) =>
 
 app.MapPost("/api/nvapi/overclock", (NvapiGpuController nv, NvapiOverclockRequest req, string? mode = null) =>
 {
+    var badMode = RejectUnknownMode(mode);
+    if (badMode != null) return badMode;
     Log($"[nvapi/overclock] ← core={req.CoreOffsetMhz}, mem={req.MemOffsetMhz}");
     if (!nv.IsAvailable) return Results.Json(new { ok = false, error = "NVAPI not available" });
     var rc = nv.SetP0Offset(req.CoreOffsetMhz, req.MemOffsetMhz);
@@ -1720,6 +1750,8 @@ app.MapPost("/api/nvapi/overclock", (NvapiGpuController nv, NvapiOverclockReques
 
 app.MapPost("/api/nvapi/power-limit", (NvapiGpuController nv, NvapiPowerLimitRequest req, string? mode = null) =>
 {
+    var badMode = RejectUnknownMode(mode);
+    if (badMode != null) return badMode;
     if (!nv.IsAvailable) return Results.Json(new { ok = false, error = "NVAPI not available" });
     var rc = nv.SetPowerLimit((uint)(req.PowerW * 1000)); // W → mW
     SavePerfOverrides(o => o.Nvapi.PowerLimitW = req.PowerW, mode);
@@ -1728,6 +1760,8 @@ app.MapPost("/api/nvapi/power-limit", (NvapiGpuController nv, NvapiPowerLimitReq
 
 app.MapPost("/api/nvapi/thermal-limit", (NvapiGpuController nv, NvapiThermalLimitRequest req, string? mode = null) =>
 {
+    var badMode = RejectUnknownMode(mode);
+    if (badMode != null) return badMode;
     Log($"[nvapi/thermal-limit] ← temp={req.TempC}°C");
     if (!nv.IsAvailable) return Results.Json(new { ok = false, error = "NVAPI not available" });
     var rc = nv.SetThermalLimit(req.TempC);
@@ -1758,6 +1792,8 @@ app.MapPost("/api/cpu/freq-limit", async (CpuPowerController cpu, CpuFreqLimitRe
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         Log($"[cpu/freq-limit] ← mhz={req.Mhz}");
         await cpu.SetFreqLimitAsync(req.Mhz);
         SavePerfOverrides(o => o.Cpu.FreqLimitMhz = req.Mhz, mode);
@@ -1774,6 +1810,8 @@ app.MapPost("/api/cpu/turbo", async (CpuPowerController cpu, CpuTurboRequest req
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         Log($"[cpu/turbo] ← enabled={req.Enabled}");
         await cpu.SetTurboAsync(req.Enabled);
         SavePerfOverrides(o => o.Cpu.TurboEnabled = req.Enabled, mode);
@@ -1790,6 +1828,8 @@ app.MapPost("/api/cpu/core-limit", async (CpuPowerController cpu, CpuCoreLimitRe
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         Log($"[cpu/core-limit] ← percent={req.Percent}");
         await cpu.SetCoreLimitAsync(req.Percent);
         SavePerfOverrides(o => o.Cpu.CoreLimitPercent = req.Percent, mode);
@@ -1806,6 +1846,8 @@ app.MapPost("/api/cpu/reset", async (CpuPowerController cpu, string? mode = null
 {
     try
     {
+        var badMode = RejectUnknownMode(mode);
+        if (badMode != null) return badMode;
         await cpu.ResetAllAsync();
         SavePerfOverrides(o => { o.Cpu = new CpuOverrides(); }, mode);
         return Results.Json(new { ok = true });
