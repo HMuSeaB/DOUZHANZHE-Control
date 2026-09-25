@@ -1363,19 +1363,32 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi, Hardwar
 {
     try
     {
-        Log($"[fan/set-target] ← large={req.LargeRpm} small={req.SmallRpm}");
-        ApplyFanSpeed(wmi, hal, req.LargeRpm, req.SmallRpm, mode);
-        // 持久化固定风扇转速，供睡眠恢复 + 启动恢复使用
+        Log($"[fan/set-target] ← large={req.LargeRpm} small={req.SmallRpm} mode={mode ?? "(当前)"}");
+
+        // 顺序很重要：**先校验并落盘，再下发硬件**。
+        // 旧实现顺序相反 —— 未知 mode id 虽然返回 400，但 ApplyFanSpeed 已经跑过了：
+        // 它用 FanRpmRange(null) 的兜底区间 (0,4400) 把值写进 EC，
+        // 结果「被拒的请求照样改了硬件，还绕过了模式钳位」。
+        // 另外这里用钳位后的值下发，保证硬件与落盘值完全一致（原先两处各自钳一次）。
+        var range = FanRpmRange(mode);
+        int? large = req.LargeRpm.HasValue ? Math.Clamp(req.LargeRpm.Value, range.LargeMin, range.LargeMax) : null;
+        int? small = req.SmallRpm.HasValue ? Math.Clamp(req.SmallRpm.Value, range.SmallMin, range.SmallMax) : null;
+
+        // 持久化固定风扇转速，供睡眠恢复 + 启动恢复使用；同时充当 mode id 的校验点
         var saved = SavePerfOverrides(o =>
         {
-            var range = FanRpmRange(mode);
-            if (req.LargeRpm.HasValue) o.Fan.LargeRpm = Math.Clamp(req.LargeRpm.Value, range.LargeMin, range.LargeMax);
-            if (req.SmallRpm.HasValue) o.Fan.SmallRpm = Math.Clamp(req.SmallRpm.Value, range.SmallMin, range.SmallMax);
+            if (large.HasValue) o.Fan.LargeRpm = large;
+            if (small.HasValue) o.Fan.SmallRpm = small;
         }, mode);
+
         // 不再无条件返回 ok:true —— 未知 mode id 时值根本没落盘，必须让前端知道。
+        // 此时硬件也**没有被改**（下发在下面）。
         if (!saved)
-            return Results.Json(new { ok = false, error = $"未知配置 id: {mode ?? "(当前模式)"}，风扇转速未持久化" },
+            return Results.Json(
+                new { ok = false, error = $"未知配置 id: {mode ?? "(当前模式)"}，风扇转速未持久化，也未下发硬件" },
                 statusCode: StatusCodes.Status400BadRequest);
+
+        ApplyFanSpeed(wmi, hal, large, small, mode);
         return Results.Json(new { ok = true });
     }
     catch (Exception ex)

@@ -34,7 +34,7 @@ node tools\probe-fan.js --no-switch         # 写入验证，跳过会重置调�
 |---|---|---|---|
 | `watch-applog.ps1` | 观察 | 实时 tail `app.log`，关键事件上色；`-Summary` 出统计与判定 | 零 |
 | `verify-build-strings.js` | 断言 | 检索构建产物里的方法名/字面量，确认改动被编进去 | 零 |
-| `regression-api.js` | 断言 | 5 项既有缺陷的回归测试，退出码非 0 即失败 | 改风扇设定（自动恢复） |
+| `regression-api.js` | 断言 | 7 项既有缺陷的回归测试（含 `[3b]` 被拒请求不写硬件），退出码非 0 即失败 | 改风扇设定（自动恢复） |
 | `probe-fan.js` | 诊断 | 探查/写入调速设定，看落盘、钳位、切换后是否丢失 | 写入时改风扇设定 |
 
 **`regression-api.js` vs `probe-fan.js` 的区别**：前者只报 PASS/FAIL 带退出码（放 CI），

@@ -145,21 +145,51 @@ public sealed class HardwareAbstractionLayer : IDisposable
 
     // CPU 温度诊断：首次失败时打印各路径返回值
     private static int _cpuTempDiagCount;
+    private static DateTime _lastCpuTempGarbageLogAt = DateTime.MinValue;
 
-    /// <summary>CPU 温度 (摄氏度) — EC IO 0x1C 优先，物理内存回退</summary>
+    // 温度合理性上界。笔记本 Tjmax 一般在 100°C 上下，超过 105°C 芯片就已接近/触发保护，
+    // 115°C 高于任何可能观测到的真实读数 —— 超过它只可能是 EC 脏读或寄存器串位
+    // （与风扇读数 25249 RPM 同源的风险）。
+    // 此前温度路径只判 `>0 && <128`，于是 100~127 的假值会被当作合法摄氏度直接放行；
+    // 而 RPM 路径早有物理上限守卫（ReadValidatedFanRpm）。这里对齐该做法。
+    private const byte CpuTempPlausibleMax = 115;
+    private const int CpuTempReadAttempts = 3;
+
+    private static void LogCpuTempGarbage(byte raw)
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _lastCpuTempGarbageLogAt).TotalSeconds < 30) return; // 250ms 轮询，节流 30s
+        _lastCpuTempGarbageLogAt = now;
+        AppLog.Write("CpuTemp", $"读数超出合理上界已丢弃: raw={raw}°C (上界 {CpuTempPlausibleMax}°C)");
+    }
+
+    /// <summary>CPU 温度 (摄氏度) — EC IO 0x1C；脏读丢弃并重试，全部无效时返回 0</summary>
     public byte CpuTemperature
     {
         get
         {
-            // 1) EC IO 端口读 0x1C（v2.0 走 PawnIO LpcACPIEC.bin）
-            byte ecIo = 0;
-            try { ecIo = _io.ReadEc(0x1C); }
-            catch { /* ignore */ }
-            if (ecIo > 0 && ecIo < 128) return ecIo;
+            for (int i = 0; i < CpuTempReadAttempts; i++)
+            {
+                // EC IO 端口读 0x1C（v2.0 走 PawnIO LpcACPIEC.bin）
+                byte ecIo = 0;
+                try { ecIo = _io.ReadEc(0x1C); }
+                catch { /* ignore */ }
 
-            // 首次或每 100 次失败打印诊断
+                if (ecIo > 0 && ecIo <= CpuTempPlausibleMax) return ecIo;
+
+                if (ecIo > CpuTempPlausibleMax)
+                {
+                    LogCpuTempGarbage(ecIo);
+                    continue;   // 脏读 → 重试
+                }
+
+                // ecIo == 0：EC 忙 / 未就绪 → 重试
+            }
+
+            // 连续多次都拿不到有效值：节流打印诊断（返回 0 表示无效，
+            // 上层 TelemetryBackgroundService 会用 Last Known Good 兜底）
             if (++_cpuTempDiagCount == 1 || _cpuTempDiagCount % 100 == 0)
-                AppLog.Write("CpuTemp", $"EC_IO(0x1C)=0x{ecIo:X2} (第{_cpuTempDiagCount}次)");
+                AppLog.Write("CpuTemp", $"EC_IO(0x1C) 连续 {CpuTempReadAttempts} 次无效 (第{_cpuTempDiagCount}次)");
 
             return 0;
         }
