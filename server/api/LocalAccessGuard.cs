@@ -31,13 +31,19 @@ public static class LocalAccessGuard
     /// <summary>
     /// 每次启动生成新的会话令牌并落盘。浏览器同源请求不需要它；
     /// 它只用于放行本机命令行工具/脚本这类不带浏览器来源标记的客户端。
+    ///
+    /// 文件名带监听端口：安装版(3100) 与开发实例(3101) 共用同一个
+    /// %LOCALAPPDATA%\Douzhanzhe Console 目录，若都写 session.token，
+    /// 后启动者会覆盖先启动者的文件；而校验用的是各进程内存里的令牌，
+    /// 于是先启动的实例会对所有「带令牌」的请求一律 403。
+    /// 按端口隔离后两个实例互不干扰。
     /// </summary>
-    public static void InitToken(string dir)
+    public static void InitToken(string dir, int? port = null)
     {
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
         _tokenBytes = Encoding.UTF8.GetBytes(token);
-        TokenPath = Path.Combine(dir, "session.token");
+        TokenPath = Path.Combine(dir, port is > 0 ? $"session-{port}.token" : "session.token");
         try
         {
             Directory.CreateDirectory(dir);

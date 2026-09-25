@@ -500,7 +500,10 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                 {
                     try
                     {
-                        var resp = await http.GetAsync("http://127.0.0.1:3100/");
+                        // 探活统一走 /api/health（该端点已豁免同源守卫，Shell 不带令牌也能过）。
+                        // 之前这里探的是 "/"，只要 API 还在吐 SPA 就算「重启成功」，
+                        // 于是即便后端从未挂过也会打印「后端重启成功」误导排查。
+                        var resp = await http.GetAsync("http://127.0.0.1:3100/api/health");
                         if (resp.IsSuccessStatusCode)
                         {
                             ShellLog($"后端重启成功 ({i + 1}s)，刷新 WebView2");

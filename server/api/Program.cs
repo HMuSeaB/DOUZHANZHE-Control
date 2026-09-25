@@ -31,7 +31,30 @@ var _appDataDir = Path.Combine(
     "Douzhanzhe Console");
 var _logDir = Path.Combine(_appDataDir, "logs");
 AppLog.Init(_logDir);
-LocalAccessGuard.InitToken(_appDataDir);
+
+// 解析监听端口，用于给会话令牌文件加端口后缀（安装版 3100 与开发实例 3101 共用同一目录，
+// 同名文件会互相覆盖，导致先启动的实例对所有带令牌请求 403）。解析失败则回退旧文件名。
+int? ResolveListenPort(string[] argv)
+{
+    string? raw = null;
+    foreach (var a in argv)
+    {
+        if (a.StartsWith("--urls=", StringComparison.OrdinalIgnoreCase))
+        {
+            raw = a.Substring("--urls=".Length);
+            break;
+        }
+    }
+    raw ??= Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    if (string.IsNullOrWhiteSpace(raw)) return null;
+    foreach (var part in raw.Split(';', StringSplitOptions.RemoveEmptyEntries))
+    {
+        if (Uri.TryCreate(part.Trim(), UriKind.Absolute, out var uri) && uri.Port > 0)
+            return uri.Port;
+    }
+    return null;
+}
+LocalAccessGuard.InitToken(_appDataDir, ResolveListenPort(args));
 
 // 提升进程与主线程优先级，确保在游戏满载时遥测采样与风扇控制仍能及时响应
 var proc = Process.GetCurrentProcess();
@@ -82,12 +105,20 @@ app.Use(async (ctx, next) =>
     var path = ctx.Request.Path;
     if (path.StartsWithSegments("/api") || path.StartsWithSegments("/ws"))
     {
-        if (!LocalAccessGuard.IsAllowed(ctx, _devMode, out var denyReason))
+        // /api/health 是 Shell 看门狗的探活端点，只回 {ok, timestamp}，不含任何硬件数据，
+        // 因此豁免来源校验：Shell 用的是原生 HttpClient，既不带 Origin/Sec-Fetch-Site，
+        // 也不带会话令牌，不豁免就会被拒成 403 → Shell 误判「后端已死」并每 ~16s 刷一次
+        // 「重启后端」（实测 app.log 里已 2386 次，且后端其实一直活着）。
+        var isLivenessProbe = path.Equals("/api/health", StringComparison.OrdinalIgnoreCase);
+        if (!isLivenessProbe)
         {
-            AppLog.Write("Guard", $"拒绝 {ctx.Request.Method} {path} — {denyReason}");
-            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "请求来源不被信任" });
-            return;
+            if (!LocalAccessGuard.IsAllowed(ctx, _devMode, out var denyReason))
+            {
+                AppLog.Write("Guard", $"拒绝 {ctx.Request.Method} {path} — {denyReason}");
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "请求来源不被信任" });
+                return;
+            }
         }
     }
     await next();
@@ -205,18 +236,40 @@ PerformanceOverrides ProfileLoadOverrides(string cfgId)
     catch { return new PerformanceOverrides(); }
 }
 
-void SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
+bool SavePerfOverrides(Action<PerformanceOverrides> mutate, string? mode = null)
 {
     lock (_perfLock)
     {
         var id = mode ?? CurrentMode();
         var svc = app.Services.GetRequiredService<ProfileService>();
-        var o = svc.GetById(id)?.Overrides ?? new PerformanceOverrides();
+        var entry = svc.GetById(id);
+        if (entry == null)
+        {
+            // 旧实现：GetById 返回 null 时新建一个空 PerformanceOverrides 再交给 SaveOverrides，
+            // 而后者内部查 index 找不到该 id 会直接 return false 不落盘 ——
+            // 但这里照样打「✓ saved」并让接口返回 ok:true，前端会误以为存上了。
+            // 未知配置 id 必须显式失败，由调用方决定是否转成 4xx。
+            Log($"[overrides] ✗ 未知配置 id '{id}'，已拒绝写入（未落盘）");
+            return false;
+        }
+        var o = entry.Value.Overrides ?? new PerformanceOverrides();
         mutate(o);
         // 单一存储：内置/用户统一写 ProfileService（profiles/），不再写 overrides-*.json
-        try { svc.SaveOverrides(id, o); }
-        catch (Exception ex) { Log($"[overrides] save failed: {ex.Message}"); }
+        try
+        {
+            if (!svc.SaveOverrides(id, o))
+            {
+                Log($"[overrides] ✗ 保存失败：ProfileService 未接受 id '{id}'");
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"[overrides] save failed: {ex.Message}");
+            return false;
+        }
         Log($"[overrides] ✓ saved → config '{id}'");
+        return true;
     }
 }
 
@@ -1313,12 +1366,16 @@ app.MapPost("/api/fan/set-target", (FanSetRequest req, WmiInterface wmi, Hardwar
         Log($"[fan/set-target] ← large={req.LargeRpm} small={req.SmallRpm}");
         ApplyFanSpeed(wmi, hal, req.LargeRpm, req.SmallRpm, mode);
         // 持久化固定风扇转速，供睡眠恢复 + 启动恢复使用
-        SavePerfOverrides(o =>
+        var saved = SavePerfOverrides(o =>
         {
             var range = FanRpmRange(mode);
             if (req.LargeRpm.HasValue) o.Fan.LargeRpm = Math.Clamp(req.LargeRpm.Value, range.LargeMin, range.LargeMax);
             if (req.SmallRpm.HasValue) o.Fan.SmallRpm = Math.Clamp(req.SmallRpm.Value, range.SmallMin, range.SmallMax);
         }, mode);
+        // 不再无条件返回 ok:true —— 未知 mode id 时值根本没落盘，必须让前端知道。
+        if (!saved)
+            return Results.Json(new { ok = false, error = $"未知配置 id: {mode ?? "(当前模式)"}，风扇转速未持久化" },
+                statusCode: StatusCodes.Status400BadRequest);
         return Results.Json(new { ok = true });
     }
     catch (Exception ex)
