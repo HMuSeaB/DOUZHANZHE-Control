@@ -62,6 +62,50 @@ var
   NeedDotNet: Boolean;
   NeedAspNetCore: Boolean;
   NeedWebView2: Boolean;
+  AutoStartPresetDone: Boolean;
+
+// ----------------------------------------------------------
+// 升级时保留「开机自动启动」的既有选择
+// ----------------------------------------------------------
+// 坑（2026-09-26 实际踩到）：autostart 这个 Task 没写 checked 标志 → 向导里默认【不勾】。
+// 而 CurStepChanged(ssPostInstall) 的「未勾选」分支会无条件
+//   schtasks /Delete /TN "DouzhanzheControl" /F   且把 auto-start-opts.json 写成 enabled:false
+// → 于是【每次覆盖安装都静默关掉自启】，用户表现为「这次开机没自启」。
+// 修法：进到「选择附加任务」页时读一下现有配置，勾选状态跟着既有状态走。
+// 注意 wpSelectDir 在 wpSelectTasks 之前，所以此处 {app} 已解析为（默认沿用的）原安装目录。
+function ExistingAutoStartEnabled(): Boolean;
+var
+  CfgPath: String;
+  Raw: AnsiString;
+  Content: String;
+begin
+  Result := False;
+  CfgPath := ExpandConstant('{app}\config\auto-start-opts.json');
+  if FileExists(CfgPath) then
+  begin
+    // 注意：本版本 Inno 的 LoadStringFromFile 第二参数是 AnsiString（按字节读）
+    if LoadStringFromFile(CfgPath, Raw) then
+    begin
+      Content := String(Raw);
+      // 容错：去掉空格再匹配，避免写入方格式不同（如 ": " 带空格）导致漏判
+      StringChangeEx(Content, ' ', '', True);
+      Result := Pos('"enabled":true', Content) > 0;
+    end;
+  end;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpSelectTasks) and (not AutoStartPresetDone) then
+  begin
+    AutoStartPresetDone := True;
+    // 只在「原本启用」时主动勾上；原本是关的就什么都不做
+    //（该 Task 没有 checked 标志，默认本就不勾，不需要显式取消。
+    //  另注：本版本 Inno 没有 WizardDeselectTasks。）
+    if ExistingAutoStartEnabled() then
+      WizardSelectTasks('autostart');
+  end;
+end;
 
 function IsDotNet8DesktopInstalled(): Boolean;
 var
