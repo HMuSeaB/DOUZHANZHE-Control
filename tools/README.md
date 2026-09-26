@@ -72,6 +72,7 @@ node tools\probe-fan.js --no-switch         # 写入验证，跳过会重置调�
 
 | 脚本 | 作用 |
 |---|---|
+| `tools/check-dll-versions.ps1` | 列出目录里各程序集的 `AssemblyVersion`；给 `-ComparePath` 则报出两个目录间的版本漂移 |
 | `tools/soak-monitor.ps1` | 长时间采样进程内存/句柄，配 MemoryViewer 用 |
 | `tools/start-test-api.ps1` | 单独起 API 做测试 |
 | `tools/install-pawnio.ps1` | 装 PawnIO 驱动 |
@@ -178,6 +179,29 @@ git status --short --branch        # 应显示 ## <branch>...<remote>/<branch> [
 但文件内容没变（同批次的另一处小改动却正常落盘）。
 **凡是改了文件，都要用 `grep`/回读确认内容真的在**，再写提交信息 —— 否则提交信息会描述
 一些并不存在改动。
+
+### 12. 合并发布时，Shell 的程序集会覆盖 API 的 —— 版本不一致就炸
+
+`build-installer.ps1` 的 `[5/6]` 把 Shell 的输出合并进 `dist/publish/api`，两者同目录出货。
+**同名程序集只有一个能留下**。若两个 csproj 引用了同一包的不同版本，低版本可能覆盖高版本。
+
+2026-09-26 实际踩到：`Douzhanzhe.API.csproj` 要 `TaskScheduler 2.12.2`（程序集 2.12.2.0），
+`Douzhanzhe.Shell.csproj` 是 `2.11.0`（2.11.0.0），合并后装机目录只带 **2.11.0.0**。
+API 启动时按 2.12.2.0 请求 → `FileNotFoundException` → `POST /api/auto-start` 返回 **500**
+（`TaskService` 的类型解析失败发生在 **JIT 期**，异常**逃出方法内的 try/catch**，直接冒到全局处理器）。
+
+**⚠️ 不能用文件大小判断程序集版本。** `"2.11.0.0"` 与 `"2.12.2.0"` 等长，
+改版本号**不改变文件大小** —— 实测两者都是 334848 字节（我因此误判过一轮）。
+必须读 `AssemblyName`，用 `tools/check-dll-versions.ps1`。
+
+**排查与验证套路**：
+1. `.\tools\check-dll-versions.ps1 -Path "<装机目录>" -ComparePath "dist\publish\api"` 揪漂移。
+2. 要证明"某版本能加载、某版本不能"，建一个引用目标版本的最小控制台程序，
+   把输出目录里的 DLL 换成低版本再跑 —— 低版本会报与线上日志**逐字一致**的
+   `Could not load file or assembly ... Version=X.Y.Z.0`。这是零副作用的 A/B 证据
+   （比去动真机接口安全得多：`POST /api/auto-start` 会**改写用户的计划任务**，别拿来测）。
+3. `System.*` 这类**共享框架自带**的程序集，漂移通常无害（运行时从框架解析、忽略本地副本）。
+   要盯的是**第三方 NuGet 包**。实测 EventLog 有 10.0.0.0 vs 8.0.0.0 漂移但零报错。
 
 ---
 

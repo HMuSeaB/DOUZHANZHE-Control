@@ -96,6 +96,7 @@ node tools\probe-fan.js --readonly                            # 探查当前设�
 | `tools/verify-build-strings.js` | 检索构建产物里的方法名(UTF-8)/字面量(UTF-16LE)，确认改动真编进去了 |
 | `tools/regression-api.js` | 9 组断言式回归测试（`[1]`–`[8]`，含 `[3b]` 被拒请求不写硬件、`[8]` 11 端点前置守卫），退出码非 0 即失败 |
 | `tools/probe-fan.js` | 调速设定探查/写入，验证落盘、模式钳位、切换后不丢失 |
+| `tools/check-dll-versions.ps1` | 列出/对比目录里程序集的 `AssemblyVersion`，抓合并发布时的版本漂移 |
 | `tools/soak-monitor.ps1` | 长时采样进程内存/句柄 |
 | `tools/gen-build-info.ps1` | 生成 `build-info.json` |
 

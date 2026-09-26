@@ -5,6 +5,30 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.0.1-memory-fix.9] — 2026-09-26
+
+修一个自 2026-06-08 就存在的打包缺陷：**设置页的「开机自动启动」开关一直返回 500**。
+
+### 🐛 修复
+
+- **TaskScheduler 程序集版本冲突**: `Douzhanzhe.API.csproj` 引用 `TaskScheduler 2.12.2`
+  （程序集版本 2.12.2.0），而 `Douzhanzhe.Shell.csproj` 引用的是 `2.11.0`（2.11.0.0）。
+  打包时 Shell 的输出被合并进 `dist/publish/api`，**Shell 的 2.11.0 DLL 覆盖了 API 需要的
+  2.12.2**，安装包因此只带 2.11.0.0。API 启动时按 2.12.2.0 请求该程序集 → 加载失败。
+  现把 Shell 的引用对齐到 `2.12.2`。
+
+### 📋 症状与影响
+
+- `POST /api/auto-start` 返回 **HTTP 500** → 设置页里切换「开机自动启动」会失败。
+  注意返回的不是代码里那个 `catch → { ok:false }`：`TaskService` 的**类型解析失败发生在
+  JIT 编译期**，异常在进入方法内的 try 之前就抛出了，直接冒到全局异常处理器。
+- `GET /api/auto-start` 表面正常（只读缓存立即返回），但它那个「后台查计划任务校验缓存」
+  的任务同样永远失败，缓存值不会被纠正。
+- 日志里 `[TaskScheduler] UnobservedTaskException: Could not load file or assembly
+  'Microsoft.Win32.TaskScheduler, Version=2.12.2.0'` 自 2026-09-25 起累计出现数十次。
+- **开机自启功能本身没坏** —— 计划任务由**安装器的 `schtasks` 通道**创建，不走 API，
+  所以这个问题一直没暴露出来。
+
 ## [2.0.1-memory-fix.8] — 2026-09-25
 
 同类缺陷排查：修完 `/api/fan/set-target` 后，发现其余调优端点全都有同一个毛病。
