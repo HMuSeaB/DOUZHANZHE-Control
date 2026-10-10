@@ -206,8 +206,18 @@ export default function PlatformControl() {
 
       <div className="section-title">EC 信息<span className="tag">只读</span><span className="line"></span></div>
       <div className="card reveal enter" style={{ padding: 0, animationDelay: ".06s" }}>
-        <div className="row-line"><span className="rk"><b>CPU 传感器原始值</b><small>EC 0x1C 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>{platformInfo.ecCpuTemp != null ? platformInfo.ecCpuTemp : "—"}</span></div>
-        <div className="row-line"><span className="rk"><b>GPU 传感器原始值</b><small>EC 0xE0 直读 · 未校准</small></span><span className="pv" style={{ width: "auto" }}>{platformInfo.ecGpuTemp != null ? platformInfo.ecGpuTemp : "—"}</span></div>
+        <div className="row-line">
+          <span className="rk"><b>CPU 传感器原始值</b><small>EC 0x1C 直读 · 实时</small></span>
+          <span className="pv" style={{ width: "auto" }}>
+            {(telemetry?.cpuTemp ?? platformInfo.ecCpuTemp) != null ? `${telemetry?.cpuTemp ?? platformInfo.ecCpuTemp} °C` : "—"}
+          </span>
+        </div>
+        <div className="row-line">
+          <span className="rk"><b>GPU 传感器原始值</b><small>NVIDIA 驱动直读 · 实时</small></span>
+          <span className="pv" style={{ width: "auto" }}>
+            {(telemetry?.gpuTemp ?? platformInfo.ecGpuTemp) != null ? `${telemetry?.gpuTemp ?? platformInfo.ecGpuTemp} °C` : "—"}
+          </span>
+        </div>
       </div>
       </div>
     </section>
