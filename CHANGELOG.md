@@ -5,6 +5,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.1.0] — 2026-10-10
+
+正式脱离 `memory-fix` 预发布补丁序列，跃迁为 2.1.0 正式发布版。汇总多轮魔改优化、传感器联动、状态缓存与 CI/CD 流程完善。
+
+### 🚀 特性与优化
+
+- **系统面板零开销秒开**: 优化 `SystemInfoPanel` 硬件数据缓存策略。已有本地完整缓存时挂载不发起任何网络请求，彻底消除切换 Tab 时在后台反复调起 PowerShell 跑 WMI 带来的 CPU 瞬时占用与卡顿；仅在用户点击刷新按钮时强制更新。
+- **平台控制页传感器动态联动**: `PlatformControl` 修复 CPU / GPU 传感器原始值始终定格不跳动的缺陷，联动实时遥测数据流并呈现摄氏度单位；纠正 GPU 传感器数据源文案为真实 NVIDIA 驱动直读。
+- **支持 SemVer 完整版本检查更新**: 修复后端 `/api/update/check` 遇预发布或连字符版本号时 `Version.TryParse` 失败导致更新检测瘫痪的问题，新增健壮的 SemVer 版本判定。
+
+### 🛠️ 工程与 CI/CD
+
+- **ESLint 静态检查修复**: 为 `tools/` 自动化运维脚本配置 `globals.node` 并清理死变量，使 `pnpm run lint` 恢复 0 错误通过。
+- **CI 打包流水线加固**: 优化 `.github/workflows/build.yml` 与 `build-installer.ps1`，移除可能损坏字符编码的无效正则替换，预建安装包目录，并在 CI 运行环境下自动跳过本地 Git 提交推送脚本 `sync-repos.ps1`。
+- **开发手册校准**: 剔除已废弃的 `npm run dev` 描述，统一为标准的 `.\start-dev.ps1` 与 `pnpm` 操作体系。
+
 ## [2.0.1-memory-fix.9] — 2026-09-26
 
 修一个自 2026-06-08 就存在的打包缺陷：**设置页的「开机自动启动」开关一直返回 500**。
