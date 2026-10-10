@@ -2681,11 +2681,40 @@ app.MapGet("/api/update/check", async () =>
             }
         }
 
-        var isNewer = false;
-        if (Version.TryParse(latestVersion, out var latest) &&
-            Version.TryParse(CurrentVersion, out var current))
+        static bool TryParseSemVer(string raw, out Version ver, out string prerelease)
         {
-            isNewer = latest > current;
+            ver = new Version(0, 0);
+            prerelease = "";
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+            raw = raw.Trim().TrimStart('v', 'V');
+            var parts = raw.Split('-', 2);
+            var numPart = parts[0];
+            prerelease = parts.Length > 1 ? parts[1] : "";
+            if (!numPart.Contains('.')) numPart += ".0.0";
+            else if (numPart.IndexOf('.') == numPart.LastIndexOf('.')) numPart += ".0";
+            return Version.TryParse(numPart, out ver!);
+        }
+
+        var isNewer = false;
+        if (TryParseSemVer(latestVersion, out var latest, out var latestPre) &&
+            TryParseSemVer(CurrentVersion, out var current, out var currentPre))
+        {
+            if (latest > current)
+            {
+                isNewer = true;
+            }
+            else if (latest == current)
+            {
+                // 主版本相同时，正式版高于预发布版（例如 2.0.1 > 2.0.1-memory-fix.9）
+                if (string.IsNullOrEmpty(latestPre) && !string.IsNullOrEmpty(currentPre))
+                {
+                    isNewer = true;
+                }
+                else if (!string.IsNullOrEmpty(latestPre) && !string.IsNullOrEmpty(currentPre))
+                {
+                    isNewer = string.Compare(latestPre, currentPre, StringComparison.OrdinalIgnoreCase) > 0;
+                }
+            }
         }
 
         return Results.Json(new
