@@ -544,10 +544,11 @@ public sealed class FanCurveService : IDisposable
 
     public (int largeRpm, int smallRpm) LookupTarget(int temp)
     {
-        if (Points.Count == 0) return (1900, 1700);
+        var pts = Points;
+        if (pts == null || pts.Count == 0) return (1900, 1700);
 
-        var target = Points[0];
-        foreach (var p in Points.OrderBy(x => x.Temp))
+        var target = pts[0];
+        foreach (var p in pts)
         {
             if (temp >= p.Temp) target = p;
         }

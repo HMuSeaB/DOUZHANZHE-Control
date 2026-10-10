@@ -212,8 +212,12 @@ public sealed class HardwareAbstractionLayer : IDisposable
                     UseShellExecute = false,
                     CreateNoWindow = true,
                 };
-                using var proc = Process.Start(psi)!;
-                proc.WaitForExit(3000);
+                using var proc = Process.Start(psi);
+                if (proc == null || !proc.WaitForExit(1500))
+                {
+                    try { proc?.Kill(); } catch { }
+                    return _lastGpuTemp > 0 ? _lastGpuTemp : (byte)0;
+                }
                 var line = proc.StandardOutput.ReadToEnd().Trim();
                 if (byte.TryParse(line, out var temp) && temp > 0)
                 {
@@ -224,7 +228,7 @@ public sealed class HardwareAbstractionLayer : IDisposable
             }
             catch { /* nvidia-smi 不可用 */ }
 
-            return 0;
+            return _lastGpuTemp > 0 ? _lastGpuTemp : (byte)0;
         }
     }
 

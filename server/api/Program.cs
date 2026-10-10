@@ -2316,7 +2316,7 @@ Directory.CreateDirectory(Path.GetDirectoryName(autoStartOptsPath)!);
 
 void WriteAutoStartOpts(bool enabled, bool minimized)
 {
-    File.WriteAllText(autoStartOptsPath, JsonSerializer.Serialize(new { enabled, minimized }));
+    JsonWrite("auto-start-opts.json", new { enabled, minimized });
 }
 
 app.MapGet("/api/auto-start-opts", () =>
