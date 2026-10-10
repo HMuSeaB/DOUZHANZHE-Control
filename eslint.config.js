@@ -43,4 +43,13 @@ export default defineConfig([
       },
     },
   },
+  // 自动化与运维脚本：运行在 Node.js 环境
+  {
+    files: ['tools/**/*.{js,mjs,cjs}'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 ])

@@ -81,6 +81,7 @@ const call = async (method, ep, body) => {
 // 直接打 API 时看到的是嵌套名 —— 这里别搞混。
 const fanOf = (r) => r?.json?.overrides?.fan ?? null;
 const largeOf = (r) => fanOf(r)?.largeRpm ?? null;
+// eslint-disable-next-line no-unused-vars
 const smallOf = (r) => fanOf(r)?.smallRpm ?? null;
 const brief = (r) => `[${r.status}] ${JSON.stringify(r.json ?? r.text.slice(0, 140))}`;
 let failures = 0;

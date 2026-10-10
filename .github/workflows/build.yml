@@ -86,17 +86,12 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
-      - name: 适配配置并运行打包构建
+      - name: 运行打包构建
         shell: pwsh
         run: |
-          $issFile = "installer/douzhanzhe-setup.iss"
-          if (Test-Path $issFile) {
-              $issContent = Get-Content $issFile -Raw
-              $issContent = $issContent -replace 'd:\\DOUZHANZHE-Control', $pwd.Path
-              [System.IO.File]::WriteAllText((Resolve-Path $issFile).Path, $issContent, (New-Object System.Text.UTF8Encoding($false)))
-          }
           New-Item -ItemType Directory -Force -Path "server/api/wwwroot"
           New-Item -ItemType Directory -Force -Path "server/api/bin/build/wwwroot"
+          New-Item -ItemType Directory -Force -Path "dist/installer"
           cd installer
           $ISCC_Path = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           .\build-installer.ps1 -ISCC $ISCC_Path

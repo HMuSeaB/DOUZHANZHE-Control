@@ -1,4 +1,4 @@
-﻿# deploy.ps1 - 一键构建前端并同步到 C# 后端所有 wwwroot 目录
+# deploy.ps1 - 一键构建前端并同步到 C# 后端所有 wwwroot 目录
 # 用法: .\deploy.ps1          (构建 + 部署)
 #       .\deploy.ps1 -SkipBuild  (仅部署，跳过构建)
 
@@ -111,10 +111,14 @@ Write-Host ""
 Write-Host "Remember to restart the C# backend if it's running." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "[4/4] Syncing repositories..." -ForegroundColor Cyan
-$SyncScript = Join-Path $Root "sync-repos.ps1"
-if (Test-Path $SyncScript) {
-    powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
-    Write-Host "[4/4] Repositories synced." -ForegroundColor Green
+if ($env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true') {
+    Write-Host "  CI 环境检测到，跳过仓库同步 (sync-repos.ps1)" -ForegroundColor DarkGray
 } else {
-    Write-Warning "sync-repos.ps1 not found, skipping repository sync."
+    $SyncScript = Join-Path $Root "sync-repos.ps1"
+    if (Test-Path $SyncScript) {
+        powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
+        Write-Host "[4/4] Repositories synced." -ForegroundColor Green
+    } else {
+        Write-Warning "sync-repos.ps1 not found, skipping repository sync."
+    }
 }

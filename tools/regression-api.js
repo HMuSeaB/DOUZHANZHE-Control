@@ -168,7 +168,7 @@ try {
 console.log(`\n[4] 模式钳位必须生效（写 ${LARGE}，应被钳到该模式上限）`);
 const expectLarge = RANGES[bare(MODE)]?.large?.[1];
 await call("POST", "/api/overrides/clear", { mode: MODE, fields: ["fanLargeRpmTarget", "fanSmallRpmTarget"] });
-const w4 = await call("POST", `/api/fan/set-target?mode=${MODE}`, { largeRpm: LARGE });
+await call("POST", `/api/fan/set-target?mode=${MODE}`, { largeRpm: LARGE });
 const ov4 = await call("GET", "/api/overrides");
 const got4 = largeOf(ov4);
 if (expectLarge == null) {

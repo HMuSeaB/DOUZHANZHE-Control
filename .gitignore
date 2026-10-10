@@ -184,3 +184,6 @@ full-debug-log.txt
 # Local AI-tool docs and editor config
 .antigravity_docs/
 .cursorignore
+
+# ZCode 会话纪要（wbmux 生成；含对话内容，不进版本库）
+会话纪要.md

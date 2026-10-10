@@ -1,4 +1,4 @@
-﻿# build-installer.ps1 - 一键构建 + 打包安装程序
+# build-installer.ps1 - 一键构建 + 打包安装程序
 # 用法: .\build-installer.ps1 [-Version "1.3.0"]
 #
 # 前置要求:
@@ -284,10 +284,14 @@ Write-Host "========================================" -ForegroundColor Green
 
 # 同步仓库
 Write-Host "[6.5/6] Syncing repositories..." -ForegroundColor Cyan
-$SyncScript = Join-Path $Root "sync-repos.ps1"
-if (Test-Path $SyncScript) {
-    powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
-    Write-Host "[6.5/6] Repositories synced." -ForegroundColor Green
+if ($env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true') {
+    Write-Host "  CI 环境检测到，跳过仓库同步 (sync-repos.ps1)" -ForegroundColor DarkGray
 } else {
-    Write-Warning "sync-repos.ps1 not found, skipping repository sync."
+    $SyncScript = Join-Path $Root "sync-repos.ps1"
+    if (Test-Path $SyncScript) {
+        powershell -NoProfile -ExecutionPolicy Bypass -File $SyncScript
+        Write-Host "[6.5/6] Repositories synced." -ForegroundColor Green
+    } else {
+        Write-Warning "sync-repos.ps1 not found, skipping repository sync."
+    }
 }
