@@ -66,7 +66,7 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
   const [loading, setLoading] = useState(!info || !ext);
   const [offline, setOffline] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isUserRefresh = false) => {
     setLoading(true);
     try {
       const [r1, r2] = await Promise.all([
@@ -78,14 +78,26 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
       setOffline(!r1 && !r2);
     } finally {
       setLoading(false);
-      onRefreshDoneRef.current?.();
+      if (isUserRefresh) {
+        onRefreshDoneRef.current?.();
+      }
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // 首次挂载：仅在本地缓存不完整时拉取数据；已有缓存则直接秒开，避免切换 Tab 时反复调起后端 PowerShell
   useEffect(() => {
-    if (trigger === 0) return;
-    fetchData();
+    if (!info || !ext) {
+      fetchData(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 用户点击外部“刷新”按钮时强制刷新
+  const lastTriggerRef = useRef(trigger);
+  useEffect(() => {
+    if (trigger > 0 && trigger !== lastTriggerRef.current) {
+      lastTriggerRef.current = trigger;
+      fetchData(true);
+    }
   }, [trigger, fetchData]);
 
   const i = info || {};
