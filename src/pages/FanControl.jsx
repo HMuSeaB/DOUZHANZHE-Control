@@ -20,6 +20,8 @@ export default function FanControl() {
   const { telemetry, settings, overrides, profiles, saveOverride, clearOverride } = useControlState();
   const [curveActive, setCurveActive] = useState(false);
   const [routeInfo, setRouteInfo] = useState(null);
+  const [turboActive, setTurboActive] = useState(false);
+  const [turboLoading, setTurboLoading] = useState(false);
 
   // 风扇区间/默认按「性能模式」取，配置 id 先解包成性能模式裸名
   const perfMode = resolvePerfMode(settings.mode, profiles);
@@ -47,16 +49,35 @@ export default function FanControl() {
     let disposed = false;
     const refresh = async () => {
       try {
-        const [status, route] = await Promise.all([fetchFanCurveStatus(), fetchRouteInfo()]);
+        const [status, route, turboRes] = await Promise.all([
+          fetchFanCurveStatus(),
+          fetchRouteInfo(),
+          fetch("/api/fan/turbo").then(r => r.json()).catch(() => null)
+        ]);
         if (disposed) return;
         if (status?.ok) setCurveActive(status.active);
         setRouteInfo(route);
+        if (turboRes?.ok) setTurboActive(turboRes.enabled);
       } catch { /* backend offline */ }
     };
     refresh();
     const timer = setInterval(refresh, 2000);
     return () => { disposed = true; clearInterval(timer); };
   }, []);
+
+  const toggleTurbo = async () => {
+    setTurboLoading(true);
+    try {
+      const res = await fetch("/api/fan/turbo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !turboActive })
+      });
+      const data = await res.json();
+      if (data.ok) setTurboActive(data.enabled);
+    } catch { /* ignore */ }
+    finally { setTurboLoading(false); }
+  };
 
   // 每个风扇一条尾随防抖：拖动时 store 立即更新（UI 跟随），硬件写入合并成一次
   const writeTimers = useRef([null, null]);
@@ -110,6 +131,38 @@ export default function FanControl() {
           </span>
         </div>
       )}
+
+      {/* 一键强冷 */}
+      <div className={`card reveal enter ${turboActive ? "turbo-active" : ""}`} style={{
+        padding: "12px 18px",
+        marginBottom: "14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        border: turboActive ? "1px solid rgba(0, 229, 255, 0.4)" : undefined,
+        background: turboActive ? "rgba(0, 229, 255, 0.05)" : undefined,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ fontSize: "22px", color: turboActive ? "#00e5ff" : "#8b949e" }}>⚡</div>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+              一键强冷 (Turbo Fan)
+              {turboActive && <span style={{ fontSize: "11px", background: "rgba(0,229,255,0.2)", color: "#00e5ff", padding: "1px 6px", borderRadius: "4px" }}>满负荷运行中</span>}
+            </div>
+            <div style={{ fontSize: "12px", color: "#8b949e", marginTop: "2px" }}>
+              {turboActive ? "双风扇已锁定在最大物理极速 (4400 / 8200 RPM)，暂停自动温控" : "一键将 CPU/GPU 双风扇拉至最大极限转速；支持全局热键 Ctrl+Shift+F"}
+            </div>
+          </div>
+        </div>
+        <button
+          className={`btn ${turboActive ? "danger" : "primary"}`}
+          onClick={toggleTurbo}
+          disabled={turboLoading}
+          style={{ minWidth: "105px", fontWeight: 600 }}
+        >
+          {turboLoading ? "切换中..." : turboActive ? "退出强冷" : "⚡ 开启强冷"}
+        </button>
+      </div>
 
       {/* 实时监控 */}
       <div className="section-title">实时监控<span className="line"></span></div>

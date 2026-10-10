@@ -605,6 +605,8 @@ const HOTKEY_LABELS = {
   "mode-beast": "野兽模式",
   "mode-silent": "安静模式",
   "mode-gaming": "斗战模式",
+  "fan-turbo": "一键强冷",
+  "overlay-toggle": "状态悬浮窗",
 };
 
 const CODE_LABELS = (() => {
@@ -762,7 +764,12 @@ function HotkeyRow({ id, config, globalEnabled, toast, recordingId, setRecording
 
   return (
     <div className={"shortcut-row" + (globalEnabled ? "" : " disabled")}>
-      <span className="rk"><b>{HOTKEY_LABELS[id] || id}</b><small>{id === "monitor-off" ? "一键关闭显示器" : "切换到对应性能配置"}</small></span>
+      <span className="rk"><b>{HOTKEY_LABELS[id] || id}</b><small>{
+        id === "monitor-off" ? "一键关闭显示器" :
+        id === "fan-turbo" ? "一键拉满双风扇极限转速" :
+        id === "overlay-toggle" ? "呼出/隐藏桌面硬件状态悬浮窗" :
+        "切换到对应性能配置"
+      }</small></span>
       <span className="keys">{formatHotkey(modifiers, key)}</span>
       {conflict && <span className="hk-conflict" title="与其他快捷键冲突，可能无法注册">冲突</span>}
       <button className="rec-btn" onClick={handleRecord} disabled={!globalEnabled}>{ICONS.edit}录制</button>

@@ -65,6 +65,22 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
   });
   const [loading, setLoading] = useState(!info || !ext);
   const [offline, setOffline] = useState(false);
+  const [diag, setDiag] = useState(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+
+  const fetchDiag = useCallback(async () => {
+    setDiagLoading(true);
+    try {
+      const res = await fetch("/api/diagnostics/health");
+      const data = await res.json();
+      if (data.ok) setDiag(data);
+    } catch { /* offline */ }
+    finally { setDiagLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchDiag();
+  }, [fetchDiag]);
 
   const fetchData = useCallback(async (isUserRefresh = false) => {
     setLoading(true);
@@ -247,6 +263,72 @@ export default function SystemInfoPanel({ trigger, onRefreshDone }) {
           retrying={loading}
         />
       )}
+
+      {/* 硬件与驱动通道健康自检 */}
+      <div className="card reveal enter" style={{ padding: "14px 20px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "16px" }}>🩺</span>
+            <b style={{ fontSize: "14px" }}>底层驱动与硬件通道健康诊断</b>
+            {diag && (
+              <span style={{
+                fontSize: "11px",
+                padding: "2px 8px",
+                borderRadius: "4px",
+                background: diag.healthy ? "rgba(126, 231, 135, 0.15)" : "rgba(248, 81, 73, 0.15)",
+                color: diag.healthy ? "#7ee787" : "#f85149",
+                border: `1px solid ${diag.healthy ? "rgba(126, 231, 135, 0.3)" : "rgba(248, 81, 73, 0.3)"}`,
+              }}>
+                {diag.healthy ? "通道全绿 · 健康" : "存在异常通道"}
+              </span>
+            )}
+          </div>
+          <button className="btn ghost" onClick={fetchDiag} disabled={diagLoading} style={{ padding: "4px 10px", fontSize: "12px" }}>
+            {diagLoading ? "诊断中..." : "重新自检"}
+          </button>
+        </div>
+
+        {diag?.items ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
+            {diag.items.map((item) => {
+              const isPass = item.status === "pass";
+              const isWarn = item.status === "warn";
+              const color = isPass ? "#7ee787" : isWarn ? "#e3b341" : "#f85149";
+              return (
+                <div key={item.key} style={{
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(255, 255, 255, 0.06)",
+                  borderRadius: "6px",
+                  padding: "10px 12px",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 600 }}>{item.name}</span>
+                    <span style={{
+                      display: "inline-block",
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: color,
+                      boxShadow: `0 0 6px ${color}`,
+                    }} />
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#8b949e", marginBottom: "2px" }}>
+                    {item.detail}
+                  </div>
+                  {item.latencyMs > 0 && (
+                    <div style={{ fontSize: "10px", color: "#6e7681" }}>
+                      往返时延: {item.latencyMs} ms
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ fontSize: "12px", color: "#8b949e" }}>正在探查硬件总线通道状态...</div>
+        )}
+      </div>
+
       <div className="spec-grid">
         {cards.map((card, idx) => (
           <div key={card.id} className="card spec-card reveal enter" style={{ animationDelay: `${0.02 + idx * 0.03}s` }}>
