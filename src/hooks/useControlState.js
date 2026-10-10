@@ -135,7 +135,13 @@ function maybeStop() {
   _bootstrapDone = false;
   if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
   if (_mockTimer) { clearInterval(_mockTimer); _mockTimer = null; }
-  if (_ws) { try { _ws.close(); } catch { /* 关闭可能抛错则忽略 */ } _ws = null; }
+  if (_ws) {
+    try {
+      _ws.onclose = null;
+      _ws.close();
+    } catch { /* 关闭可能抛错则忽略 */ }
+    _ws = null;
+  }
   if (_switchTimeout) { clearTimeout(_switchTimeout); _switchTimeout = null; }
   // 清空到初始状态：生产（App 常驻订阅）不会走到这里；测试期间提供干净隔离
   listeners.clear();
@@ -280,6 +286,7 @@ function connectSocket() {
     );
     _ws.onclose = () => {
       setState(prev => ({ ...prev, backendOnline: false }));
+      if (!initialized) return;
       if (_reconnectTimer) clearTimeout(_reconnectTimer);
       _reconnectTimer = setTimeout(connect, 3000);
     };
