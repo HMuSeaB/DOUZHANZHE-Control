@@ -5,21 +5,48 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
-## [2.1.0] — 2026-10-10
+## [2.1.0] — 2026-10-11
 
-正式脱离 `memory-fix` 预发布补丁序列，跃迁为 2.1.0 正式发布版。汇总多轮魔改优化、传感器联动、状态缓存与 CI/CD 流程完善。
+正式脱离 `memory-fix` 预发布补丁序列，跃迁为 2.1.0 正式发布版。汇总深度重构优化、一键强冷、桌面硬件悬浮窗、硬件诊断自检、传感器动态联动与 CI/CD 自动化流水线。
 
-### 🚀 特性与优化
+### 🚀 重磅特性与功能增强
 
-- **系统面板零开销秒开**: 优化 `SystemInfoPanel` 硬件数据缓存策略。已有本地完整缓存时挂载不发起任何网络请求，彻底消除切换 Tab 时在后台反复调起 PowerShell 跑 WMI 带来的 CPU 瞬时占用与卡顿；仅在用户点击刷新按钮时强制更新。
-- **平台控制页传感器动态联动**: `PlatformControl` 修复 CPU / GPU 传感器原始值始终定格不跳动的缺陷，联动实时遥测数据流并呈现摄氏度单位；纠正 GPU 传感器数据源文案为真实 NVIDIA 驱动直读。
-- **支持 SemVer 完整版本检查更新**: 修复后端 `/api/update/check` 遇预发布或连字符版本号时 `Version.TryParse` 失败导致更新检测瘫痪的问题，新增健壮的 SemVer 版本判定。
+- **⚡ 全局一键强冷 (Turbo Fan)**:
+  - 后端提供 `/api/fan/turbo` 接口，一键拉满双风扇极限物理安全转速（大风扇 4400 RPM，小风扇 8200 RPM）；
+  - `ParameterGuard` 周期性持续守护强冷状态，防止 EC 固件超时回退；退出时无缝恢复当前模式设定；
+  - `FanCurveService` 智能感知强冷状态，运行强冷时自动挂起曲线降速调节，退出后无缝恢复温控；
+  - 屏幕底部联动青色高光 OSD 提示（`⚡ 强冷模式已开启` / `强冷模式已退出`）；
+  - 支持全局热键 `Ctrl+Shift+F`（映射 `fan:turbo`），Windows 托盘右键菜单增加“`⚡ 一键强冷切换`”；
+  - 风扇控制页顶部增加高能态控制卡片与实时满载徽标。
+- **📊 硬件状态轻量悬浮窗 (Mini Overlay)**:
+  - Shell 原生内置置顶 (`TopMost`)、无任务栏图标、半透明暗黑科技风监视窗；
+  - 实时呈现 CPU 温度/功耗、GPU 温度/功耗、双风扇实时 RPM、当前性能模式及强冷状态；
+  - 鼠标左键拖拽自由摆放，自动记忆坐标至 `overlay-state.json`；双击快速隐藏；
+  - 支持全局热键 `Ctrl+Shift+O`（`overlay:toggle`）随时呼出/隐藏，托盘菜单支持一键切换。
+- **🩺 底层驱动与硬件通道健康诊断 (Diagnostics Panel)**:
+  - 后端新增 `/api/diagnostics/health` 端点，对 PawnIO 内核驱动、EC 0x66/0x62 端口通信延迟、WMI ACPI 固件接口、NVIDIA NVAPI 驱动通道、管理员特权等级进行端到端实时自检；
+  - 系统信息面板增加高质感自检卡片，直观呈现各通道微光状态指示灯、通信往返延迟与详细健康结论，支持一键重新自检。
+- **🍃 风扇曲线多点线性插值算法平滑**:
+  - `FanCurveService` 彻底告别阶跃查表，升级为相邻控制点间的线性插值（Linear Interpolation）算法；转速随温度平滑过渡，消除了阶跃突变带来的“风扇突然抽风啸叫”。
+- **系统面板零开销秒开**:
+  - 优化 `SystemInfoPanel` 硬件数据缓存策略。已有本地完整缓存时挂载不发起任何网络请求，彻底消除切换 Tab 时在后台反复调起 PowerShell 跑 WMI 带来的 CPU 瞬时占用与卡顿；仅在用户点击刷新按钮时强制更新。
+- **平台控制页传感器动态联动**:
+  - `PlatformControl` 修复 CPU / GPU 传感器原始值始终定格不跳动的缺陷，联动实时遥测数据流并呈现摄氏度单位；纠正 GPU 传感器数据源文案为真实 NVIDIA 驱动直读。
+- **支持 SemVer 完整版本检查更新**:
+  - 修复后端 `/api/update/check` 遇预发布或连字符版本号时 `Version.TryParse` 失败导致更新检测瘫痪的问题，新增健壮的 SemVer 版本判定。
+
+### 🛡️ 鲁棒性与并发安全修复
+
+- **HAL 进程挂起与死锁消除**: 修复 `HardwareAbstractionLayer.GpuTemperature` 在 `nvidia-smi` 进程超时后未 Kill 并调用 ReadToEnd 导致的潜在读取死锁。
+- **WebSocket 内存泄漏防护**: 修复 `useControlState.js` 卸载时 `_ws.close()` 触发异步 `onclose` 导致的 3 秒重连死循环。
+- **配置写入原子锁闭环**: 修复 `WriteAutoStartOpts` 绕过原子锁裸写配置的问题，统一纳入 `JsonWrite` 安全管控。
+- **风扇曲线并发安全**: 修复 `FanCurveService.LookupTarget` 缺乏快照保护与冗余排序优化。
 
 ### 🛠️ 工程与 CI/CD
 
 - **ESLint 静态检查修复**: 为 `tools/` 自动化运维脚本配置 `globals.node` 并清理死变量，使 `pnpm run lint` 恢复 0 错误通过。
 - **CI 打包流水线加固**: 优化 `.github/workflows/build.yml` 与 `build-installer.ps1`，移除可能损坏字符编码的无效正则替换，预建安装包目录，并在 CI 运行环境下自动跳过本地 Git 提交推送脚本 `sync-repos.ps1`。
-- **开发手册校准**: 剔除已废弃的 `npm run dev` 描述，统一为标准的 `.\start-dev.ps1` 与 `pnpm` 操作体系。
+- **开发手册校准**: 统一为标准的 `.\start-dev.ps1` 与 `pnpm` 操作体系。
 
 ## [2.0.1-memory-fix.9] — 2026-09-26
 
