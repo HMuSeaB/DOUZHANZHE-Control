@@ -65,6 +65,7 @@ public sealed class FanCurveService : IDisposable
     public bool Active => _active;
     public int IntervalMs => _intervalMs;
     public int HysteresisC => _hysteresisC;
+    public volatile bool TurboActive;
 
     /// <summary>
     /// 睡眠恢复后调用：重置内部状态，让下一个 Tick 强制重新下发 ITSM 和风扇转速
@@ -320,6 +321,8 @@ public sealed class FanCurveService : IDisposable
         if (!Monitor.TryEnter(_tickLock)) return;
         try
         {
+            if (TurboActive) return; // 强冷模式激活中，暂停曲线调节以保持最高转速
+
             int cpuTemp = _hal.CpuTemperature;
             int gpuTemp = _hal.GpuTemperature;
             int hotspot = Math.Max(cpuTemp, gpuTemp);
@@ -540,19 +543,31 @@ public sealed class FanCurveService : IDisposable
     }
 
     // ── 曲线查找 ──
-    // 找到 <= 当前温度的最高曲线点；若温度低于所有点，使用第一个点
+    // 相邻控制点之间采用线性插值平滑过渡；低于下限用首点，高于上限用末点
 
     public (int largeRpm, int smallRpm) LookupTarget(int temp)
     {
         var pts = Points;
         if (pts == null || pts.Count == 0) return (1900, 1700);
+        if (pts.Count == 1) return (pts[0].LargeRpm, pts[0].SmallRpm);
 
-        var target = pts[0];
-        foreach (var p in pts)
+        if (temp <= pts[0].Temp) return (pts[0].LargeRpm, pts[0].SmallRpm);
+        if (temp >= pts[^1].Temp) return (pts[^1].LargeRpm, pts[^1].SmallRpm);
+
+        for (int i = 0; i < pts.Count - 1; i++)
         {
-            if (temp >= p.Temp) target = p;
+            var p1 = pts[i];
+            var p2 = pts[i + 1];
+            if (temp >= p1.Temp && temp <= p2.Temp)
+            {
+                if (p2.Temp == p1.Temp) return (p1.LargeRpm, p1.SmallRpm);
+                double ratio = (double)(temp - p1.Temp) / (p2.Temp - p1.Temp);
+                int large = (int)Math.Round(p1.LargeRpm + ratio * (p2.LargeRpm - p1.LargeRpm));
+                int small = (int)Math.Round(p1.SmallRpm + ratio * (p2.SmallRpm - p1.SmallRpm));
+                return (large, small);
+            }
         }
-        return (target.LargeRpm, target.SmallRpm);
+        return (pts[^1].LargeRpm, pts[^1].SmallRpm);
     }
 
     // ── 配置管理 ──

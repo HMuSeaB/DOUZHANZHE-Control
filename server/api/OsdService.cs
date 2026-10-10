@@ -35,6 +35,8 @@ public sealed class OsdService : IDisposable
         ("office", "均衡模式", Color.FromArgb(33, 150, 243)),
         ("beast",  "野兽模式", Color.FromArgb(255, 152, 0)),
         ("gaming", "斗战模式", Color.FromArgb(244, 67, 54)),
+        ("turbo-on",  "⚡ 强冷模式已开启", Color.FromArgb(0, 229, 255)),
+        ("turbo-off", "强冷模式已退出",   Color.FromArgb(170, 170, 170)),
     };
 
     // ── 状态 ─────────────────────────────────────────────

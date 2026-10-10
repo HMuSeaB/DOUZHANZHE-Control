@@ -1,4 +1,4 @@
-﻿using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Web.WebView2.Core;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -47,6 +47,8 @@ public partial class Form1 : Form
         ("mode-beast",  "野兽模式", "ctrl,shift", "2",   "mode:beast"),
         ("mode-silent", "安静模式", "ctrl,shift", "3",   "mode:silent"),
         ("mode-gaming", "斗战模式", "ctrl,shift", "4",   "mode:gaming"),
+        ("fan-turbo",   "一键强冷", "ctrl,shift", "F",   "fan:turbo"),
+        ("overlay-toggle", "状态悬浮窗", "ctrl,shift", "O", "overlay:toggle"),
     ];
 
     // config id → 实际动作（mode:xxx 或 monitor-off），注册与 WndProc 共用
@@ -165,6 +167,10 @@ public partial class Form1 : Form
         // 托盘图标
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("显示主窗口", null, (s, e) => ShowWindow());
+        _trayMenu.Items.Add(new ToolStripSeparator());
+        _trayMenu.Items.Add("⚡ 一键强冷切换", null, (s, e) => ToggleTurboFan());
+        _trayMenu.Items.Add("📊 桌面状态悬浮窗", null, (s, e) => ToggleMiniOverlay());
+        _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add("退出", null, (s, e) => ExitApp());
 
         _trayIcon = new NotifyIcon
@@ -792,6 +798,14 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                         if (!ok) ShellLog($"[Hotkey] 模式切换请求失败: {mode}");
                     });
                 }
+                else if (action == "fan:turbo" || action == "fan-turbo")
+                {
+                    ToggleTurboFan();
+                }
+                else if (action == "overlay:toggle" || action == "overlay-toggle")
+                {
+                    BeginInvoke(ToggleMiniOverlay);
+                }
             }
         }
         const int WM_SETTINGCHANGE = 0x001A;
@@ -838,9 +852,39 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             _notifyWatcher?.Dispose();
             _trayIcon?.Dispose();
             _trayMenu?.Dispose();
+            _overlayForm?.Dispose();
             _webView?.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    // ---- 悬浮窗与强冷辅助 ----
+    private MiniOverlayForm? _overlayForm;
+
+    private void ToggleMiniOverlay()
+    {
+        if (_overlayForm == null || _overlayForm.IsDisposed)
+        {
+            _overlayForm = new MiniOverlayForm(SharedConfigDir());
+        }
+        if (_overlayForm.Visible)
+        {
+            _overlayForm.Hide();
+        }
+        else
+        {
+            _overlayForm.Show();
+            _overlayForm.BringToFront();
+        }
+    }
+
+    private void ToggleTurboFan()
+    {
+        Task.Run(async () =>
+        {
+            var ok = await PostApiAsync("/api/fan/turbo", "{}");
+            if (!ok) ShellLog("[Hotkey] 强冷切换请求失败");
+        });
     }
 
     // ---- 热键管理 ----

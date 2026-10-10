@@ -98,6 +98,7 @@ var _devMode = app.Environment.IsDevelopment();
 var osdService = app.Services.GetRequiredService<OsdService>();
 var hal = app.Services.GetRequiredService<HardwareAbstractionLayer>();
 var wmi = app.Services.GetRequiredService<WmiInterface>();
+bool _isTurboFan = false;
 
 // ---- 本机同源守卫（前端与 API 同源，无需 CORS）----
 app.Use(async (ctx, next) =>
@@ -675,9 +676,16 @@ _ = System.Threading.Tasks.Task.Run(async () =>
 
                 await RestoreComputeSettings("ParameterGuard");
 
-                // 风扇固定转速守护: 仅在自定义曲线未运行时守护手动 RPM，防止 EC 漂移
+                // 风扇固定转速守护: 强冷激活时守护拉满，或在曲线未运行时守护手动设定
                 var fanGuardActive = false;
-                if (!fanCurveSvc.Active)
+                if (_isTurboFan)
+                {
+                    var wmiGuard = app.Services.GetRequiredService<WmiInterface>();
+                    var halGuard = app.Services.GetRequiredService<HardwareAbstractionLayer>();
+                    ApplyFanSpeed(wmiGuard, halGuard, 4400, 8200, "gaming");
+                    fanGuardActive = true;
+                }
+                else if (!fanCurveSvc.Active)
                 {
                     var o = LoadPerfOverrides();
                     if (o.Fan.LargeRpm.HasValue || o.Fan.SmallRpm.HasValue)
@@ -1506,6 +1514,158 @@ app.MapGet("/api/fan/status", (WmiInterface wmi) =>
     {
         return Results.Json(new { ok = false, error = ex.Message });
     }
+});
+
+// ---- Turbo Fan (一键强冷) ----
+void SetTurboFan(bool enabled, WmiInterface wmi, HardwareAbstractionLayer hal, OsdService osd, FanCurveService fanCurveSvc)
+{
+    _isTurboFan = enabled;
+    fanCurveSvc.TurboActive = enabled;
+    if (enabled)
+    {
+        // 强冷模式拉满双风扇（大扇 4400，小扇 8200）
+        wmi.SetFanManual(0, true);
+        wmi.SetFanSpeed(0, 44);
+        hal.WriteEcPort(0x5E, 44);
+
+        wmi.SetFanManual(1, true);
+        wmi.SetFanSpeed(1, 82);
+        hal.WriteEcPort(0x5A, 82);
+
+        AppLog.Write("FanTurbo", "⚡ 强冷模式开启：大扇4400 / 小扇8200 RPM拉满");
+        try { osd.Show("turbo-on"); } catch { }
+    }
+    else
+    {
+        AppLog.Write("FanTurbo", "强冷模式关闭：恢复模式温控");
+        if (fanCurveSvc.Active)
+        {
+            fanCurveSvc.RecoverAfterSleep();
+        }
+        else
+        {
+            var o = LoadPerfOverrides();
+            if (o.Fan.LargeRpm.HasValue || o.Fan.SmallRpm.HasValue)
+            {
+                ApplyFanSpeed(wmi, hal, o.Fan.LargeRpm, o.Fan.SmallRpm, CurrentMode());
+            }
+            else
+            {
+                wmi.SetFanManual(0, false);
+                wmi.SetFanManual(1, false);
+            }
+        }
+        try { osd.Show("turbo-off"); } catch { }
+    }
+}
+
+app.MapGet("/api/fan/turbo", () => Results.Json(new { ok = true, enabled = _isTurboFan, largeRpm = 4400, smallRpm = 8200 }));
+app.MapPost("/api/fan/turbo", (FanTurboRequest? req, WmiInterface wmi, HardwareAbstractionLayer hal, OsdService osd, FanCurveService fanCurveSvc) =>
+{
+    try
+    {
+        bool next = req?.Enabled ?? !_isTurboFan;
+        SetTurboFan(next, wmi, hal, osd, fanCurveSvc);
+        return Results.Json(new { ok = true, enabled = _isTurboFan });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, error = ex.Message });
+    }
+});
+
+// ---- 硬件与驱动通道健康自检 ----
+app.MapGet("/api/diagnostics/health", (HardwareAbstractionLayer hal, WmiInterface wmi, NvapiGpuController nvapi) =>
+{
+    var sw = new Stopwatch();
+    var items = new List<object>();
+
+    // 1. PawnIO 驱动
+    sw.Restart();
+    var pawnStatus = PawnIoDetection.GetStatus();
+    sw.Stop();
+    bool pawnOk = pawnStatus.Status == PawnIoDetection.DriverStatus.Ready && DriverBridge.Instance.Ready;
+    items.Add(new
+    {
+        key = "pawnio",
+        name = "PawnIO 内核驱动",
+        status = pawnOk ? "pass" : "fail",
+        latencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2),
+        detail = pawnStatus.Detail ?? (pawnOk ? "驱动与 LpcACPIEC 设备节点就绪" : "驱动未加载或不可用")
+    });
+
+    // 2. EC 总线通信
+    sw.Restart();
+    int cpuTemp = hal.CpuTemperature;
+    sw.Stop();
+    bool ecOk = cpuTemp > 0 && cpuTemp <= 115;
+    items.Add(new
+    {
+        key = "ec",
+        name = "EC 嵌入式控制器",
+        status = ecOk ? "pass" : "warn",
+        latencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2),
+        detail = ecOk ? $"0x66/0x62 端口通信正常 (当前 CPU {cpuTemp}°C)" : $"读数异常或延迟偏高 (返回 {cpuTemp}°C)"
+    });
+
+    // 3. WMI ACPI 接口
+    sw.Restart();
+    bool wmiAvailable = wmi.Available;
+    int thermalMode = -1;
+    if (wmiAvailable)
+    {
+        try { thermalMode = wmi.GetThermalMode(); } catch { }
+    }
+    sw.Stop();
+    bool wmiOk = wmiAvailable && thermalMode >= 0;
+    items.Add(new
+    {
+        key = "wmi",
+        name = "WMI ACPI 固件接口",
+        status = wmiOk ? "pass" : "fail",
+        latencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2),
+        detail = wmiOk ? $"BIOS WMI 通信正常 (ThermalMode={thermalMode})" : "WMI 接口不可用或被拒绝"
+    });
+
+    // 4. NVAPI 显卡控制通道
+    sw.Restart();
+    bool nvapiOk = nvapi.IsAvailable;
+    int gpuTemp = hal.GpuTemperature;
+    sw.Stop();
+    items.Add(new
+    {
+        key = "nvapi",
+        name = "NVIDIA NVAPI 驱动通道",
+        status = nvapiOk ? "pass" : "warn",
+        latencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2),
+        detail = nvapiOk ? $"{nvapi.GpuName} (当前 {gpuTemp}°C)" : "独显休眠或 NVAPI 初始化失败"
+    });
+
+    // 5. 特权与权限
+    bool isElevated = false;
+    try
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        isElevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+    catch { }
+    items.Add(new
+    {
+        key = "privilege",
+        name = "API 运行特权等级",
+        status = isElevated ? "pass" : "warn",
+        latencyMs = 0.0,
+        detail = isElevated ? "以管理员权限运行 (UAC Elevated)" : "普通权限运行 (部分底层寄存器可能受限)"
+    });
+
+    bool allHealthy = pawnOk && ecOk && wmiOk;
+    return Results.Json(new
+    {
+        ok = true,
+        healthy = allHealthy,
+        timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+        items
+    });
 });
 
 // ---- Fan Curve (自定义散热曲线) ----
@@ -3303,6 +3463,7 @@ public record HotkeyConfigRequest(
     [property: JsonPropertyName("modifiers")] string? Modifiers,
     [property: JsonPropertyName("key")] string? Key
 );
+public record FanTurboRequest([property: JsonPropertyName("enabled")] bool? Enabled);
 
 // ---- 系统级 P/Invoke ----
 public static class NativeMethods
