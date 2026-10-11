@@ -122,7 +122,10 @@ public class TelemetryBackgroundService : BackgroundService
         {
             try
             {
-                await Task.Delay(250, ct);
+                bool hasClients;
+                lock (_clientLock) { hasClients = _clients.Count > 0; }
+                int delayMs = hasClients ? 250 : 2000; // 无前台连接时自动降频至 2s，减轻 EC 总线开销
+                await Task.Delay(delayMs, ct);
 
                 // ── 读取遥测 ──
                 var cpuTemp = _hal.CpuTemperature;

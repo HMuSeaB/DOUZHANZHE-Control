@@ -676,13 +676,14 @@ _ = System.Threading.Tasks.Task.Run(async () =>
 
                 await RestoreComputeSettings("ParameterGuard");
 
-                // 风扇固定转速守护: 强冷激活时守护拉满，或在曲线未运行时守护手动设定
+                // 风扇固定转速守护: 强冷激活时守护安全上限，或在曲线未运行时守护手动设定
                 var fanGuardActive = false;
                 if (_isTurboFan)
                 {
                     var wmiGuard = app.Services.GetRequiredService<WmiInterface>();
                     var halGuard = app.Services.GetRequiredService<HardwareAbstractionLayer>();
-                    ApplyFanSpeed(wmiGuard, halGuard, 4400, 8200, "gaming");
+                    var curRange = FanRpmRange(CurrentMode());
+                    ApplyFanSpeed(wmiGuard, halGuard, Math.Clamp(3000, curRange.LargeMin, curRange.LargeMax), curRange.SmallMax, CurrentMode());
                     fanGuardActive = true;
                 }
                 else if (!fanCurveSvc.Active)
@@ -1523,16 +1524,23 @@ void SetTurboFan(bool enabled, WmiInterface wmi, HardwareAbstractionLayer hal, O
     fanCurveSvc.TurboActive = enabled;
     if (enabled)
     {
-        // 强冷模式拉满双风扇（大扇 4400，小扇 8200）
+        // 强冷模式：自然收敛到该机型当前模式下的安全物理上限，避免 EC 识别越界拒收
+        // 大风扇物理极限 ~3000 RPM (EC 30)，小风扇取模式上限 (office 6900 / beast 7200 RPM)
+        var range = FanRpmRange(CurrentMode());
+        int targetLarge = Math.Clamp(3000, range.LargeMin, range.LargeMax);
+        int targetSmall = range.SmallMax;
+        byte speedLarge = (byte)(targetLarge / 100);
+        byte speedSmall = (byte)(targetSmall / 100);
+
         wmi.SetFanManual(0, true);
-        wmi.SetFanSpeed(0, 44);
-        hal.WriteEcPort(0x5E, 44);
+        wmi.SetFanSpeed(0, speedLarge);
+        hal.WriteEcPort(0x5E, speedLarge);
 
         wmi.SetFanManual(1, true);
-        wmi.SetFanSpeed(1, 82);
-        hal.WriteEcPort(0x5A, 82);
+        wmi.SetFanSpeed(1, speedSmall);
+        hal.WriteEcPort(0x5A, speedSmall);
 
-        AppLog.Write("FanTurbo", "⚡ 强冷模式开启：大扇4400 / 小扇8200 RPM拉满");
+        AppLog.Write("FanTurbo", $"⚡ 强冷模式开启：大扇{targetLarge} / 小扇{targetSmall} RPM安全拉满");
         try { osd.Show("turbo-on"); } catch { }
     }
     else
@@ -1559,7 +1567,17 @@ void SetTurboFan(bool enabled, WmiInterface wmi, HardwareAbstractionLayer hal, O
     }
 }
 
-app.MapGet("/api/fan/turbo", () => Results.Json(new { ok = true, enabled = _isTurboFan, largeRpm = 4400, smallRpm = 8200 }));
+app.MapGet("/api/fan/turbo", () =>
+{
+    var range = FanRpmRange(CurrentMode());
+    return Results.Json(new
+    {
+        ok = true,
+        enabled = _isTurboFan,
+        largeRpm = Math.Clamp(3000, range.LargeMin, range.LargeMax),
+        smallRpm = range.SmallMax
+    });
+});
 app.MapPost("/api/fan/turbo", (FanTurboRequest? req, WmiInterface wmi, HardwareAbstractionLayer hal, OsdService osd, FanCurveService fanCurveSvc) =>
 {
     try
@@ -3366,7 +3384,29 @@ app.MapPost("/api/profiles/{id}/thermal-mode", async (string id, HttpContext ctx
 // ---- SPA fallback (必须在所有 API 路由之后) ----
 app.MapFallbackToFile("index.html");
 
-// ---- Start server ----
+// ---- Start server & 硬件退出保护 ----
+void CleanupHardwareOnExit()
+{
+    try
+    {
+        var wmiClean = app.Services.GetRequiredService<WmiInterface>();
+        if (wmiClean.Available)
+        {
+            wmiClean.SetFanManual(0, false);
+            wmiClean.SetFanManual(1, false);
+        }
+        var fanCurveClean = app.Services.GetRequiredService<FanCurveService>();
+        fanCurveClean.RestoreFirmwareControl();
+        AppLog.Write("Exit", "已退出手动风扇接管，控制权已完全归还主板 EC 固件");
+    }
+    catch (Exception ex)
+    {
+        AppLog.Write("Exit", $"退出清理异常: {ex.Message}");
+    }
+}
+AppDomain.CurrentDomain.ProcessExit += (_, _) => CleanupHardwareOnExit();
+app.Lifetime.ApplicationStopping.Register(CleanupHardwareOnExit);
+
 try
 {
     Log("Starting server");
@@ -3377,6 +3417,10 @@ catch (Exception ex)
     Log($"[FATAL] Server failed to start: {ex.GetType().Name}: {ex.Message}");
     Log($"  StackTrace: {ex.StackTrace}");
     throw;
+}
+finally
+{
+    CleanupHardwareOnExit();
 }
 public record WmiCmdRequest(int Method, int? Value);
 public record GpuSetRequest(
