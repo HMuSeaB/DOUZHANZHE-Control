@@ -127,7 +127,9 @@ public sealed class MiniOverlayForm : Form
         {
             try
             {
-                var resp = await _http.GetAsync($"{baseUrl}/api/telemetry");
+                using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/telemetry");
+                req.Headers.Add("Origin", baseUrl);
+                var resp = await _http.SendAsync(req);
                 if (resp.IsSuccessStatusCode)
                 {
                     var stream = await resp.Content.ReadAsStreamAsync();
@@ -152,7 +154,9 @@ public sealed class MiniOverlayForm : Form
         {
             try
             {
-                var tResp = await _http.GetAsync($"{baseUrl}/api/fan/turbo");
+                using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/fan/turbo");
+                req.Headers.Add("Origin", baseUrl);
+                var tResp = await _http.SendAsync(req);
                 if (tResp.IsSuccessStatusCode)
                 {
                     var stream = await tResp.Content.ReadAsStreamAsync();

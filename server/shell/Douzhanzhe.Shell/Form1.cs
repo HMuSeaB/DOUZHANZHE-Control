@@ -414,7 +414,9 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            http.PostAsync("http://127.0.0.1:3100/api/shutdown", null).Wait(5000);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:3100/api/shutdown");
+            req.Headers.Add("Origin", "http://127.0.0.1:3100");
+            http.SendAsync(req).Wait(3000);
         }
         catch { }
 
@@ -826,8 +828,10 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
             try
             {
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var resp = await http.PostAsync(baseUrl + path, content);
+                using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl + path);
+                req.Headers.Add("Origin", baseUrl);
+                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                var resp = await http.SendAsync(req);
                 if (resp.IsSuccessStatusCode) return true;
             }
             catch { /* try next */ }

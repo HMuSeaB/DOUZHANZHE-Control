@@ -34,8 +34,7 @@ public sealed class FanCurveService : IDisposable
     private int _lastLargeTarget;     // 上次写入的大扇目标 (RPM/100 单位)
     private int _lastSmallTarget;     // 上次写入的小扇目标 (RPM/100 单位)
 
-    // ── ITSM 路由状态 ──
-    private byte _savedThermalMode;           // 启动时保存的 ITSM 值，停止时恢复
+    private byte? _savedThermalMode;          // 启动时保存的 ITSM 值，停止时恢复
     private byte _itsmCurveMode;              // 曲线目标对应的 ITSM 模式（RouteMode 计算，仅目标变化时更新）
     private int _itsmDeviationCount;          // 统计：ITSM 读回 ≠ 目标模式 的累计次数
     private int _itsmConsecutiveMismatch;     // 连续不一致计数（重写后仍被固件抢走时递增）
@@ -232,11 +231,15 @@ public sealed class FanCurveService : IDisposable
         // 通过 WMI 正常切换回保存的模式（触发完整 DPTB/GPUD 链），恢复固件控制
         try
         {
-            _wmi.SetThermalMode(_savedThermalMode);
+            if (_savedThermalMode.HasValue)
+            {
+                _wmi.SetThermalMode(_savedThermalMode.Value);
+                _log.LogInformation("[FanCurve] 自定义曲线已停止, 恢复到模式 {Mode}({Val}), ITSM偏离 {DC} 次",
+                    ModeName(_savedThermalMode.Value), _savedThermalMode.Value, _itsmDeviationCount);
+                _savedThermalMode = null;
+            }
             _wmi.SetFanManual(0, false);
             _wmi.SetFanManual(1, false);
-            _log.LogInformation("[FanCurve] 自定义曲线已停止, 恢复到模式 {Mode}({Val}), ITSM偏离 {DC} 次",
-                ModeName(_savedThermalMode), _savedThermalMode, _itsmDeviationCount);
         }
         catch (Exception ex)
         {
@@ -251,11 +254,14 @@ public sealed class FanCurveService : IDisposable
         {
             // 先恢复 ITSM 模式（触发 ACPI 链让 EC 重新加载正确的风扇表）
             // 再退出手动模式，让 EC 恢复自动 PID 控制
-            if (_savedThermalMode > 0)
-                _wmi.SetThermalMode(_savedThermalMode);
+            if (_savedThermalMode.HasValue)
+            {
+                _wmi.SetThermalMode(_savedThermalMode.Value);
+                _log.LogInformation("[FanCurve] 固件风扇控制已恢复, ITSM={Mode}", _savedThermalMode.Value);
+                _savedThermalMode = null;
+            }
             _wmi.SetFanManual(0, false);
             _wmi.SetFanManual(1, false);
-            _log.LogInformation("[FanCurve] 固件风扇控制已恢复, ITSM={Mode}", _savedThermalMode);
         }
         catch (Exception ex)
         {
