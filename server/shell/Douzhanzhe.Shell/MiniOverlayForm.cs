@@ -42,6 +42,8 @@ public sealed class MiniOverlayForm : Form
     private bool _turboActive = false;
     private bool _fetching = false;
     private double _opacity = 1.0;
+    private string _sizeMode = "standard"; // standard (356x88), large (400x98), compact (312x80)
+    private float _fanRotation = 0f;
 
     public MiniOverlayForm(string configDir)
     {
@@ -53,13 +55,12 @@ public sealed class MiniOverlayForm : Form
         TopMost = true;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
-        Size = new Size(286, 78);
+        Size = GetSizeFromMode(_sizeMode);
         BackColor = Color.FromArgb(16, 21, 30);
         DoubleBuffered = true;
 
-        ApplyRoundedRegion();
-
         RestorePosition();
+        ApplyRoundedRegion();
         Opacity = _opacity;
 
         // 鼠标左键按住拖动
@@ -75,6 +76,27 @@ public sealed class MiniOverlayForm : Form
 
         // 双击隐藏，右键现代暗黑科技菜单
         DoubleClick += (s, e) => Hide();
+        BuildContextMenu();
+
+        // 定时轮询
+        _updateTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _updateTimer.Tick += async (s, e) =>
+        {
+            _fanRotation = (_fanRotation + 45f) % 360f;
+            await FetchTelemetryAsync();
+        };
+        _updateTimer.Start();
+    }
+
+    private static Size GetSizeFromMode(string mode) => mode switch
+    {
+        "large"   => new Size(400, 98),
+        "compact" => new Size(312, 80),
+        _         => new Size(356, 88)
+    };
+
+    private void BuildContextMenu()
+    {
         var menu = new ContextMenuStrip
         {
             Renderer = new ModernDarkMenuRenderer(),
@@ -82,6 +104,18 @@ public sealed class MiniOverlayForm : Form
             Font = new Font("Microsoft YaHei UI", 9.0f, FontStyle.Regular),
             Padding = new Padding(4, 4, 4, 4)
         };
+
+        // 尺寸调节
+        var sizeMenu = new ToolStripMenuItem("📐 挂件显示尺寸");
+        sizeMenu.DropDown.Renderer = new ModernDarkMenuRenderer();
+        if (sizeMenu.DropDown is ToolStripDropDownMenu sizeDrop) sizeDrop.ShowImageMargin = false;
+        sizeMenu.DropDown.Font = new Font("Microsoft YaHei UI", 9.0f, FontStyle.Regular);
+        sizeMenu.DropDownItems.Add("标准视野 (356 × 88) [默认]", null, (s, e) => SetSizeMode("standard"));
+        sizeMenu.DropDownItems.Add("大屏视界 (400 × 98)", null, (s, e) => SetSizeMode("large"));
+        sizeMenu.DropDownItems.Add("紧凑微型 (312 × 80)", null, (s, e) => SetSizeMode("compact"));
+        menu.Items.Add(sizeMenu);
+
+        // 透明度调节
         var opacityMenu = new ToolStripMenuItem("🌓 调节透明度");
         opacityMenu.DropDown.Renderer = new ModernDarkMenuRenderer();
         if (opacityMenu.DropDown is ToolStripDropDownMenu opDrop) opDrop.ShowImageMargin = false;
@@ -91,14 +125,19 @@ public sealed class MiniOverlayForm : Form
         opacityMenu.DropDownItems.Add("70% (半透)", null, (s, e) => SetOpacity(0.70));
         opacityMenu.DropDownItems.Add("50% (高透)", null, (s, e) => SetOpacity(0.50));
         menu.Items.Add(opacityMenu);
+
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("📊 隐藏挂件 (Ctrl+Shift+O 呼出)", null, (s, e) => Hide());
         ContextMenuStrip = menu;
+    }
 
-        // 定时轮询
-        _updateTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-        _updateTimer.Tick += async (s, e) => await FetchTelemetryAsync();
-        _updateTimer.Start();
+    private void SetSizeMode(string mode)
+    {
+        _sizeMode = mode;
+        Size = GetSizeFromMode(mode);
+        ApplyRoundedRegion();
+        SavePosition();
+        Invalidate();
     }
 
     private void ApplyRoundedRegion()
@@ -133,6 +172,15 @@ public sealed class MiniOverlayForm : Form
                 {
                     _opacity = Math.Clamp(opProp.GetDouble(), 0.3, 1.0);
                 }
+                if (root.TryGetProperty("sizeMode", out var szProp))
+                {
+                    var sz = szProp.GetString();
+                    if (!string.IsNullOrEmpty(sz))
+                    {
+                        _sizeMode = sz;
+                        Size = GetSizeFromMode(_sizeMode);
+                    }
+                }
                 if (root.TryGetProperty("x", out var xProp) && root.TryGetProperty("y", out var yProp))
                 {
                     var x = xProp.GetInt32();
@@ -161,7 +209,13 @@ public sealed class MiniOverlayForm : Form
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            var json = JsonSerializer.Serialize(new { x = Location.X, y = Location.Y, opacity = _opacity });
+            var json = JsonSerializer.Serialize(new
+            {
+                x = Location.X,
+                y = Location.Y,
+                opacity = _opacity,
+                sizeMode = _sizeMode
+            });
             File.WriteAllText(_stateFilePath, json);
         }
         catch { }
@@ -246,7 +300,7 @@ public sealed class MiniOverlayForm : Form
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
         var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
-        using var roundPath = CreateRoundedPath(bounds, 10);
+        using var roundPath = CreateRoundedPath(bounds, 12);
 
         // 1. 深邃太空微渐变背景
         using (var bgBrush = new LinearGradientBrush(
@@ -264,17 +318,18 @@ public sealed class MiniOverlayForm : Form
             g.DrawPath(borderPen, roundPath);
         }
         var innerRect = new Rectangle(1, 1, Width - 3, Height - 3);
-        using (var innerPath = CreateRoundedPath(innerRect, 9))
-        using (var innerPen = new Pen(Color.FromArgb(25, 88, 166, 255), 1))
+        using (var innerPath = CreateRoundedPath(innerRect, 11))
+        using (var innerPen = new Pen(Color.FromArgb(28, 88, 166, 255), 1))
         {
             g.DrawPath(innerPen, innerPath);
         }
 
-        // 字体与画刷
-        using var fontTitle = new Font("Segoe UI", 8.0f, FontStyle.Bold);
-        using var fontVal = new Font("Segoe UI", 10.5f, FontStyle.Bold);
-        using var fontSub = new Font("Segoe UI", 8.0f, FontStyle.Regular);
-        using var fontBadge = new Font("Microsoft YaHei UI", 8.0f, FontStyle.Bold);
+        // 字体与画刷 (大屏模式微调字号)
+        bool isLarge = _sizeMode == "large";
+        using var fontTitle = new Font("Segoe UI", isLarge ? 8.5f : 8.0f, FontStyle.Bold);
+        using var fontVal = new Font("Segoe UI", isLarge ? 12.0f : 10.5f, FontStyle.Bold);
+        using var fontSub = new Font("Segoe UI", isLarge ? 9.0f : 8.0f, FontStyle.Regular);
+        using var fontBadge = new Font("Microsoft YaHei UI", isLarge ? 8.5f : 8.0f, FontStyle.Bold);
 
         using var brushWhite = new SolidBrush(Color.FromArgb(240, 246, 252));
         using var brushMuted = new SolidBrush(Color.FromArgb(139, 148, 158));
@@ -282,104 +337,153 @@ public sealed class MiniOverlayForm : Form
         using var brushGpuText = new SolidBrush(Color.FromArgb(63, 185, 80));
         using var brushTurbo = new SolidBrush(Color.FromArgb(0, 229, 255));
         using var brushWarn = new SolidBrush(Color.FromArgb(248, 81, 73));
-        using var brushAmber = new SolidBrush(Color.FromArgb(240, 180, 41));
+        using var brushAmber = new SolidBrush(Color.FromArgb(250, 204, 21));
 
-        // ── 上半区：CPU (左) ──
-        // CPU 微型胶囊
-        var cpuPill = new Rectangle(12, 10, 32, 16);
-        using (var pillPath = CreateRoundedPath(cpuPill, 4))
+        float topY = isLarge ? 12f : 10f;
+        float midX = Width / 2f;
+
+        // ── 上半区：CPU (左侧自适应流式排版，绝不重叠) ──
+        float curCpuX = 14f;
+        // CPU 微型胶囊 Pill
+        var cpuPill = new RectangleF(curCpuX, topY, 34, 18);
+        using (var pillPath = CreateRoundedPath(Rectangle.Round(cpuPill), 4))
         using (var pillBg = new SolidBrush(Color.FromArgb(30, 88, 166, 255)))
         using (var pillBorder = new Pen(Color.FromArgb(60, 88, 166, 255), 1))
         {
             g.FillPath(pillBg, pillPath);
             g.DrawPath(pillBorder, pillPath);
         }
-        g.DrawString("CPU", fontTitle, brushCpuText, 16, 11);
+        g.DrawString("CPU", fontTitle, brushCpuText, curCpuX + 4, topY + 1.5f);
+        curCpuX += 40f;
 
-        // CPU 温度（根据温度平滑变色）
+        // CPU 温度（智能三段色温）
         SolidBrush cpuTempBrush = _cpuTemp >= 88 ? brushWarn : (_cpuTemp >= 78 ? brushAmber : brushWhite);
-        g.DrawString($"{_cpuTemp}°C", fontVal, cpuTempBrush, 48, 8);
+        string cpuTempStr = $"{_cpuTemp}°C";
+        var cpuTempSize = g.MeasureString(cpuTempStr, fontVal);
+        g.DrawString(cpuTempStr, fontVal, cpuTempBrush, curCpuX, topY - 1.5f);
+        curCpuX += cpuTempSize.Width + 4f;
 
         // CPU 占用与频率
         string cpuSubText = _cpuFreq > 0 ? $"{_cpuUsage}% {_cpuFreq:F1}G" : $"{_cpuUsage}%";
-        g.DrawString(cpuSubText, fontSub, brushMuted, 90, 11);
+        g.DrawString(cpuSubText, fontSub, brushMuted, curCpuX, topY + 1.5f);
 
-        // 中轴微垂直光线
+        // 中轴微垂直光纤分割线
         using (var vLineBrush = new LinearGradientBrush(
-            new Rectangle(140, 9, 1, 18),
+            new RectangleF(midX - 1, topY - 1, 2, 20),
             Color.FromArgb(0, 56, 70, 90),
-            Color.FromArgb(120, 56, 70, 90),
+            Color.FromArgb(140, 56, 70, 90),
             90f))
         using (var vLinePen = new Pen(vLineBrush, 1))
         {
-            g.DrawLine(vLinePen, 140, 9, 140, 27);
+            g.DrawLine(vLinePen, midX, topY - 1, midX, topY + 19);
         }
 
-        // ── 上半区：GPU (右) ──
-        // GPU 微型胶囊
-        var gpuPill = new Rectangle(150, 10, 32, 16);
-        using (var pillPath = CreateRoundedPath(gpuPill, 4))
+        // ── 上半区：GPU (右侧自适应流式排版，绝不重叠) ──
+        float curGpuX = midX + 10f;
+        // GPU 微型胶囊 Pill
+        var gpuPill = new RectangleF(curGpuX, topY, 34, 18);
+        using (var pillPath = CreateRoundedPath(Rectangle.Round(gpuPill), 4))
         using (var pillBg = new SolidBrush(Color.FromArgb(25, 63, 185, 80)))
         using (var pillBorder = new Pen(Color.FromArgb(50, 63, 185, 80), 1))
         {
             g.FillPath(pillBg, pillPath);
             g.DrawPath(pillBorder, pillPath);
         }
-        g.DrawString("GPU", fontTitle, brushGpuText, 154, 11);
+        g.DrawString("GPU", fontTitle, brushGpuText, curGpuX + 4, topY + 1.5f);
+        curGpuX += 40f;
 
         // GPU 温度
         SolidBrush gpuTempBrush = _gpuTemp >= 85 ? brushWarn : (_gpuTemp >= 75 ? brushAmber : brushWhite);
-        g.DrawString($"{_gpuTemp}°C", fontVal, gpuTempBrush, 186, 8);
+        string gpuTempStr = $"{_gpuTemp}°C";
+        var gpuTempSize = g.MeasureString(gpuTempStr, fontVal);
+        g.DrawString(gpuTempStr, fontVal, gpuTempBrush, curGpuX, topY - 1.5f);
+        curGpuX += gpuTempSize.Width + 4f;
 
         // GPU 功耗
-        g.DrawString($"{_gpuWatts:F0}W", fontSub, brushMuted, 228, 11);
+        string gpuWattStr = $"{_gpuWatts:F0}W";
+        g.DrawString(gpuWattStr, fontSub, brushMuted, curGpuX, topY + 1.5f);
 
-        // ── 中部横向能量光导线（两端渐隐）──
+        // ── 中部横向能量光纤导轨（两端渐隐）──
+        float splitY = isLarge ? 46f : 41f;
         using (var lineBrush = new LinearGradientBrush(
-            new Rectangle(10, 36, Width - 20, 1),
+            new RectangleF(12, splitY, Width - 24, 1),
             Color.FromArgb(10, 48, 64, 88),
             Color.FromArgb(140, 48, 64, 88),
             0f))
         {
             lineBrush.SetBlendTriangularShape(0.5f);
             using var linePen = new Pen(lineBrush, 1);
-            g.DrawLine(linePen, 10, 36, Width - 10, 36);
+            g.DrawLine(linePen, 12, splitY, Width - 12, splitY);
         }
 
         // ── 下半区：风扇与模式 ──
-        // 风扇图标与 RPM
-        g.DrawString("🌀", fontSub, brushMuted, 10, 47);
-        g.DrawString($"{_cpuFan} / {_gpuFan} RPM", fontSub, brushWhite, 28, 48);
+        float botY = isLarge ? 56f : 50f;
 
-        // 模式徽章 (Badge)
-        if (_turboActive)
-        {
-            var turboBadge = new Rectangle(Width - 110, 44, 98, 22);
-            using var tPath = CreateRoundedPath(turboBadge, 5);
-            using var tBg = new SolidBrush(Color.FromArgb(35, 0, 229, 255));
-            using var tPen = new Pen(Color.FromArgb(120, 0, 229, 255), 1);
-            g.FillPath(tBg, tPath);
-            g.DrawPath(tPen, tPath);
-            g.DrawString("⚡ TURBO 强冷", fontBadge, brushTurbo, Width - 106, 47);
-        }
-        else
-        {
-            var (badgeColor, badgeText) = _mode switch
+        // 自绘极简科技风矢量风扇图标（彻底消除方块乱码）
+        float fanCenterX = 22f;
+        float fanCenterY = botY + 8f;
+        float fanRadius = isLarge ? 7f : 6.5f;
+        DrawVectorFan(g, fanCenterX, fanCenterY, fanRadius, Color.FromArgb(56, 189, 248), _fanRotation);
+
+        // 风扇转速读数
+        string fanText = $"大 {_cpuFan} / 小 {_gpuFan} RPM";
+        g.DrawString(fanText, fontSub, brushWhite, 36f, botY + 1.5f);
+
+        // 右侧模式徽章：动态测量宽度，绝不被裁切！
+        var (badgeColor, badgeTitle) = _turboActive
+            ? (Color.FromArgb(0, 229, 255), "TURBO 强冷")
+            : _mode switch
             {
-                "狂暴野兽" => (Color.FromArgb(255, 166, 87), "🔥 狂暴野兽"),
-                "极致安静" => (Color.FromArgb(210, 168, 255), "🌙 极致安静"),
-                "满血斗战" => (Color.FromArgb(255, 123, 114), "⚔️ 满血斗战"),
-                _          => (Color.FromArgb(121, 192, 255), "🛡️ 办公均衡")
+                "狂暴野兽" => (Color.FromArgb(255, 166, 87), "狂暴野兽"),
+                "极致安静" => (Color.FromArgb(210, 168, 255), "极致安静"),
+                "满血斗战" => (Color.FromArgb(255, 123, 114), "满血斗战"),
+                _          => (Color.FromArgb(121, 192, 255), "办公均衡")
             };
 
-            var modeBadge = new Rectangle(Width - 92, 45, 80, 20);
-            using var mPath = CreateRoundedPath(modeBadge, 4);
-            using var mBg = new SolidBrush(Color.FromArgb(25, badgeColor.R, badgeColor.G, badgeColor.B));
-            using var mPen = new Pen(Color.FromArgb(60, badgeColor.R, badgeColor.G, badgeColor.B), 1);
-            using var mTextBrush = new SolidBrush(badgeColor);
+        var badgeTextSize = g.MeasureString(badgeTitle, fontBadge);
+        float badgeW = badgeTextSize.Width + 18f;
+        float badgeH = isLarge ? 24f : 20f;
+        float badgeX = Width - badgeW - 14f;
+        float badgeY = botY;
+
+        var modeBadgeRect = new RectangleF(badgeX, badgeY, badgeW, badgeH);
+        using (var mPath = CreateRoundedPath(Rectangle.Round(modeBadgeRect), 4))
+        using (var mBg = new SolidBrush(Color.FromArgb(30, badgeColor.R, badgeColor.G, badgeColor.B)))
+        using (var mPen = new Pen(Color.FromArgb(90, badgeColor.R, badgeColor.G, badgeColor.B), 1))
+        using (var mTextBrush = new SolidBrush(badgeColor))
+        {
             g.FillPath(mBg, mPath);
             g.DrawPath(mPen, mPath);
-            g.DrawString(badgeText, fontBadge, mTextBrush, Width - 88, 48);
+            g.DrawString(badgeTitle, fontBadge, mTextBrush, badgeX + 9f, badgeY + (isLarge ? 4f : 2.5f));
+        }
+    }
+
+    /// <summary>
+    /// 自绘科技感微型矢量风扇轮廓（圆环 + 3 片旋转微叶片，彻底告别字符集方块乱码）
+    /// </summary>
+    private static void DrawVectorFan(Graphics g, float cx, float cy, float radius, Color color, float rotationAngle)
+    {
+        using var pen = new Pen(color, 1.3f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+
+        // 外圈微光圆环
+        using var ringPen = new Pen(Color.FromArgb(60, color.R, color.G, color.B), 1f);
+        g.DrawEllipse(ringPen, cx - radius, cy - radius, radius * 2, radius * 2);
+
+        // 中心微轴点
+        using var centerBrush = new SolidBrush(color);
+        g.FillEllipse(centerBrush, cx - 1.5f, cy - 1.5f, 3f, 3f);
+
+        // 3 片流线叶片
+        for (int i = 0; i < 3; i++)
+        {
+            float rad = (rotationAngle + i * 120f) * (float)Math.PI / 180f;
+            float endX = cx + (float)Math.Cos(rad) * (radius - 1f);
+            float endY = cy + (float)Math.Sin(rad) * (radius - 1f);
+            g.DrawLine(pen, cx, cy, endX, endY);
         }
     }
 
@@ -405,4 +509,5 @@ public sealed class MiniOverlayForm : Form
         base.Dispose(disposing);
     }
 }
+
 
