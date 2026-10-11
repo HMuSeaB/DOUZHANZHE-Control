@@ -30,13 +30,16 @@ public sealed class MiniOverlayForm : Form
 
     // 遥测数据
     private int _cpuTemp = 0;
-    private double _cpuWatts = 0;
+    private int _cpuUsage = 0;
+    private double _cpuFreq = 0;
     private int _gpuTemp = 0;
     private double _gpuWatts = 0;
     private int _cpuFan = 0;
     private int _gpuFan = 0;
     private string _mode = "均衡模式";
     private bool _turboActive = false;
+    private bool _fetching = false;
+    private double _opacity = 1.0;
 
     public MiniOverlayForm(string configDir)
     {
@@ -53,6 +56,7 @@ public sealed class MiniOverlayForm : Form
         DoubleBuffered = true;
 
         RestorePosition();
+        Opacity = _opacity;
 
         // 鼠标拖拽支持
         MouseDown += (s, e) =>
@@ -68,6 +72,13 @@ public sealed class MiniOverlayForm : Form
         // 右键或双击隐藏
         DoubleClick += (s, e) => Hide();
         var menu = new ContextMenuStrip();
+        var opacityMenu = new ToolStripMenuItem("调节透明度");
+        opacityMenu.DropDownItems.Add("100% (不透明)", null, (s, e) => SetOpacity(1.0));
+        opacityMenu.DropDownItems.Add("85% (微透)", null, (s, e) => SetOpacity(0.85));
+        opacityMenu.DropDownItems.Add("70% (半透)", null, (s, e) => SetOpacity(0.70));
+        opacityMenu.DropDownItems.Add("50% (高透)", null, (s, e) => SetOpacity(0.50));
+        menu.Items.Add(opacityMenu);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("隐藏悬浮窗 (Ctrl+Shift+O 呼出)", null, (s, e) => Hide());
         ContextMenuStrip = menu;
 
@@ -75,6 +86,13 @@ public sealed class MiniOverlayForm : Form
         _updateTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _updateTimer.Tick += async (s, e) => await FetchTelemetryAsync();
         _updateTimer.Start();
+    }
+
+    private void SetOpacity(double op)
+    {
+        _opacity = op;
+        Opacity = op;
+        SavePosition();
     }
 
     private void RestorePosition()
@@ -85,6 +103,10 @@ public sealed class MiniOverlayForm : Form
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(_stateFilePath));
                 var root = doc.RootElement;
+                if (root.TryGetProperty("opacity", out var opProp))
+                {
+                    _opacity = Math.Clamp(opProp.GetDouble(), 0.3, 1.0);
+                }
                 if (root.TryGetProperty("x", out var xProp) && root.TryGetProperty("y", out var yProp))
                 {
                     var x = xProp.GetInt32();
@@ -113,7 +135,7 @@ public sealed class MiniOverlayForm : Form
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            var json = JsonSerializer.Serialize(new { x = Location.X, y = Location.Y });
+            var json = JsonSerializer.Serialize(new { x = Location.X, y = Location.Y, opacity = _opacity });
             File.WriteAllText(_stateFilePath, json);
         }
         catch { }
@@ -121,55 +143,73 @@ public sealed class MiniOverlayForm : Form
 
     private async System.Threading.Tasks.Task FetchTelemetryAsync()
     {
-        if (!Visible) return;
-
-        foreach (var baseUrl in new[] { "http://127.0.0.1:3100", "http://127.0.0.1:3101" })
+        if (_fetching || !Visible) return;
+        _fetching = true;
+        try
         {
-            try
+            foreach (var baseUrl in new[] { "http://127.0.0.1:3100", "http://127.0.0.1:3101" })
             {
-                using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/telemetry");
-                req.Headers.Add("Origin", baseUrl);
-                var resp = await _http.SendAsync(req);
-                if (resp.IsSuccessStatusCode)
+                try
                 {
-                    var stream = await resp.Content.ReadAsStreamAsync();
-                    using var doc = await JsonDocument.ParseAsync(stream);
-                    var root = doc.RootElement;
+                    using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/telemetry");
+                    req.Headers.Add("Origin", baseUrl);
+                    var resp = await _http.SendAsync(req);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var stream = await resp.Content.ReadAsStreamAsync();
+                        using var doc = await JsonDocument.ParseAsync(stream);
+                        var root = doc.RootElement;
 
-                    if (root.TryGetProperty("cpuTemp", out var ct)) _cpuTemp = ct.GetInt32();
-                    if (root.TryGetProperty("cpuPowerWatts", out var cw)) _cpuWatts = cw.GetDouble();
-                    if (root.TryGetProperty("gpuTemp", out var gt)) _gpuTemp = gt.GetInt32();
-                    if (root.TryGetProperty("gpuPowerWatts", out var gw)) _gpuWatts = gw.GetDouble();
-                    if (root.TryGetProperty("cpuFanRpm", out var cf)) _cpuFan = cf.GetInt32();
-                    if (root.TryGetProperty("gpuFanRpm", out var gf)) _gpuFan = gf.GetInt32();
-                    if (root.TryGetProperty("thermalModeName", out var mn)) _mode = mn.GetString() ?? "均衡模式";
-                    break;
+                        if (root.TryGetProperty("cpuTemp", out var ct)) _cpuTemp = ct.GetInt32();
+                        if (root.TryGetProperty("cpuUsage", out var cu)) _cpuUsage = cu.GetInt32();
+                        if (root.TryGetProperty("cpuFreq", out var cfq)) _cpuFreq = cfq.GetDouble();
+                        if (root.TryGetProperty("gpuTemp", out var gt)) _gpuTemp = gt.GetInt32();
+                        if (root.TryGetProperty("gpuPowerDrawW", out var gw)) _gpuWatts = gw.GetDouble();
+                        if (root.TryGetProperty("fanLargeRpm", out var cf)) _cpuFan = cf.GetInt32();
+                        if (root.TryGetProperty("fanSmallRpm", out var gf)) _gpuFan = gf.GetInt32();
+                        if (root.TryGetProperty("thermalMode", out var tm))
+                        {
+                            _mode = tm.GetInt32() switch
+                            {
+                                0 => "均衡模式",
+                                1 => "野兽模式",
+                                2 => "安静模式",
+                                3 => "斗战模式",
+                                _ => "自定义模式"
+                            };
+                        }
+                        break;
+                    }
                 }
+                catch { /* fallback next */ }
             }
-            catch { /* fallback next */ }
-        }
 
-        // 检查 Turbo 状态
-        foreach (var baseUrl in new[] { "http://127.0.0.1:3100", "http://127.0.0.1:3101" })
+            // 检查 Turbo 状态
+            foreach (var baseUrl in new[] { "http://127.0.0.1:3100", "http://127.0.0.1:3101" })
+            {
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/fan/turbo");
+                    req.Headers.Add("Origin", baseUrl);
+                    var tResp = await _http.SendAsync(req);
+                    if (tResp.IsSuccessStatusCode)
+                    {
+                        var stream = await tResp.Content.ReadAsStreamAsync();
+                        using var doc = await JsonDocument.ParseAsync(stream);
+                        if (doc.RootElement.TryGetProperty("enabled", out var en))
+                            _turboActive = en.GetBoolean();
+                        break;
+                    }
+                }
+                catch { }
+            }
+
+            Invalidate();
+        }
+        finally
         {
-            try
-            {
-                using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/fan/turbo");
-                req.Headers.Add("Origin", baseUrl);
-                var tResp = await _http.SendAsync(req);
-                if (tResp.IsSuccessStatusCode)
-                {
-                    var stream = await tResp.Content.ReadAsStreamAsync();
-                    using var doc = await JsonDocument.ParseAsync(stream);
-                    if (doc.RootElement.TryGetProperty("enabled", out var en))
-                        _turboActive = en.GetBoolean();
-                    break;
-                }
-            }
-            catch { }
+            _fetching = false;
         }
-
-        Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -202,13 +242,14 @@ public sealed class MiniOverlayForm : Form
         var cpuBrush = _cpuTemp >= 88 ? brushWarn : brushCpu;
         g.DrawString("CPU", fontBold, cpuBrush, 12, 10);
         g.DrawString($"{_cpuTemp}°C", fontBold, brushWhite, 46, 10);
-        g.DrawString($"{_cpuWatts:F0}W", fontSmall, brushMuted, 90, 12);
+        string cpuInfo = _cpuFreq > 0 ? $"{_cpuUsage}% {_cpuFreq:F1}G" : $"{_cpuUsage}%";
+        g.DrawString(cpuInfo, fontSmall, brushMuted, 84, 12);
 
-        g.DrawString("|", fontNormal, brushMuted, 130, 10);
+        g.DrawString("|", fontNormal, brushMuted, 134, 10);
 
         var gpuBrush = _gpuTemp >= 85 ? brushWarn : brushGpu;
-        g.DrawString("GPU", fontBold, gpuBrush, 142, 10);
-        g.DrawString($"{_gpuTemp}°C", fontBold, brushWhite, 178, 10);
+        g.DrawString("GPU", fontBold, gpuBrush, 146, 10);
+        g.DrawString($"{_gpuTemp}°C", fontBold, brushWhite, 182, 10);
         g.DrawString($"{_gpuWatts:F0}W", fontSmall, brushMuted, 222, 12);
 
         // 分割线

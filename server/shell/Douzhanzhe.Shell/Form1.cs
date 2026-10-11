@@ -168,8 +168,16 @@ public partial class Form1 : Form
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("显示主窗口", null, (s, e) => ShowWindow());
         _trayMenu.Items.Add(new ToolStripSeparator());
-        _trayMenu.Items.Add("⚡ 一键强冷切换", null, (s, e) => ToggleTurboFan());
-        _trayMenu.Items.Add("📊 桌面状态悬浮窗", null, (s, e) => ToggleMiniOverlay());
+
+        var modeMenu = new ToolStripMenuItem("💻 散热模式切换");
+        modeMenu.DropDownItems.Add("办公均衡模式 (office)", null, (s, e) => SwitchMode("office", "办公均衡"));
+        modeMenu.DropDownItems.Add("狂暴野兽模式 (beast)", null, (s, e) => SwitchMode("beast", "狂暴野兽"));
+        modeMenu.DropDownItems.Add("极致安静模式 (silent)", null, (s, e) => SwitchMode("silent", "极致安静"));
+        modeMenu.DropDownItems.Add("满血斗战模式 (gaming)", null, (s, e) => SwitchMode("gaming", "满血斗战"));
+        _trayMenu.Items.Add(modeMenu);
+
+        _trayMenu.Items.Add("⚡ 一键强冷切换 (Ctrl+Shift+F)", null, (s, e) => ToggleTurboFan());
+        _trayMenu.Items.Add("📊 桌面状态悬浮窗 (Ctrl+Shift+O)", null, (s, e) => ToggleMiniOverlay());
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add("退出", null, (s, e) => ExitApp());
 
@@ -882,12 +890,36 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         }
     }
 
+    private void SwitchMode(string mode, string modeName)
+    {
+        Task.Run(async () =>
+        {
+            var ok = await PostApiAsync("/api/overrides/switch", $"{{\"mode\":\"{mode}\"}}");
+            if (ok)
+            {
+                ShellLog($"[Tray] 已切换至 {modeName}");
+                _trayIcon.ShowBalloonTip(1500, "性能模式切换", $"已成功切换至【{modeName}】", ToolTipIcon.Info);
+            }
+            else
+            {
+                ShellLog($"[Tray] 模式切换请求失败: {mode}");
+            }
+        });
+    }
+
     private void ToggleTurboFan()
     {
         Task.Run(async () =>
         {
             var ok = await PostApiAsync("/api/fan/turbo", "{}");
-            if (!ok) ShellLog("[Hotkey] 强冷切换请求失败");
+            if (ok)
+            {
+                ShellLog("[Tray/Hotkey] 强冷切换请求成功");
+            }
+            else
+            {
+                ShellLog("[Tray/Hotkey] 强冷切换请求失败");
+            }
         });
     }
 

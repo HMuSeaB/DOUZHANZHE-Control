@@ -3385,8 +3385,10 @@ app.MapPost("/api/profiles/{id}/thermal-mode", async (string id, HttpContext ctx
 app.MapFallbackToFile("index.html");
 
 // ---- Start server & 硬件退出保护 ----
+int _cleanupDone = 0;
 void CleanupHardwareOnExit()
 {
+    if (Interlocked.Exchange(ref _cleanupDone, 1) != 0) return;
     try
     {
         var wmiClean = app.Services.GetRequiredService<WmiInterface>();
