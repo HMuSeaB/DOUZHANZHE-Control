@@ -150,7 +150,7 @@ export default function FanControl() {
               {turboActive && <span style={{ fontSize: "11px", background: "rgba(0,229,255,0.2)", color: "#00e5ff", padding: "1px 6px", borderRadius: "4px" }}>满负荷运行中</span>}
             </div>
             <div style={{ fontSize: "12px", color: "#8b949e", marginTop: "2px" }}>
-              {turboActive ? "双风扇已锁定在最大物理极速 (4400 / 8200 RPM)，暂停自动温控" : "一键将 CPU/GPU 双风扇拉至最大极限转速；支持全局热键 Ctrl+Shift+F"}
+              {turboActive ? "双风扇已锁定在当前模式最大极限转速，暂停自动温控" : "一键将 CPU/GPU 双风扇拉至当前模式极限转速；支持全局热键 Ctrl+Shift+F"}
             </div>
           </div>
         </div>
