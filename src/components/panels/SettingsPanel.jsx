@@ -600,6 +600,7 @@ export default function SettingsPanel({ theme, setTheme }) {
 }
 
 const HOTKEY_LABELS = {
+  "window-toggle": "主窗口显隐 (Fn+F10)",
   "monitor-off": "关闭屏幕",
   "mode-office": "均衡模式",
   "mode-beast": "野兽模式",
