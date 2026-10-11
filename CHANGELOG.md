@@ -5,6 +5,26 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本语义遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [2.1.1] — 2026-10-11
+
+本次更新为稳定性与安全性关键补丁，彻底修复外壳端原生请求受同源守卫拦截致功能瘫痪的问题，并落地系统零干扰自适应降频与硬件固件安全恢复机制。
+
+### 🛡️ 稳定性与关键修复
+
+- **🚨 Shell 原生请求同源守卫拦截修复 (403 解锁)**:
+  - 修复 `Form1.cs` 中快捷键与托盘模式切换 (`/api/overrides/switch`)、一键强冷 (`/api/fan/turbo`) 及退出关闭 (`/api/shutdown`) 因缺少 `Origin` 标头被 `LocalAccessGuard` 拦截为 403 Forbidden 的问题；
+  - 修复 `MiniOverlayForm.cs`（桌面硬件悬浮窗）拉取 `/api/telemetry` 和 `/api/fan/turbo` 时因缺少 `Origin` 标头导致硬件温度/功耗显示全 0 的故障；
+  - 原生客户端请求统一显式挂载回环 `Origin: http://127.0.0.1:<port>` 标头，确保守卫放行同时维护同源安全性。
+- **🔄 风扇曲线模式恢复增强与生命周期安全**:
+  - `FanCurveService` 状态变量升级为可空类型 `byte?`，彻底修复启动前为 office(0) 模式时退出无法恢复为原厂均衡模式的 Bug；
+  - 严格限制未启用曲线时绝不篡改用户的运行模式，关闭曲线或退出应用时精准回退。
+- **🔌 进程退出与异常终止固件控制权保底**:
+  - 在 `Program.cs` 统一注册 `ProcessExit`、`ApplicationStopping` 与 `finally` 清理钩子，进程退出时无条件退出手动风扇模式，交还原厂 BIOS/EC PID 自动温控，杜绝手动锁定残留导致积热。
+- **⚡ EC 总线客户端感知自适应休眠**:
+  - `TelemetryBackgroundService` 引入活跃客户端感知：前台无界面常驻时自动降频至 2000ms 心跳，EC 硬件总线 IO 读写频率骤降 87.5%，杜绝日常后台常驻与 3A 游戏时争抢 LPC/EC 总线带宽。
+- **🎯 强冷目标转速收敛至模具真实物理安全极限**:
+  - 修正强冷盲写越界值被 EC 拒收的问题，大风扇安全收敛至模具物理极限 ~3000 RPM (EC 档位 30)，小风扇收敛至当前模式安全上限 (6900~7200 RPM)。
+
 ## [2.1.0] — 2026-10-11
 
 正式脱离 `memory-fix` 预发布补丁序列，跃迁为 2.1.0 正式发布版。汇总深度重构优化、一键强冷、桌面硬件悬浮窗、硬件诊断自检、传感器动态联动与 CI/CD 自动化流水线。
