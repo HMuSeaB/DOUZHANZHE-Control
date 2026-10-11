@@ -42,6 +42,7 @@ public partial class Form1 : Form
     // 默认快捷键定义（数据驱动，新增功能只需加一行）
     private static readonly (string id, string label, string modifiers, string key, string action)[] DefaultHotkeys =
     [
+        ("window-toggle", "主窗口显隐", "", "F10", "window:toggle"),
         ("monitor-off", "关闭屏幕", "ctrl,shift", "Q",   "monitor-off"),
         ("mode-office", "均衡模式", "ctrl,shift", "1",   "mode:office"),
         ("mode-beast",  "野兽模式", "ctrl,shift", "2",   "mode:beast"),
@@ -165,11 +166,21 @@ public partial class Form1 : Form
         Resize += Form1_Resize;
 
         // 托盘图标
-        _trayMenu = new ContextMenuStrip();
-        _trayMenu.Items.Add("显示主窗口", null, (s, e) => ShowWindow());
+        // 托盘图标 — 采用现代暗黑科技风渲染器
+        _trayMenu = new ContextMenuStrip
+        {
+            Renderer = new ModernDarkMenuRenderer(),
+            ShowImageMargin = false,
+            Font = new Font("Microsoft YaHei UI", 9.0f, FontStyle.Regular),
+            Padding = new Padding(4, 4, 4, 4)
+        };
+        _trayMenu.Items.Add("🖥️ 显示主窗口 (Fn+F10)", null, (s, e) => ToggleMainWindow());
         _trayMenu.Items.Add(new ToolStripSeparator());
 
         var modeMenu = new ToolStripMenuItem("💻 散热模式切换");
+        modeMenu.DropDown.Renderer = new ModernDarkMenuRenderer();
+        if (modeMenu.DropDown is ToolStripDropDownMenu modeDrop) modeDrop.ShowImageMargin = false;
+        modeMenu.DropDown.Font = new Font("Microsoft YaHei UI", 9.0f, FontStyle.Regular);
         modeMenu.DropDownItems.Add("办公均衡模式 (office)", null, (s, e) => SwitchMode("office", "办公均衡"));
         modeMenu.DropDownItems.Add("狂暴野兽模式 (beast)", null, (s, e) => SwitchMode("beast", "狂暴野兽"));
         modeMenu.DropDownItems.Add("极致安静模式 (silent)", null, (s, e) => SwitchMode("silent", "极致安静"));
@@ -179,7 +190,7 @@ public partial class Form1 : Form
         _trayMenu.Items.Add("⚡ 一键强冷切换 (Ctrl+Shift+F)", null, (s, e) => ToggleTurboFan());
         _trayMenu.Items.Add("📊 桌面状态悬浮窗 (Ctrl+Shift+O)", null, (s, e) => ToggleMiniOverlay());
         _trayMenu.Items.Add(new ToolStripSeparator());
-        _trayMenu.Items.Add("退出", null, (s, e) => ExitApp());
+        _trayMenu.Items.Add("❌ 退出", null, (s, e) => ExitApp());
 
         _trayIcon = new NotifyIcon
         {
@@ -408,6 +419,19 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
         WindowState = FormWindowState.Normal;
         BringToFront();
         Activate();
+    }
+
+    private void ToggleMainWindow()
+    {
+        if (Visible && WindowState != FormWindowState.Minimized && Form.ActiveForm == this)
+        {
+            WindowState = FormWindowState.Minimized;
+            Hide();
+        }
+        else
+        {
+            ShowWindow();
+        }
     }
 
     private void ExitApp()
@@ -815,6 +839,10 @@ a{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius
                 else if (action == "overlay:toggle" || action == "overlay-toggle")
                 {
                     BeginInvoke(ToggleMiniOverlay);
+                }
+                else if (action == "window:toggle" || action == "window-toggle")
+                {
+                    BeginInvoke(ToggleMainWindow);
                 }
             }
         }

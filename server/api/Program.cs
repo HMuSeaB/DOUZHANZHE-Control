@@ -1145,11 +1145,14 @@ app.MapPost("/api/monitor/off", () =>
 // 默认快捷键定义
 var defaultHotkeys = new Dictionary<string, object>
 {
-    ["monitor-off"] = new { modifiers = "ctrl,shift", key = "Q", enabled = true },
-    ["mode-office"] = new { modifiers = "ctrl,shift", key = "1", enabled = true },
-    ["mode-beast"]  = new { modifiers = "ctrl,shift", key = "2", enabled = true },
-    ["mode-silent"] = new { modifiers = "ctrl,shift", key = "3", enabled = true },
-    ["mode-gaming"] = new { modifiers = "ctrl,shift", key = "4", enabled = true },
+    ["window-toggle"] = new { modifiers = "",           key = "F10", enabled = true },
+    ["monitor-off"]   = new { modifiers = "ctrl,shift",  key = "Q",   enabled = true },
+    ["mode-office"]   = new { modifiers = "ctrl,shift",  key = "1",   enabled = true },
+    ["mode-beast"]    = new { modifiers = "ctrl,shift",  key = "2",   enabled = true },
+    ["mode-silent"]   = new { modifiers = "ctrl,shift",  key = "3",   enabled = true },
+    ["mode-gaming"]   = new { modifiers = "ctrl,shift",  key = "4",   enabled = true },
+    ["fan-turbo"]     = new { modifiers = "ctrl,shift",  key = "F",   enabled = true },
+    ["overlay-toggle"]= new { modifiers = "ctrl,shift",  key = "O",   enabled = true },
 };
 
 // GET /api/hotkey — 返回所有快捷键配置 + 冲突状态
