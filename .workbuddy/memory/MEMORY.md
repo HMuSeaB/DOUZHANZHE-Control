@@ -334,3 +334,26 @@ manifest → 直接跑报 `Permission denied`。
 - `[6.5/6]` 会调 `sync-repos.ps1`（制造重复提交 + ref 丢失）→ 构建前临时改名跳过，完事还原。
 - 版本号必须**显式传 `-Version`**（预发布后缀正则已于 2026-09-25 修好，不必再手工改 package.json）。
 - `start-dev.ps1` 里的 `Write-Warn` **是它自己定义的函数**，别当成拼错的 `Write-Warning`。
+
+## `tools/crash/`：本机蓝屏病历与急救脚本（2026-11-06 归位）
+
+- 2026-11-04~06 那轮连续蓝屏（崩溃点 `nt!ExpGetPoolTagInfoTarget+0x1c5`）的脚本，
+  从 WorkBuddy 会话工作区迁入本项目。**与产品代码无关**，全部收在 `tools/crash/`，
+  入口 `tools/crash/README.md`，病历正文 `tools/crash/crash-report-2026-11-04.md`。
+- 迁入内容：`copy-dumps.bat`、`dedicated-dump-setup.bat`、`dedicated-dump-undo.bat`、
+  `verifier-off.bat`、`verifier-on-special-pool.bat`、`legacy/`（旧方案与坏样本）、
+  `analyze/`（dump 头解析 / PE 索引 / 只读复核 / 生成器）。
+  迁移时统一改成英文名，**原编号对照表在 `tools/crash/README.md` 第一节**。
+- **`.bat` 必须 GB18030 + CRLF + 无 BOM + `chcp 936`；`.ps1` 相反（UTF-8 BOM）**，
+  两套规则别混。`.gitattributes` 只有 `*.bat text eol=crlf`，**编码仍要自己保证**。
+- **`.bat` 文件名不要带半角括号 `()`**：`%~f0` 在 `if (...)` 块内展开会提前闭合括号块
+  → 双击一闪而过、无报错、什么都不执行。提权统一用 `goto :ADMIN` 写法，并写 `run.log`。
+- `dumps/`（单份 `MEMORY.DMP` 约 4 GB）、`cdb/`（约 200 MB）、`symbols/`、`tools/crash/*.reg`
+  已进 `.gitignore`。**迁脚本时别 `cp -r` 整个会话目录**，只迁 `.bat/.py/.md`。
+- 本机当前转储配置：`CrashDumpEnabled=2` + `DedicatedDumpFile=D:\dedicateddumpfile.sys`（8 GB）。
+  原因：页面文件只在 D 盘、启动卷没有 pagefile，微软普通完整转储路径会失败（`volmgr 161`）。
+- 诊断结论（供以后别再走弯路）：不是内存条故障、不是 ACE / 雷电 / 显卡 TDR；
+  `0x00800000` 多点出现曾被误判为内存位线污染，已用 `ln` 逐个核对后收回；
+  真正的 `PoolTrackTable` 内容完好；**Driver Verifier 特殊池对本问题不对症**。
+  下一步是 `mdsched.exe` 排除 + 等第二份完整转储做同地址对比 + 更新 BIOS（官网已有 `N176DRLKV2727.exe`）。
+- 排查期间生成的雷电驱动开关脚本没有归到这里，放 `D:\4rchive\Code\anti-ads\leidian\`。

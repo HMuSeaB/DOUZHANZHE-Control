@@ -99,6 +99,7 @@ node tools\probe-fan.js --readonly                            # 探查当前设�
 | `tools/check-dll-versions.ps1` | 列出/对比目录里程序集的 `AssemblyVersion`，抓合并发布时的版本漂移 |
 | `tools/soak-monitor.ps1` | 长时采样进程内存/句柄 |
 | `tools/gen-build-info.ps1` | 生成 `build-info.json` |
+| `tools/crash/` | 本机蓝屏病历与急救脚本（转储配置 / 验证器开关 / dmp 分析），入口 `tools/crash/README.md` |
 
 配套技能 `douzhanzhe-fix-verify`（用户级）含完整 API 契约与日志判定指标。
 

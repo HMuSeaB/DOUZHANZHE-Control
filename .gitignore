@@ -187,3 +187,14 @@ full-debug-log.txt
 
 # ZCode 会话纪要（wbmux 生成；含对话内容，不进版本库）
 会话纪要.md
+
+# 蓝屏转储与调试器产物（tools/crash/ 专用，绝不入库）
+# 单份 MEMORY.DMP 约 4 GB，且含完整内核内存
+*.dmp
+dumps/
+cdb/
+symbols/
+tools/crash/*.reg
+tools/crash/dumps/
+tools/crash/out/
+tools/crash/analyze/pe_sizes*.json

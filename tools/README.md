@@ -2,6 +2,11 @@
 
 **先读这个文件再动手写新脚本。** 下面每个脚本都是踩过坑沉淀下来的，重复造轮子会重踩。
 
+> **两类脚本别混**：
+> `tools/` 根目录 = 验证**这个应用**改得对不对（日志、构建产物、API、风扇）；
+> `tools/crash/` = 排查**这台机器**为什么蓝屏（转储、驱动验证器、dmp 分析）。
+> 蓝屏相关的东西一律进 `tools/crash/`，不要平铺到这里，详见第六节。
+
 配套技能：`douzhanzhe-fix-verify`（用户级 `~/.workbuddy-ai/skills/`），
 里面有完整的 API 契约、日志判定指标、以及"哪些坑不能踩"。
 
@@ -214,3 +219,27 @@ API 启动时按 2.12.2.0 请求 → `FileNotFoundException` → `POST /api/auto
 5. 参数化端口（3100 安装版 / 3101 开发实例），别写死。
 6. 脚本要**幂等** —— Bash 工具可能重试执行同一条命令。
 7. 含中文的 `.ps1` 存成 **UTF-8 with BOM**。
+
+---
+
+## 六、蓝屏诊断（`tools/crash/`）
+
+**入口先读 `tools/crash/README.md`** —— 里面有完整脚本索引、原编号对照、四条硬坑和本机诊断结论。
+这里只列最容易误踩的部分。
+
+| 需求 | 用什么 |
+|---|---|
+| 蓝屏后取转储 | `tools/crash/copy-dumps.bat`（UAC 自提权，复制到同目录 `dumps\`） |
+| 让完整内核转储能生成 | `tools/crash/dedicated-dump-setup.bat`（配 `DedicatedDumpFile`，重启生效） |
+| 怀疑驱动验证器开着 | `tools/crash/verifier-off.bat`（`verifier /reset`，零风险） |
+| 只读复核当前状态 | `python tools/crash/analyze/recheck.py` |
+| 符号级分析 | `cdb.exe -z <dmp> -y "srv*https://msdl.microsoft.com/download/symbols" -c "!analyze -v; q"` |
+
+**三条与本文件其他脚本不同的规矩**：
+
+1. **`.bat` 必须 GB18030 + CRLF + 无 BOM + `chcp 936`**。
+   （本文件第 216 行的 UTF-8 BOM 规则只适用于 `.ps1`，两者相反，别混用。）
+2. **`.bat` 文件名不要带半角括号 `()`** —— 路径里的 `)` 会在 `if (...)` 块内提前闭合括号，
+   双击后**一闪而过、无报错、什么都不执行**。提权改用 `goto :ADMIN` 写法。
+3. **绝对不要提交 `dumps/`、`cdb/`、`symbols/`、`*.dmp`** ——
+   单份 `MEMORY.DMP` 约 4 GB 且含完整内核内存。`.gitignore` 已排除，迁移脚本时别顺手 `cp -r` 整个目录。
