@@ -357,3 +357,17 @@ manifest → 直接跑报 `Permission denied`。
   真正的 `PoolTrackTable` 内容完好；**Driver Verifier 特殊池对本问题不对症**。
   下一步是 `mdsched.exe` 排除 + 等第二份完整转储做同地址对比 + 更新 BIOS（官网已有 `N176DRLKV2727.exe`）。
 - 排查期间生成的雷电驱动开关脚本没有归到这里，放 `D:\4rchive\Code\anti-ads\leidian\`。
+- 提交 `68777d6`（21 文件 / +1893 行）已推到 `origin-fork`，`origin` 未推。
+
+## 远端配置（2026-11-06 确认，别再搞混）
+
+| 远端 | 地址 | 角色 |
+|---|---|---|
+| `origin` | `git@github.com:KanzakiK/DOUZHANZHE-Control.git` | 主仓库 |
+| `origin-fork` | `git@github.com:HMuSeaB/DOUZHANZHE-Control.git` | fork，**当前分支的实际 upstream** |
+
+- 分支 `fix/memory-v2-integration` 跟踪的是 **`origin-fork`**。
+  → 裸 `git push` 只推 fork；要同步主仓库必须显式 `git push origin <branch>`。
+- 推完务必用 `git ls-remote <remote> refs/heads/<branch>` 核对远端 SHA 与本地一致，
+  不能只看 push 输出（这个仓库有 git ref 静默丢失的历史）。
+- 本次（`68777d6`）只推了 `origin-fork`，用户未要求推 `origin`。

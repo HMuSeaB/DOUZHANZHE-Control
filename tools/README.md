@@ -234,6 +234,7 @@ API 启动时按 2.12.2.0 请求 → `FileNotFoundException` → `POST /api/auto
 | 怀疑驱动验证器开着 | `tools/crash/verifier-off.bat`（`verifier /reset`，零风险） |
 | 只读复核当前状态 | `python tools/crash/analyze/recheck.py` |
 | 符号级分析 | `cdb.exe -z <dmp> -y "srv*https://msdl.microsoft.com/download/symbols" -c "!analyze -v; q"` |
+| 只装 Windows 11 系统更新 | `tools/crash/windows-os-update.bat`（跳过驱动和 .NET/VS，装完把暂停写回 2045-12-08） |
 
 **三条与本文件其他脚本不同的规矩**：
 

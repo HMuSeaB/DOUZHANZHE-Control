@@ -17,6 +17,7 @@
 | `dedicated-dump-undo.bat` | 删除 `DedicatedDumpFile` / `DumpFileSize` / `IgnorePagefileSize`，`CrashDumpEnabled` 还原为 3 | 低 | 不再需要完整转储时。**不会自动删 `D:\dedicateddumpfile.sys`**，重启后手动删 |
 | `verifier-off.bat` | `verifier /reset`，清空驱动验证器设置 | 零 | **任何时候怀疑验证器开着，先跑这个** |
 | `verifier-on-special-pool.bat` | 开启 Driver Verifier 特殊池，只针对 `Ld9BoxNetLwf` / `Ld9BoxSup` / `BAPIDRV64`，`bootmode=resetonbootfail` | **中**（可能拖慢开机；已用 `resetonbootfail` 兜底） | **对本机当前问题不对症，不建议运行**，理由见 README 第四节 |
+| `windows-os-update.bat` | 只安装 Windows 11 版本升级 / 系统累积更新，跳过 .NET、VS、PowerShell 和全部驱动。结束时把更新暂停写回 2045-12-08 | 低（会升级系统并重启；不改驱动校验） | 要抬 WDDM / 内核版本、又不想把暂停永久打开时。先看窗口里的 `[install]` / `[skip]` |
 
 `legacy/` 里是已被取代或不该再用的东西，**只作存档，别双击**：
 
